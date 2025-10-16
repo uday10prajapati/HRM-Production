@@ -5,22 +5,36 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Create a new pool using environment variables
+// Convert DB_SSL env variable to boolean
+const useSSL = process.env.DB_SSL === "true";
+
 export const pool = new Pool({
-  user: process.env.DB_USER,           // postgres
-  host: process.env.DB_HOST,           // Supabase host
-  database: process.env.DB_NAME,       // postgres
-  password: process.env.DB_PASSWORD,   // your password
-  port: process.env.DB_PORT,           // 5432
-  ssl: { rejectUnauthorized: false },  // Required for Supabase
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  database: process.env.DB_NAME,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
+  idleTimeoutMillis: 30000,       // 30 seconds idle timeout
+  connectionTimeoutMillis: 5000,  // 5 seconds to connect
 });
 
 // Test the database connection
-pool.connect()
-  .then(client => {
+(async () => {
+  try {
+    const client = await pool.connect();
     console.log("✅ PostgreSQL connected successfully!");
     client.release();
-  })
-  .catch(err => {
+  } catch (err) {
     console.error("❌ PostgreSQL connection error:", err);
-  });
+  }
+})();
+
+// Handle unexpected errors on idle clients (do not crash app)
+pool.on("error", (err, client) => {
+  if (err.code === "XX000" || err.message.includes("client_termination")) {
+    console.warn("⚠️ Idle client terminated by server (safe to ignore).");
+  } else {
+    console.error("❌ Unexpected error on idle client:", err);
+  }
+});

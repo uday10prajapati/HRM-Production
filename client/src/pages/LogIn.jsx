@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom"; // <-- Add this import
 import bg from "../assets/bg.png";
 
 function Login() {
@@ -26,14 +26,25 @@ function Login() {
 
             const data = await response.json();
 
-            if (data.success) {
+            if (data.success && data.user && data.role) {
                 setMessage("✅ Login successful!");
-                setTimeout(() => {
-                    const role = data.role;
 
-                    if (role === "admin") navigate("/admin");
-                    else if (role === "hr") navigate("/hr");
-                    else if (role === "engineer") navigate("/engineer");
+                // Prepare the user object
+                const userData = {
+                    id: data.user._id || null,
+                    name: data.user.name || "",
+                    email: data.user.email || email,
+                    role: data.role,
+                };
+
+                // Store user details in localStorage and log for debugging
+                localStorage.setItem("user", JSON.stringify(userData));
+                console.log("Stored user:", localStorage.getItem("user"));
+
+                setTimeout(() => {
+                    if (data.role === "admin") navigate("/admin-dashboard");
+                    else if (data.role === "hr" || data.role=== "Hr") navigate("/hr-dashboard");
+                    else if (data.role === "engineer") navigate("/engineer");
                     else navigate("/employee");
                 }, 1000);
             } else {
@@ -102,7 +113,13 @@ function Login() {
                     </p>
 
                     {message && (
-                        <p className={`mt-4 text-center text-lg ${message.includes("✅") ? "text-green-600" : "text-red-600"}`}>
+                        <p
+                            className={`mt-4 text-center text-lg ${
+                                message.includes("✅")
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                            }`}
+                        >
                             {message}
                         </p>
                     )}
@@ -110,7 +127,10 @@ function Login() {
             </div>
 
             {/* Right: Image Section */}
-            <div className="hidden md:flex w-1/2 bg-cover bg-center" style={{ backgroundImage: `url(${bg})` }}></div>
+            <div
+                className="hidden md:flex w-1/2 bg-cover bg-center"
+                style={{ backgroundImage: `url(${bg})` }}
+            ></div>
         </div>
     );
 }
