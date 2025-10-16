@@ -441,7 +441,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
     try {
       await axios.post(`/api/users/assign-task`, {
         userId: selectedUser.id,
-        ...taskData,
+        tasks: [taskData], // <--- send an array of tasks
       });
       alert(`Task assigned to ${selectedUser.name}`);
       setTaskModalOpen(false);

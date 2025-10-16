@@ -97,7 +97,17 @@ router.delete("/delete/:id", async (req, res) => {
 
 // POST assign a task to a user
 router.post("/assign-task", async (req, res) => {
-  const { userId, tasks } = req.body;
+  const { userId } = req.body;
+
+  // normalize tasks: accept either tasks array or single title/description
+  let tasks = req.body.tasks;
+  if (!tasks || !Array.isArray(tasks)) {
+    if (req.body.title && req.body.description) {
+      tasks = [{ title: req.body.title, description: req.body.description }];
+    } else {
+      tasks = [];
+    }
+  }
 
   // Validate userId
   if (!userId) {
@@ -112,7 +122,6 @@ router.post("/assign-task", async (req, res) => {
   try {
     const queryText = "INSERT INTO tasks (user_id, title, description) VALUES ($1, $2, $3)";
 
-    // Map tasks to promises
     const promises = tasks.map((task) => {
       if (!task.title || !task.description) {
         throw new Error("Task title and description are required");
@@ -120,7 +129,6 @@ router.post("/assign-task", async (req, res) => {
       return pool.query(queryText, [userId, task.title, task.description]);
     });
 
-    // Execute all inserts in parallel
     await Promise.all(promises);
 
     res.json({ success: true, message: "Tasks assigned successfully" });
@@ -129,7 +137,6 @@ router.post("/assign-task", async (req, res) => {
     res.status(500).json({ success: false, message: "Error assigning tasks", error: err.message });
   }
 });
-
 
 
 
