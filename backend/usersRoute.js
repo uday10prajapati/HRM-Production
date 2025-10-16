@@ -7,13 +7,36 @@ const router = express.Router();
 // GET all users
 router.get("/", async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, name, email, role, leave_balance, attendance_status FROM users ORDER BY id ASC");
+    // Fetch users with their tasks
+    const result = await pool.query(`
+      SELECT 
+        u.id AS id,
+        u.name,
+        u.email,
+        u.role,
+        u.leave_balance,
+        u.attendance_status,
+        json_agg(
+          json_build_object(
+            'id', t.id,
+            'title', t.title,
+            'description', t.description,
+            'created_at', t.created_at
+          )
+        ) FILTER (WHERE t.id IS NOT NULL) AS tasks
+      FROM users u
+      LEFT JOIN tasks t ON u.id = t.user_id
+      GROUP BY u.id
+      ORDER BY u.id ASC
+    `);
+
     res.json({ success: true, users: result.rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Error fetching users" });
   }
 });
+
 
 // POST create new user
 router.post("/create", async (req, res) => {
@@ -71,5 +94,43 @@ router.delete("/delete/:id", async (req, res) => {
     res.status(500).json({ success: false, message: "Error deleting user" });
   }
 });
+
+// POST assign a task to a user
+router.post("/assign-task", async (req, res) => {
+  const { userId, tasks } = req.body;
+
+  // Validate userId
+  if (!userId) {
+    return res.status(400).json({ success: false, message: "User ID is required" });
+  }
+
+  // Ensure tasks is an array
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    return res.status(400).json({ success: false, message: "At least one task is required" });
+  }
+
+  try {
+    const queryText = "INSERT INTO tasks (user_id, title, description) VALUES ($1, $2, $3)";
+
+    // Map tasks to promises
+    const promises = tasks.map((task) => {
+      if (!task.title || !task.description) {
+        throw new Error("Task title and description are required");
+      }
+      return pool.query(queryText, [userId, task.title, task.description]);
+    });
+
+    // Execute all inserts in parallel
+    await Promise.all(promises);
+
+    res.json({ success: true, message: "Tasks assigned successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error assigning tasks", error: err.message });
+  }
+});
+
+
+
 
 export default router;
