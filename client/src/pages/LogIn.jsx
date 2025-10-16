@@ -26,7 +26,7 @@ function Login() {
                 setTimeout(() => {
                     const role = data.role; // role from backend
 
-                    if (role === "admin") navigate("/admin");
+                    if (role === "admin") navigate("/admin-dashboard");
                     else if (role === "hr") navigate("/hr");
                     else if (role === "engineer") navigate("/engineer");
                     else navigate("/employee");

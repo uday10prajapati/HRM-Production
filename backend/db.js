@@ -5,14 +5,14 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Create a new pool using environment variables
+// Use individual environment variables for cloud/db connection
 export const pool = new Pool({
   user: process.env.DB_USER,           // postgres
-  host: process.env.DB_HOST,           // Supabase host
-  database: process.env.DB_NAME,       // postgres
   password: process.env.DB_PASSWORD,   // your password
-  port: process.env.DB_PORT,           // 5432
-  ssl: { rejectUnauthorized: false },  // Required for Supabase
+  host: process.env.DB_HOST,           // db.jsntgyzzggfihqszxjer.supabase.co
+  port: Number(process.env.DB_PORT),   // 5432
+  database: process.env.DB_NAME,       // postgres
+  ssl: { rejectUnauthorized: false },  // Required for most cloud Postgres providers
 });
 
 // Test the database connection
