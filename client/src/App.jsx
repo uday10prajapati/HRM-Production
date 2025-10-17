@@ -1,10 +1,17 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Login from "./pages/Login";
+import Login from "./pages/LogIn";
 import Signup from "./pages/SignUp";
 import Admin from "./pages/Admin/AdminDashboard";
 import HrDashboard from "./pages/HR/HrDashboard" 
-
+import EngineerDashboard from "./pages/Engineer/EngineerDashboard"
+import EngineerTasks from "./pages/Engineer/task"
+import EmployeeDashboard from "./pages/Employee/EmployeeDashboard";
+import AttendancePage from "./pages/Attendance";
+import Profile from "./pages/Profile";
+import ApplyLeave from "./pages/ApplyLeave";
+import Payslips from "./pages/Payslips";
+import LeaveManagement from "./pages/LeaveManagement";
 import AllUsers from "./pages/AllUsers"
 
 function App() {
@@ -16,19 +23,24 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/all-users" element={<AllUsers />} />
        
-
-
-
        {/* Admin Routes */}
         <Route path="/admin-dashboard" element={<Admin />} />
 
-
-
-
-
         {/* Hr Routes */}
         <Route path="/hr-dashboard" element={<HrDashboard />} />
-
+       
+        {/* Engineer Routes */}
+  <Route path="/engineer-dashboard" element={<EngineerDashboard />} />
+  <Route path="/engineer" element={<EngineerDashboard />} />
+  <Route path="/engineer/tasks" element={<EngineerTasks />} />
+        {/* Employee Routes */}
+  <Route path="/employee-dashboard" element={<EmployeeDashboard />} />
+  <Route path="/employee" element={<EmployeeDashboard />} />
+  <Route path="/attendance" element={<AttendancePage />} />
+  <Route path="/profile" element={<Profile />} />
+  <Route path="/apply-leave" element={<ApplyLeave />} />
+  <Route path="/payslips" element={<Payslips />} />
+  <Route path="/leave-management" element={<LeaveManagement />} />
 
       </Routes>
     </Router>

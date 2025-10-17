@@ -2,294 +2,19 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
+import ModalWrapper from "../components/modals/ModalWrapper";
+import AddUserModal from "../components/modals/AddUserModal";
+import EditUserModal from "../components/modals/EditUserModal";
+import DeleteUserModal from "../components/modals/DeleteUserModal";
+import GiveTaskModal from "../components/modals/GiveTaskModal";
+import TaskStatusModal from "../components/modals/TaskStatusModal";
+import DocumentsModal from "../components/modals/DocumentsModal";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 axios.defaults.baseURL = API_BASE_URL;
 
-// ---------- Reusable Modal Wrapper ----------
-const ModalWrapper = ({ children }) => (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md relative">
-      {children}
-    </div>
-  </div>
-);
-
-// ---------- Add User Modal ----------
-const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => (
-  <ModalWrapper>
-    <h3 className="text-xl font-semibold mb-4 text-gray-800">Add User</h3>
-    <form onSubmit={onSubmit} className="space-y-4">
-      <input
-        type="text"
-        placeholder="Full Name"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.name}
-        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-        required
-      />
-      <input
-        type="email"
-        placeholder="Email Address"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.email}
-        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-        required
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.password}
-        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-        required
-      />
-      <select
-        className="w-full border px-3 py-2 rounded"
-        value={formData.role}
-        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-        required
-      >
-        <option value="">Select Role</option>
-        <option value="hr">HR</option>
-        <option value="engineer">Engineer</option>
-        <option value="employee">Employee</option>
-      </select>
-      <input
-        type="number"
-        placeholder="Leave Balance"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.leave_balance}
-        onChange={(e) =>
-          setFormData({ ...formData, leave_balance: e.target.value })
-        }
-      />
-      <input
-        type="text"
-        placeholder="Attendance Status"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.attendance_status}
-        onChange={(e) =>
-          setFormData({ ...formData, attendance_status: e.target.value })
-        }
-      />
-
-      <div className="flex justify-end gap-2 mt-4">
-        <button
-          type="button"
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-        >
-          Add
-        </button>
-      </div>
-    </form>
-  </ModalWrapper>
-);
-
-// ---------- Edit User Modal ----------
-const EditUserModal = ({ formData, setFormData, onSubmit, onClose }) => (
-  <ModalWrapper>
-    <h3 className="text-xl font-semibold mb-4 text-gray-800">Edit User</h3>
-    <form onSubmit={onSubmit} className="space-y-4">
-      <input
-        type="text"
-        placeholder="Full Name"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.name}
-        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-        required
-      />
-      <input
-        type="email"
-        placeholder="Email"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.email}
-        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-        required
-      />
-      <select
-        className="w-full border px-3 py-2 rounded"
-        value={formData.role}
-        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-        required
-      >
-        <option value="">Select Role</option>
-        <option value="hr">HR</option>
-        <option value="engineer">Engineer</option>
-        <option value="employee">Employee</option>
-      </select>
-      <input
-        type="number"
-        placeholder="Leave Balance"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.leave_balance}
-        onChange={(e) =>
-          setFormData({ ...formData, leave_balance: e.target.value })
-        }
-      />
-      <input
-        type="text"
-        placeholder="Attendance Status"
-        className="w-full border px-3 py-2 rounded"
-        value={formData.attendance_status}
-        onChange={(e) =>
-          setFormData({ ...formData, attendance_status: e.target.value })
-        }
-      />
-
-      <div className="flex justify-end gap-2 mt-4">
-        <button
-          type="button"
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Save Changes
-        </button>
-      </div>
-    </form>
-  </ModalWrapper>
-);
-
-// ---------- Delete User Modal ----------
-const DeleteUserModal = ({ selectedUser, onDelete, onClose }) => (
-  <ModalWrapper>
-    <h3 className="text-xl font-semibold mb-4 text-gray-800">Delete User</h3>
-    <p className="text-gray-600 mb-6">
-      Are you sure you want to delete{" "}
-      <span className="font-bold">{selectedUser?.name}</span>?
-    </p>
-    <div className="flex justify-end gap-2">
-      <button
-        className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-        onClick={onClose}
-      >
-        Cancel
-      </button>
-      <button
-        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        onClick={onDelete}
-      >
-        Delete
-      </button>
-    </div>
-  </ModalWrapper>
-);
-
-// ---------- Give Task Modal ----------
-const GiveTaskModal = ({ selectedUser, taskData, setTaskData, onSubmit, onClose }) => (
-  <ModalWrapper>
-    <h3 className="text-xl font-semibold mb-4 text-gray-800">
-      Assign Task to {selectedUser?.name}
-    </h3>
-    <form onSubmit={onSubmit} className="space-y-4">
-      <input
-        type="text"
-        placeholder="Task Title"
-        className="w-full border px-3 py-2 rounded"
-        value={taskData.title}
-        onChange={(e) => setTaskData({ ...taskData, title: e.target.value })}
-        required
-      />
-      <textarea
-        placeholder="Task Description"
-        className="w-full border px-3 py-2 rounded"
-        rows="4"
-        value={taskData.description}
-        onChange={(e) => setTaskData({ ...taskData, description: e.target.value })}
-        required
-      />
-
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-        >
-          Assign Task
-        </button>
-      </div>
-    </form>
-  </ModalWrapper>
-);
-
-const TaskStatusModal = ({ selectedUser, onClose }) => (
-  <ModalWrapper>
-    <div className="flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center border-b pb-3 mb-4">
-        <h3 className="text-2xl font-semibold text-gray-800">
-          Tasks for {selectedUser?.name}
-        </h3>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 text-xl font-bold"
-        >
-          &times;
-        </button>
-      </div>
-
-      {/* Task List */}
-      {selectedUser?.tasks && selectedUser.tasks.length > 0 ? (
-        <div className="space-y-3 max-h-72 overflow-y-auto pr-2">
-          {selectedUser.tasks.map((task) => (
-            <div
-              key={task.id}
-              className="p-4 border rounded-lg shadow-sm hover:shadow-md transition flex justify-between items-start bg-gray-50"
-            >
-              <div>
-                <p className="font-semibold text-gray-800">{task.title}</p>
-                <p className="text-gray-600 mt-1 text-sm">{task.description}</p>
-              </div>
-              <span
-                className={`text-sm font-medium px-2 py-1 rounded-full ${
-                  task.status?.toLowerCase() === "completed"
-                    ? "bg-green-100 text-green-800"
-                    : task.status?.toLowerCase() === "in progress"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-gray-100 text-gray-800"
-                }`}
-              >
-                {task.status || "Pending"}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-gray-500 text-center mt-6">No tasks assigned.</p>
-      )}
-
-      {/* Footer */}
-      <div className="flex justify-end mt-6">
-        <button
-          onClick={onClose}
-          className="px-5 py-2 bg-gray-300 rounded hover:bg-gray-400 font-medium"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  </ModalWrapper>
-);
+// Modals are now in separate files under components/modals/
 
 
 
@@ -308,6 +33,7 @@ const AllUsers = () => {
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
+  const [isDocumentsModalOpen, setDocumentsModalOpen] = useState(false);
 
 
   // Form data
@@ -391,6 +117,11 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
     setDeleteModalOpen(true);
   };
 
+  const openDocumentsModal = (user) => {
+    setSelectedUser(user);
+    setDocumentsModalOpen(true);
+  };
+
   const openTaskModal = (user) => {
     setSelectedUser(user);
     setTaskData({ title: "", description: "" });
@@ -404,7 +135,26 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
         ...formData,
         leave_balance: Number(formData.leave_balance) || 20,
       };
-      await axios.post("/api/users/create", dataToSend);
+      const createRes = await axios.post("/api/users/create", dataToSend);
+      const createdUser = createRes.data?.user || createRes.data;
+
+      // If files were attached, upload them to documents endpoint
+      const form = new FormData();
+      if (formData.contractFile) form.append('contract', formData.contractFile);
+      if (formData.idProofFile) form.append('idProof', formData.idProofFile);
+      if (formData.certificateFile) form.append('certificate', formData.certificateFile);
+
+      if ((formData.contractFile || formData.idProofFile || formData.certificateFile) && createdUser?.id) {
+        try {
+          await axios.post(`/api/documents/${createdUser.id}/documents`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch (err) {
+          console.warn('Document upload failed', err);
+          // Continue, user is created — backend can retry or admin can re-upload
+        }
+      }
+
       setAddModalOpen(false);
       fetchUsers();
     } catch (err) {
@@ -467,7 +217,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />
-      <div className="flex flex-1 bg-gray-50">
+      <div className="flex flex-1 bg-gray-50 min-h-screen">
         <Sidebar />
         <main className="flex-1 p-6">
           {isAddModalOpen && (
@@ -477,6 +227,9 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
               onSubmit={handleAddSubmit}
               onClose={() => setAddModalOpen(false)}
             />
+          )}
+          {isDocumentsModalOpen && selectedUser && (
+            <DocumentsModal userId={selectedUser.id} onClose={() => setDocumentsModalOpen(false)} />
           )}
           {isEditModalOpen && (
             <EditUserModal
@@ -590,12 +343,18 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                         >
                           Delete
                         </button>
-                        <button
-                          onClick={() => openTaskModal(u)}
-                          className="text-indigo-600 hover:underline"
-                        >
-                          Give Task
-                        </button>
+                        { (u.role || '').toString().toLowerCase() !== 'admin' && (
+                          <button
+                            onClick={() => openTaskModal(u)}
+                            className="text-indigo-600 hover:underline"
+                          >
+                            Give Task
+                          </button>
+                        )}
+                        {/* Documents (admin only) */}
+                        { (user?.role || '').toString().toLowerCase() === 'admin' && (
+                          <button onClick={() => openDocumentsModal(u)} className="text-gray-700 hover:underline">Documents</button>
+                        )}
                       </td>
                     </tr>
                   ))}

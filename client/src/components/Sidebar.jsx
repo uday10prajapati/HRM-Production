@@ -7,17 +7,15 @@ const Sidebar = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
-    // Load user from localStorage
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     } else {
-      // Example user for development/testing
       const exampleUser = {
         id: null,
         name: "Uday",
         email: "uday@gmail.com",
-        role: "admin", // role: admin/hr/employee
+        role: "admin",
       };
       setUser(exampleUser);
     }
@@ -33,28 +31,43 @@ const Sidebar = () => {
     { to: "/admin-dashboard", label: "Dashboard", roles: ["admin"] },
     { to: "/hr-dashboard", label: "HR Dashboard", roles: ["hr"] },
     { to: "/employee-dashboard", label: "Employee Dashboard", roles: ["employee"] },
+    { to: "/engineer", label: "Engineer Dashboard", roles: ["engineer"] },
     { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
-    { to: "/attendance", label: "Attendance", roles: ["admin", "hr", "employee"] },
-    { to: "/leave", label: "Leave Management", roles: ["admin", "hr", "employee"] },
-    { to: "/reports", label: "Reports", roles: ["admin", "hr", "employee"] },
+    { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
+    // Removed Attendance, Leave, Reports for employees
   ];
 
-  const filteredMenu = user
-    ? menuItems.filter((item) => item.roles.includes(user.role))
-    : [];
+  // Employee-only quick links
+  const employeeLinks = [
+    { to: "/profile", label: "Profile" },
+    { to: "/apply-leave", label: "Apply for Leave" },
+    { to: "/payslips", label: "Payslips" },
+  ];
+
+  // Determine which menu to render
+  const filteredMenu = (() => {
+    if (!user) return [];
+    const role = (user.role || "").toLowerCase();
+
+    if (role === "employee") {
+      // Employees only see employeeLinks, not the main menu
+      return [];
+    }
+
+    // Other roles see filtered menuItems
+    return menuItems.filter((item) => item.roles.includes(role));
+  })();
 
   return (
-    <div className="h-screen w-64 bg-gray-900 text-white flex flex-col justify-between p-4">
-      {/* Navigation Links */}
+    <div className="min-h-screen w-64 bg-gray-900 text-white flex flex-col p-4 flex-shrink-0">
+      {/* Navigation Links for non-employees */}
       <ul className="space-y-4">
         {filteredMenu.map((item) => (
           <li key={item.to}>
             <NavLink
               to={item.to}
               className={({ isActive }) =>
-                isActive
-                  ? "text-yellow-400 font-bold"
-                  : "hover:text-yellow-400"
+                isActive ? "text-yellow-400 font-bold" : "hover:text-yellow-400"
               }
             >
               {item.label}
@@ -63,9 +76,27 @@ const Sidebar = () => {
         ))}
       </ul>
 
+      {/* Employee quick links */}
+      {user && (user.role || "").toLowerCase() === "employee" && (
+        <ul className="mt-2 space-y-2">
+          {employeeLinks.map((item) => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                className={({ isActive }) =>
+                  isActive ? "text-yellow-400 font-bold" : "hover:text-yellow-400"
+                }
+              >
+                {item.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* Profile Section */}
       {user && (
-        <div className="relative border-t border-gray-700 pt-4 mt-4">
+        <div className="relative border-t border-gray-700 pt-4 mt-auto">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
             className="w-full flex items-center justify-between px-3 py-2 rounded-md hover:bg-gray-800 transition"
@@ -77,7 +108,6 @@ const Sidebar = () => {
             <span className="text-lg">{dropdownOpen ? "▲" : "▼"}</span>
           </button>
 
-          {/* Dropdown Menu */}
           {dropdownOpen && (
             <div className="absolute bottom-14 left-0 w-full bg-gray-800 rounded-lg shadow-lg z-10">
               <button

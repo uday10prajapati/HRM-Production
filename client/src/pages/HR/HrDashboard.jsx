@@ -22,16 +22,10 @@ const HrDashboard = () => {
   }, [navigate]);
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <Sidebar />
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Navbar */}
-        <Navbar />
-
-        {/* Dashboard Content */}
+    <div className="flex flex-col h-screen">
+      <Navbar />
+      <div className="flex flex-1 min-h-screen">
+        <Sidebar />
         <div className="p-6 bg-gray-100 flex-1">
           <h2 className="text-2xl font-semibold mb-4">Hi HR!</h2>
           <p>

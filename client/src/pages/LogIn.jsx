@@ -16,7 +16,7 @@ function Login() {
         }
 
         try {
-            const API_URL = import.meta.env.VITE_API_URL;
+            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
             const response = await fetch(`${API_URL}/api/auth/login`, {
                 method: "POST",
@@ -31,7 +31,8 @@ function Login() {
 
                 // Prepare the user object
                 const userData = {
-                    id: data.user._id || null,
+                    // backend may return id as 'id' or '_id'
+                    id: data.user.id || data.user._id || null,
                     name: data.user.name || "",
                     email: data.user.email || email,
                     role: data.role,

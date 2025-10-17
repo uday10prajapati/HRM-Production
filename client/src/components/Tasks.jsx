@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from "react";
+import axios from "axios";
 
 export default function Tasks() {
     const [tasks, setTasks] = useState([]);
 
     useEffect(() => {
-        fetch("http://localhost:5000/api/tasks")
-            .then((res) => res.json())
-            .then((data) => setTasks(data))
+        let mounted = true;
+        axios.get('/api/tasks')
+            .then((res) => {
+                // accept either { tasks: [...] } or raw array
+                const payload = res.data.tasks || res.data;
+                if (mounted) setTasks(payload || []);
+            })
             .catch(console.error);
+        return () => { mounted = false; };
     }, []);
 
     return (
@@ -25,8 +31,8 @@ export default function Tasks() {
                 <tbody>
                     {tasks.map((t) => (
                         <tr key={t.id} className="border-b hover:bg-gray-100">
-                            <td className="py-2 px-4">{t.taskName}</td>
-                            <td className="py-2 px-4">{t.engineer}</td>
+                            <td className="py-2 px-4">{t.taskName || t.title || t.task}</td>
+                            <td className="py-2 px-4">{t.engineer || t.assigned_to || t.assignedBy}</td>
                             <td className="py-2 px-4">{t.status}</td>
                             <td className="py-2 px-4">{t.customer}</td>
                         </tr>
