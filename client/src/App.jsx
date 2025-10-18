@@ -13,9 +13,11 @@ import ApplyLeave from "./pages/ApplyLeave";
 import Payslips from "./pages/Payslips";
 import Documents from "./pages/Documents";
 import PayrollAdmin from "./pages/payroll/Payroll";
+import ProtectedRoute from "./components/ProtectedRoute";
 import LeaveManagement from "./pages/LeaveManagement";
 import AllUsers from "./pages/AllUsers"
 import Stock from "./pages/Inovetry/Stock";
+import PayrollReports from "./pages/reports/PayrollReports";
 
 function App() {
   return (
@@ -26,26 +28,27 @@ function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/all-users" element={<AllUsers />} />
        
-       {/* Admin Routes */}
-        <Route path="/admin-dashboard" element={<Admin />} />
+  {/* Admin Routes */}
+  <Route path="/admin-dashboard" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
 
-        {/* Hr Routes */}
-        <Route path="/hr-dashboard" element={<HrDashboard />} />
+  {/* Hr Routes */}
+  <Route path="/hr-dashboard" element={<ProtectedRoute role="hr"><HrDashboard /></ProtectedRoute>} />
        
         {/* Engineer Routes */}
-  <Route path="/engineer-dashboard" element={<EngineerDashboard />} />
-  <Route path="/engineer" element={<EngineerDashboard />} />
+  <Route path="/engineer-dashboard" element={<ProtectedRoute role="engineer"><EngineerDashboard /></ProtectedRoute>} />
+  <Route path="/engineer" element={<ProtectedRoute role="engineer"><EngineerDashboard /></ProtectedRoute>} />
   <Route path="/engineer/tasks" element={<EngineerTasks />} />
         {/* Employee Routes */}
-  <Route path="/employee-dashboard" element={<EmployeeDashboard />} />
-  <Route path="/employee" element={<EmployeeDashboard />} />
+  <Route path="/employee-dashboard" element={<ProtectedRoute><EmployeeDashboard /></ProtectedRoute>} />
+  <Route path="/employee" element={<ProtectedRoute><EmployeeDashboard /></ProtectedRoute>} />
   <Route path="/attendance" element={<AttendancePage />} />
-  <Route path="/inventory" element={<Stock />} />
-  <Route path="/profile" element={<Profile />} />
-  <Route path="/apply-leave" element={<ApplyLeave />} />
-  <Route path="/payslips" element={<Payslips />} />
-  <Route path="/documents" element={<Documents />} />
-  <Route path="/payroll" element={<PayrollAdmin />} />
+  <Route path="/inventory" element={<ProtectedRoute><Stock /></ProtectedRoute>} />
+  <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+  <Route path="/apply-leave" element={<ProtectedRoute><ApplyLeave /></ProtectedRoute>} />
+  <Route path="/payslips" element={<ProtectedRoute><Payslips /></ProtectedRoute>} />
+  <Route path="/documents" element={<ProtectedRoute role="admin"><Documents /></ProtectedRoute>} />
+  <Route path="/payroll" element={<ProtectedRoute role="hr"><PayrollAdmin /></ProtectedRoute>} />
+  <Route path="/reports/payroll" element={<ProtectedRoute role="hr"><PayrollReports /></ProtectedRoute>} />
   <Route path="/leave-management" element={<LeaveManagement />} />
 
       </Routes>

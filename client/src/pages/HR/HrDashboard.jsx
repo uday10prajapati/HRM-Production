@@ -8,6 +8,7 @@ const HrDashboard = () => {
   const navigate = useNavigate();
   const [shifts, setShifts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
@@ -21,9 +22,11 @@ const HrDashboard = () => {
 
     if (storedUser) {
       const user = JSON.parse(storedUser);
+      // store current user to show personalized greeting
+      setCurrentUser?.(user);
 
       // Optional: redirect if role is not HR
-      if (user.role.toLowerCase() !== "hr") {
+      if ((user.role || '').toLowerCase() !== "hr") {
         navigate("/login"); // or another page
       }
     } else {
@@ -87,7 +90,18 @@ const HrDashboard = () => {
   async function fetchUsers() {
     try {
       const res = await axios.get("/api/users");
-      setUsers(res.data?.users ?? []);
+      let all = res.data?.users ?? [];
+      // If current user is HR, do not include admin users for leave adjustments
+      try {
+        const stored = localStorage.getItem('user');
+        const cu = stored ? JSON.parse(stored) : null;
+        if (cu && (cu.role || '').toLowerCase() === 'hr') {
+          all = all.filter(u => (u.role || '').toLowerCase() !== 'admin');
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+      setUsers(all);
     } catch (e) { console.error(e); }
   }
 
@@ -164,7 +178,9 @@ const HrDashboard = () => {
       <div className="flex flex-1 min-h-screen">
         <Sidebar />
         <div className="p-6 bg-gray-100 flex-1">
-          <h2 className="text-2xl font-semibold mb-4">Hi HR!</h2>
+          <h2 className="text-2xl font-semibold mb-4">Hi {(() => {
+            try { const s = localStorage.getItem('user'); return s ? JSON.parse(s).name : 'HR'; } catch (e) { return 'HR'; }
+          })()}!</h2>
            <div className="flex gap-2 mb-4">
             <button onClick={() => setIsCreateOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded">Create Shift</button>
             <button onClick={() => { setAssignForm(f => ({...f, date: tomorrowDate()})); setIsAssignOpen(true); }} className="px-3 py-2 bg-blue-600 text-white rounded">Assign Shift (tomorrow)</button>
@@ -201,7 +217,11 @@ const HrDashboard = () => {
                         <div className="text-sm text-gray-600">Leave balance: {u.leave_balance ?? u.leaveBalance ?? 'N/A'}</div>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => handleOpenAdjust(u)} className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Adjust Leave</button>
+                        {((u.role || '').toLowerCase() !== 'admin') ? (
+                          <button onClick={() => handleOpenAdjust(u)} className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Adjust Leave</button>
+                        ) : (
+                          <span className="text-xs text-gray-400 px-2 py-1">Admin (no adjustments)</span>
+                        )}
                       </div>
                     </li>
                   ))}

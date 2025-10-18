@@ -397,7 +397,7 @@ const EmployeeDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => navigate("/employee/payslips")}
+                onClick={() => navigate("/payslips")}
                 className="w-full text-left text-gray-700 hover:text-indigo-600"
               >
                 View Payslips
@@ -483,7 +483,7 @@ const EmployeeDashboard = () => {
                 Access and download your monthly payslips.
               </p>
               <button
-                onClick={() => navigate("/employee/payslips")}
+                onClick={() => navigate("/payslips")}
                 className="px-3 py-1 bg-yellow-600 text-white rounded text-sm"
               >
                 View Payslips

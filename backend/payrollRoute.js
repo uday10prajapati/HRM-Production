@@ -179,4 +179,28 @@ router.get('/statutory/:year', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to fetch statutory report' }); }
 });
 
+// List all salary configs (admin helper)
+router.get('/configs', async (req, res) => {
+  try {
+    const q = await pool.query('SELECT * FROM employee_salary_config ORDER BY user_id');
+    res.json({ configs: q.rows });
+  } catch (err) {
+    console.error('Failed to list salary configs', err);
+    res.status(500).json({ error: 'Failed to list configs' });
+  }
+});
+
+// Monthly overview: list payroll records for a given year/month
+router.get('/overview/:year/:month', async (req, res) => {
+  const year = Number(req.params.year || new Date().getFullYear());
+  const month = Number(req.params.month || (new Date().getMonth() + 1));
+  try {
+    const q = await pool.query('SELECT pr.*, u.name, u.email, u.role FROM payroll_records pr LEFT JOIN users u ON u.id = pr.user_id WHERE pr.year=$1 AND pr.month=$2 ORDER BY u.role, u.id', [year, month]);
+    res.json({ year, month, records: q.rows });
+  } catch (err) {
+    console.error('Failed to fetch payroll overview', err);
+    res.status(500).json({ error: 'Failed to fetch overview' });
+  }
+});
+
 export default router;
