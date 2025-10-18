@@ -28,7 +28,10 @@ export default function Payroll() {
 		if (!selectedUser) return alert('Select a user');
 		try {
 			const payload = { userId: selectedUser.id || selectedUser, basic: Number(config.basic||0), hra: Number(config.hra||0), allowances: config.allowances, deductions: config.deductions };
-			await axios.post('/api/payroll/config', payload);
+			const meRaw = localStorage.getItem('user');
+			const me = meRaw ? JSON.parse(meRaw) : null;
+			const headers = me ? { 'X-User-Id': me.id } : {};
+			await axios.post('/api/payroll/config', payload, { headers });
 			alert('Saved');
 		} catch (err) {
 			console.error('Failed to save config', err);
@@ -38,7 +41,10 @@ export default function Payroll() {
 
 	async function runPayroll() {
 		try {
-			const res = await axios.post('/api/payroll/run', { year: Number(year), month: Number(month) });
+				const meRaw = localStorage.getItem('user');
+				const me = meRaw ? JSON.parse(meRaw) : null;
+				const headers = me ? { 'X-User-Id': me.id } : {};
+				const res = await axios.post('/api/payroll/run', { year: Number(year), month: Number(month) }, { headers });
 			alert(`Payroll run for ${res.data.month}/${res.data.year}, records: ${res.data.count}`);
 		} catch (err) {
 			console.error('Payroll run failed', err);
@@ -48,7 +54,10 @@ export default function Payroll() {
 
 	async function downloadSlip(user) {
 		try {
-			const res = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`);
+			const meRaw = localStorage.getItem('user');
+			const me = meRaw ? JSON.parse(meRaw) : null;
+			const headers = me ? { 'X-User-Id': me.id } : {};
+			const res = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`, { headers });
 			const slip = res.data;
 			const doc = new jsPDF();
 			doc.setFontSize(12);

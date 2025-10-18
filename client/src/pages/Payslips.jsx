@@ -19,7 +19,8 @@ export default function Payslips() {
   async function fetchRecords() {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/payroll/records/${userId}`);
+      const headers = { 'X-User-Id': userId };
+      const res = await axios.get(`/api/payroll/records/${userId}`, { headers });
       setRecords(res.data.records || []);
     } catch (err) {
       console.error('Failed to fetch payslips', err);
@@ -29,7 +30,8 @@ export default function Payslips() {
 
   async function downloadSlip(rec) {
     try {
-      const res = await axios.get(`/api/payroll/slip/${userId}/${rec.year}/${rec.month}`);
+  const headers = { 'X-User-Id': userId };
+  const res = await axios.get(`/api/payroll/slip/${userId}/${rec.year}/${rec.month}`, { headers });
       const slip = res.data;
       const doc = new jsPDF();
       doc.setFontSize(12);

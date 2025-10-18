@@ -16,7 +16,10 @@ export default function PayrollReports() {
   async function fetchOverview() {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/payroll/overview/${year}/${month}`);
+      const meRaw = localStorage.getItem('user');
+      const me = meRaw ? JSON.parse(meRaw) : null;
+      const headers = me ? { 'X-User-Id': me.id } : {};
+      const res = await axios.get(`/api/payroll/overview/${year}/${month}`, { headers });
       setRecords(res.data.records || []);
     } catch (err) {
       console.error('Failed to fetch overview', err);
@@ -26,7 +29,10 @@ export default function PayrollReports() {
 
   async function fetchStat() {
     try {
-      const res = await axios.get(`/api/payroll/statutory/${year}`);
+      const meRaw = localStorage.getItem('user');
+      const me = meRaw ? JSON.parse(meRaw) : null;
+      const headers = me ? { 'X-User-Id': me.id } : {};
+      const res = await axios.get(`/api/payroll/statutory/${year}`, { headers });
       setStat(res.data);
     } catch (err) {
       console.error('Failed to fetch statutory', err);

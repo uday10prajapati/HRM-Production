@@ -11,6 +11,7 @@ function AttendancePage() {
   const [end, setEnd] = useState('');
   const [report, setReport] = useState({});
   const [loading, setLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // punch state
   const [punchLoading, setPunchLoading] = useState(false);
@@ -23,12 +24,58 @@ function AttendancePage() {
   try {
     // Fetch per-user summary (workedDays, leaveDays, present today)
     const params = {};
+    // if current user is employee/engineer, show only their own report
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        setCurrentUser(u);
+        const role = (u.role || '').toLowerCase();
+        if (role === 'employee' || role === 'engineer') params.userId = u.id;
+      }
+    } catch (e) {
+      // ignore
+    }
     if (start) params.start = start;
     if (end) params.end = end;
-    const res = await fetch(`${API_URL}/api/attendance/summary/all?` + new URLSearchParams(params));
+    // choose endpoint: for single-user summary use /summary, else use summary/all
+    let res;
+    if (params.userId) {
+      // fetch per-user summary for the month range
+      const s = params.start;
+      const e = params.end;
+      // call /api/attendance/summary?userId=...&month=YYYY-MM
+      // derive month from start
+      const month = s ? s.slice(0,7) : new Date().toISOString().slice(0,7);
+      res = await fetch(`${API_URL}/api/attendance/summary?` + new URLSearchParams({ userId: params.userId, month }));
+      const data = await res.json();
+      if (data.success) {
+        // normalize to an array shape compatible with table (one row)
+        setReport([{ user_id: data.userId, name: currentUser?.name ?? 'You', role: currentUser?.role ?? '', worked_days: data.workedDays, leave_days: data.leaveDays, present_today: null, today_punch_in: null, today_punch_out: null }]);
+      } else {
+        setReport([]);
+      }
+      setLoading(false);
+      return;
+    } else {
+      res = await fetch(`${API_URL}/api/attendance/summary/all?` + new URLSearchParams(params));
+    }
     const data = await res.json();
     if (data.success) {
-      setReport(data.data || []);
+      let rows = data.data || [];
+      try {
+        // if current user is HR, hide admin rows
+        const raw = localStorage.getItem('user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          if ((u.role || '').toString().toLowerCase() === 'hr') {
+            rows = (rows || []).filter(r => (r.role || '').toString().toLowerCase() !== 'admin');
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+      setReport(rows);
     } else {
       setReport([]);
     }
