@@ -26,41 +26,31 @@ const Sidebar = () => {
     navigate("/login");
   };
 
-  // Role-based menu items
+  // All menu items with role access
   const menuItems = [
     { to: "/admin-dashboard", label: "Dashboard", roles: ["admin"] },
     { to: "/hr-dashboard", label: "HR Dashboard", roles: ["hr"] },
-    { to: "/employee-dashboard", label: "Employee Dashboard", roles: ["employee"] },
-    { to: "/engineer", label: "Engineer Dashboard", roles: ["engineer"] },
+    { to: "/employee", label: "Dashboard", roles: ["employee"] },
+    { to: "/engineer", label: "Dashboard", roles: ["engineer"] },
     { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
+  { to: "/inventory", label: "Inventory", roles: ["admin", "hr"] },
     { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
-    // Removed Attendance, Leave, Reports for employees
-  ];
-
-  // Employee-only quick links
-  const employeeLinks = [
-    { to: "/profile", label: "Profile" },
-    { to: "/apply-leave", label: "Apply for Leave" },
-    { to: "/payslips", label: "Payslips" },
+    { to: "/profile", label: "Profile", roles: ["employee", "admin", "hr", "engineer"] },
+    { to: "/apply-leave", label: "Apply for Leave", roles: ["employee", "engineer"] },
+  { to: "/payslips", label: "Payslips", roles: ["employee", "engineer", "hr"] },
+    { to: "/attendance", label: "Attendance", roles: ["employee", "admin", "hr", "engineer"] },
   ];
 
   // Determine which menu to render
   const filteredMenu = (() => {
     if (!user) return [];
     const role = (user.role || "").toLowerCase();
-
-    if (role === "employee") {
-      // Employees only see employeeLinks, not the main menu
-      return [];
-    }
-
-    // Other roles see filtered menuItems
+    // Show items that include the user's role
     return menuItems.filter((item) => item.roles.includes(role));
   })();
 
   return (
     <div className="min-h-screen w-64 bg-gray-900 text-white flex flex-col p-4 flex-shrink-0">
-      {/* Navigation Links for non-employees */}
       <ul className="space-y-4">
         {filteredMenu.map((item) => (
           <li key={item.to}>
@@ -75,24 +65,6 @@ const Sidebar = () => {
           </li>
         ))}
       </ul>
-
-      {/* Employee quick links */}
-      {user && (user.role || "").toLowerCase() === "employee" && (
-        <ul className="mt-2 space-y-2">
-          {employeeLinks.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  isActive ? "text-yellow-400 font-bold" : "hover:text-yellow-400"
-                }
-              >
-                {item.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      )}
 
       {/* Profile Section */}
       {user && (

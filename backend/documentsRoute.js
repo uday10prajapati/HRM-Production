@@ -6,6 +6,28 @@ import { pool } from './db.js';
 
 const router = express.Router();
 
+// Ensure documents table exists (safety for environments without migrations run)
+async function ensureDocumentsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(64) NOT NULL,
+        filename TEXT NOT NULL,
+        path TEXT NOT NULL,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    // index to speed up counts/group by queries
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)`);
+  } catch (err) {
+    console.error('Failed to ensure documents table:', err?.message || err);
+  }
+}
+
+ensureDocumentsTable().catch(err => console.error('ensureDocumentsTable failed:', err));
+
 // storage configuration: files saved under backend/uploads/users/:id/
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -92,6 +114,29 @@ router.get('/user/:id', async (req, res) => {
   } catch (err) {
     console.error('Error fetching documents for user', err);
     res.status(500).json({ success: false, message: 'Error fetching documents', error: err.message });
+  }
+});
+
+// GET document counts grouped by user (admin helper)
+router.get('/counts', async (req, res) => {
+  try {
+    // make sure table exists (safety if migrations haven't run yet)
+    await ensureDocumentsTable();
+    const q = await pool.query('SELECT user_id, COUNT(*) as count FROM documents GROUP BY user_id');
+    res.json({ success: true, counts: q.rows });
+  } catch (err) {
+    console.error('Error fetching document counts', err?.message || err);
+    // If the error indicates missing table, try to create it and retry once
+    if (/relation "documents" does not exist/i.test(String(err?.message || ''))) {
+      try {
+        await ensureDocumentsTable();
+        const q2 = await pool.query('SELECT user_id, COUNT(*) as count FROM documents GROUP BY user_id');
+        return res.json({ success: true, counts: q2.rows });
+      } catch (err2) {
+        console.error('Retry after creating documents table failed', err2?.message || err2);
+      }
+    }
+    res.status(500).json({ success: false, message: 'Error fetching document counts', error: err?.message || String(err) });
   }
 });
 

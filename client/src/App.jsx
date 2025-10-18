@@ -11,8 +11,11 @@ import AttendancePage from "./pages/Attendance";
 import Profile from "./pages/Profile";
 import ApplyLeave from "./pages/ApplyLeave";
 import Payslips from "./pages/Payslips";
+import Documents from "./pages/Documents";
+import PayrollAdmin from "./pages/payroll/Payroll";
 import LeaveManagement from "./pages/LeaveManagement";
 import AllUsers from "./pages/AllUsers"
+import Stock from "./pages/Inovetry/Stock";
 
 function App() {
   return (
@@ -37,9 +40,12 @@ function App() {
   <Route path="/employee-dashboard" element={<EmployeeDashboard />} />
   <Route path="/employee" element={<EmployeeDashboard />} />
   <Route path="/attendance" element={<AttendancePage />} />
+  <Route path="/inventory" element={<Stock />} />
   <Route path="/profile" element={<Profile />} />
   <Route path="/apply-leave" element={<ApplyLeave />} />
   <Route path="/payslips" element={<Payslips />} />
+  <Route path="/documents" element={<Documents />} />
+  <Route path="/payroll" element={<PayrollAdmin />} />
   <Route path="/leave-management" element={<LeaveManagement />} />
 
       </Routes>

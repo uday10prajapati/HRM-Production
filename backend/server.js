@@ -7,6 +7,10 @@ import usersRoutes from "./usersRoute.js";
 import documentsRoutes from "./documentsRoute.js";
 import attendanceRoutes from "./attendanceRoute.js";
 import leaveRoutes from "./leaveRoute.js";
+import shiftsRoute from "./shiftsRoute.js"; // add this import
+import overtimeRoute from "./overtimeRoute.js";
+import stockRoute from "./stockRoute.js";
+import payrollRoute from './payrollRoute.js';
 
 
 dotenv.config();
@@ -26,6 +30,15 @@ app.use("/api/documents", documentsRoutes);
 app.use("/api/attendance", attendanceRoutes);
 // Leave routes
 app.use("/api/leave", leaveRoutes);
+// <-- ADD THIS LINE to register shifts endpoints
+app.use("/api/shifts", shiftsRoute);
+// Overtime endpoints
+app.use("/api/overtime", overtimeRoute);
+// Stock / inventory endpoints
+app.use("/api/stock", stockRoute);
+
+// Payroll endpoints
+app.use('/api/payroll', payrollRoute);
 
 app.listen(process.env.PORT || 5000, () =>
     console.log(`Server running on port ${process.env.PORT || 5000}`)

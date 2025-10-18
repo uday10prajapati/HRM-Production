@@ -9,6 +9,14 @@ const Admin = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [docsCount, setDocsCount] = useState(0);
+  const [user, setUser] = useState(null);
+
+  // Fetch logged-in user
+    useEffect(() => {
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser) navigate("/login");
+      else setUser(JSON.parse(storedUser));
+    }, [navigate]);
 
   const fetchData = async () => {
     try {
@@ -17,13 +25,11 @@ const Admin = () => {
       const all = res.data.users || res.data || [];
       setUsers(all);
 
-      // documents count (simple approach: fetch all users' documents counts)
+      // documents count (aggregate endpoint)
       try {
-        let totalDocs = 0;
-        for (const u of all) {
-          const d = await axios.get(`/api/documents/user/${u.id}`);
-          totalDocs += (d.data.documents || []).length;
-        }
+        const c = await axios.get('/api/documents/counts');
+        const counts = Array.isArray(c.data?.counts) ? c.data.counts : [];
+        const totalDocs = counts.reduce((acc, r) => acc + Number(r.count || 0), 0);
         setDocsCount(totalDocs);
       } catch (err) {
         console.warn('Failed to fetch documents count', err);
@@ -126,7 +132,7 @@ const Admin = () => {
               <h4 className="font-medium">Leave Management</h4>
               <p className="text-xs text-gray-500">Apply/approve leaves, balance tracking.</p>
               <div className="mt-2">
-                <button onClick={() => navigate('/leave')} className="px-2 py-1 bg-green-600 text-white rounded text-sm">Manage Leaves</button>
+                <button onClick={() => navigate('/leave-management')} className="px-2 py-1 bg-green-600 text-white rounded text-sm">Manage Leaves</button>
               </div>
             </div>
 

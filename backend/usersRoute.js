@@ -1,17 +1,21 @@
 import express from "express";
 import { pool } from "./db.js";
-import bcrypt from 'bcryptjs';
+import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
 // Ensure tasks table has expected columns (safe on startup)
 (async function ensureTaskColumns() {
   try {
-    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`);
-    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`);
-    console.log('✅ Ensured tasks table columns: status, assigned_by');
+    await pool.query(
+      `ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`
+    );
+    await pool.query(
+      `ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`
+    );
+    console.log("✅ Ensured tasks table columns: status, assigned_by");
   } catch (err) {
-    console.warn('Could not ensure tasks columns:', err.message || err);
+    console.warn("Could not ensure tasks columns:", err.message || err);
   }
 })();
 
@@ -29,16 +33,15 @@ const router = express.Router();
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('✅ Ensured tasks table exists');
+    console.log("✅ Ensured tasks table exists");
   } catch (err) {
-    console.warn('Could not create tasks table:', err.message || err);
+    console.warn("Could not create tasks table:", err.message || err);
   }
 })();
 
 // GET all users
 router.get("/", async (req, res) => {
   try {
-    // Fetch users with their tasks
     const result = await pool.query(`
       SELECT 
         u.id AS id,
@@ -47,16 +50,19 @@ router.get("/", async (req, res) => {
         u.role,
         u.leave_balance,
         u.attendance_status,
-        json_agg(
-          json_build_object(
-            'id', t.id,
-            'title', t.title,
-            'description', t.description,
-            'status', t.status,
-            'assignedBy', t.assigned_by,
-            'created_at', t.created_at
-          )
-        ) FILTER (WHERE t.id IS NOT NULL) AS tasks
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', t.id,
+              'title', t.title,
+              'description', t.description,
+              'status', t.status,
+              'assignedBy', t.assigned_by,
+              'created_at', t.created_at
+            )
+          ) FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tasks
       FROM users u
       LEFT JOIN tasks t ON u.id = t.user_id
       GROUP BY u.id
@@ -66,15 +72,31 @@ router.get("/", async (req, res) => {
     res.json({ success: true, users: result.rows });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Error fetching users" });
+    res.status(500).json({ success: false, message: "Error fetching users", error: err.message });
   }
 });
 
-// GET single user by ID (including tasks)
-router.get("/:id", async (req, res) => {
-  const { id } = req.params;
+// NEW: GET current user (client should send X-User-Id header or ?userId=)
+// Place before /:id so "me" does not get treated as an id
+router.get("/me", async (req, res) => {
   try {
-    const result = await pool.query(`
+    const authId = req.user?.id ?? null;
+    const headerId = req.header("x-user-id") ?? req.query.userId ?? null;
+    const id = authId ?? headerId;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing user id (set X-User-Id header or use auth middleware)",
+      });
+    }
+
+    if (!/^\d+$/.test(String(id))) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
+
+    const result = await pool.query(
+      `
       SELECT 
         u.id AS id,
         u.name,
@@ -82,22 +104,77 @@ router.get("/:id", async (req, res) => {
         u.role,
         u.leave_balance,
         u.attendance_status,
-        json_agg(
-          json_build_object(
-            'id', t.id,
-            'title', t.title,
-            'description', t.description,
-            'status', t.status,
-            'assignedBy', t.assigned_by,
-            'created_at', t.created_at
-          )
-        ) FILTER (WHERE t.id IS NOT NULL) AS tasks
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', t.id,
+              'title', t.title,
+              'description', t.description,
+              'status', t.status,
+              'assignedBy', t.assigned_by,
+              'created_at', t.created_at
+            )
+          ) FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tasks
       FROM users u
       LEFT JOIN tasks t ON u.id = t.user_id
       WHERE u.id = $1
       GROUP BY u.id
       LIMIT 1
-    `, [id]);
+    `,
+      [Number(id)]
+    );
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.json({ success: true, user: result.rows[0] });
+  } catch (err) {
+    console.error("GET /users/me error:", err);
+    return res.status(500).json({ success: false, message: "Error fetching user", error: err.message });
+  }
+});
+
+// GET single user by ID (including tasks) - validate id inside handler
+router.get("/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    if (!/^\d+$/.test(String(id))) {
+      return res.status(400).json({ success: false, message: "Invalid user id" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT 
+        u.id AS id,
+        u.name,
+        u.email,
+        u.role,
+        u.leave_balance,
+        u.attendance_status,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', t.id,
+              'title', t.title,
+              'description', t.description,
+              'status', t.status,
+              'assignedBy', t.assigned_by,
+              'created_at', t.created_at
+            )
+          ) FILTER (WHERE t.id IS NOT NULL),
+          '[]'
+        ) AS tasks
+      FROM users u
+      LEFT JOIN tasks t ON u.id = t.user_id
+      WHERE u.id = $1
+      GROUP BY u.id
+      LIMIT 1
+    `,
+      [Number(id)]
+    );
 
     if (!result.rows || result.rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -106,14 +183,26 @@ router.get("/:id", async (req, res) => {
     res.json({ success: true, user: result.rows[0] });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Error fetching user" });
+    res.status(500).json({ success: false, message: "Error fetching user", error: err.message });
   }
 });
 
-
 // POST create new user
 router.post("/create", async (req, res) => {
-  const { name, email, role, password, leaveBalance, attendanceStatus } = req.body;
+  const {
+    name,
+    email,
+    role,
+    password,
+    leave_balance,
+    leaveBalance,
+    attendance_status,
+    attendanceStatus,
+  } = req.body;
+
+  const leaveBal = Number(leave_balance ?? leaveBalance ?? 20);
+  const attendanceStat = attendance_status ?? attendanceStatus ?? "";
+
   if (!password) {
     return res.status(400).json({ success: false, message: "Password is required" });
   }
@@ -124,24 +213,36 @@ router.post("/create", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (name, email, role, leave_balance, attendance_status, password)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, email, role, leaveBalance, attendanceStatus, hashedPassword]
+      [name, email, role, leaveBal, attendanceStat, hashedPassword]
     );
     res.status(201).json({ success: true, user: result.rows[0] });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Error creating user" });
+    res.status(500).json({ success: false, message: "Error creating user", error: err.message });
   }
 });
 
 // PUT update a user by ID
 router.put("/update/:id", async (req, res) => {
   const { id } = req.params;
-  const { name, email, role, leaveBalance, attendanceStatus } = req.body;
+  const {
+    name,
+    email,
+    role,
+    leave_balance,
+    leaveBalance,
+    attendance_status,
+    attendanceStatus,
+  } = req.body;
+
+  const leaveBal = Number(leave_balance ?? leaveBalance ?? null);
+  const attendanceStat = attendance_status ?? attendanceStatus ?? null;
+
   try {
     const result = await pool.query(
       `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, attendance_status=$5
        WHERE id=$6 RETURNING *`,
-      [name, email, role, leaveBalance, attendanceStatus, id]
+      [name, email, role, leaveBal, attendanceStat, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -149,7 +250,7 @@ router.put("/update/:id", async (req, res) => {
     res.json({ success: true, user: result.rows[0] });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Error updating user" });
+    res.status(500).json({ success: false, message: "Error updating user", error: err.message });
   }
 });
 
@@ -164,7 +265,7 @@ router.delete("/delete/:id", async (req, res) => {
     res.json({ success: true, message: "User deleted successfully" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Error deleting user" });
+    res.status(500).json({ success: false, message: "Error deleting user", error: err.message });
   }
 });
 
@@ -172,7 +273,6 @@ router.delete("/delete/:id", async (req, res) => {
 router.post("/assign-task", async (req, res) => {
   const { userId } = req.body;
 
-  // normalize tasks: accept either tasks array or single title/description
   let tasks = req.body.tasks;
   if (!tasks || !Array.isArray(tasks)) {
     if (req.body.title && req.body.description) {
@@ -182,24 +282,23 @@ router.post("/assign-task", async (req, res) => {
     }
   }
 
-  // Validate userId
   if (!userId) {
     return res.status(400).json({ success: false, message: "User ID is required" });
   }
 
-  // Ensure tasks is an array
   if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
     return res.status(400).json({ success: false, message: "At least one task is required" });
   }
 
   try {
-    const queryText = "INSERT INTO tasks (user_id, title, description, status, assigned_by) VALUES ($1, $2, $3, $4, $5)";
+    const queryText =
+      "INSERT INTO tasks (user_id, title, description, status, assigned_by) VALUES ($1, $2, $3, $4, $5)";
 
     const promises = tasks.map((task) => {
       if (!task.title || !task.description) {
         throw new Error("Task title and description are required");
       }
-      const status = task.status || 'pending';
+      const status = task.status || "pending";
       const assignedBy = task.assignedBy || task.assigned_by || null;
       return pool.query(queryText, [userId, task.title, task.description, status, assignedBy]);
     });
@@ -214,32 +313,29 @@ router.post("/assign-task", async (req, res) => {
 });
 
 // PUT update a task's status
-router.put('/tasks/:taskId', async (req, res) => {
+router.put("/tasks/:taskId", async (req, res) => {
   const { taskId } = req.params;
   const { status } = req.body;
   console.log(`PUT /api/users/tasks/${taskId} payload:`, req.body);
 
   if (!status) {
-    return res.status(400).json({ success: false, message: 'Status is required' });
+    return res.status(400).json({ success: false, message: "Status is required" });
   }
 
   try {
-    const result = await pool.query(
-      `UPDATE tasks SET status=$1 WHERE id=$2 RETURNING *`,
-      [status, taskId]
-    );
+    const result = await pool.query(`UPDATE tasks SET status=$1 WHERE id=$2 RETURNING *`, [status, taskId]);
 
     if (result.rows.length === 0) {
       console.log(`Task ${taskId} not found`);
-      return res.status(404).json({ success: false, message: 'Task not found' });
+      return res.status(404).json({ success: false, message: "Task not found" });
     }
 
-    console.log('Updated task:', result.rows[0]);
+    console.log("Updated task:", result.rows[0]);
 
-    // Fetch and return the owning user's up-to-date data so frontend can sync immediately
     const updatedTask = result.rows[0];
     try {
-      const userRes = await pool.query(`
+      const userRes = await pool.query(
+        `
         SELECT 
           u.id AS id,
           u.name,
@@ -247,32 +343,37 @@ router.put('/tasks/:taskId', async (req, res) => {
           u.role,
           u.leave_balance,
           u.attendance_status,
-          json_agg(
-            json_build_object(
-              'id', t.id,
-              'title', t.title,
-              'description', t.description,
-              'status', t.status,
-              'assignedBy', t.assigned_by,
-              'created_at', t.created_at
-            )
-          ) FILTER (WHERE t.id IS NOT NULL) AS tasks
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', t.id,
+                'title', t.title,
+                'description', t.description,
+                'status', t.status,
+                'assignedBy', t.assigned_by,
+                'created_at', t.created_at
+              )
+            ) FILTER (WHERE t.id IS NOT NULL),
+            '[]'
+          ) AS tasks
         FROM users u
         LEFT JOIN tasks t ON u.id = t.user_id
         WHERE u.id = $1
         GROUP BY u.id
         LIMIT 1
-      `, [updatedTask.user_id]);
+      `,
+        [updatedTask.user_id]
+      );
 
       const userPayload = userRes.rows && userRes.rows[0] ? userRes.rows[0] : null;
       return res.json({ success: true, task: updatedTask, user: userPayload });
     } catch (err2) {
-      console.error('Error fetching user after task update:', err2);
+      console.error("Error fetching user after task update:", err2);
       return res.json({ success: true, task: updatedTask });
     }
   } catch (err) {
-    console.error('Error updating task:', err);
-    res.status(500).json({ success: false, message: 'Error updating task', error: err.message });
+    console.error("Error updating task:", err);
+    res.status(500).json({ success: false, message: "Error updating task", error: err.message });
   }
 });
 
