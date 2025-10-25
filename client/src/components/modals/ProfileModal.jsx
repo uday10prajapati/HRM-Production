@@ -33,10 +33,6 @@ const ProfileModal = ({ user, userData, onClose }) => {
             <div className="font-medium text-gray-800">{data.leave_balance ?? '-'}</div>
           </div>
 
-          <div>
-            <div className="text-sm text-gray-500">Attendance Status</div>
-            <div className="font-medium text-gray-800">{data.attendance_status ?? '-'}</div>
-          </div>
 
           <div>
             <div className="text-sm text-gray-500">Tasks</div>

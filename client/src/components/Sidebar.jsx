@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import axios from 'axios';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -23,6 +24,7 @@ const Sidebar = () => {
 
   const handleLogout = () => {
     localStorage.removeItem("user");
+    try { delete axios.defaults.headers.common['x-user-id']; } catch (e) {}
     navigate("/login");
   };
 
@@ -30,15 +32,12 @@ const Sidebar = () => {
   const menuItems = [
     { to: "/admin-dashboard", label: "Dashboard", roles: ["admin"] },
     { to: "/hr-dashboard", label: "HR Dashboard", roles: ["hr"] },
-    { to: "/employee", label: "Dashboard", roles: ["employee"] },
-    { to: "/engineer", label: "Dashboard", roles: ["engineer"] },
-    { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
+  { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
   { to: "/inventory", label: "Inventory", roles: ["admin", "hr"] },
-    { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
-    { to: "/profile", label: "Profile", roles: ["employee", "admin", "hr", "engineer"] },
-    { to: "/apply-leave", label: "Apply for Leave", roles: ["employee", "engineer"] },
-  { to: "/payslips", label: "Payslips", roles: ["employee", "engineer", "hr"] },
-    { to: "/attendance", label: "Attendance", roles: ["employee", "admin", "hr", "engineer"] },
+  { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
+  { to: "/profile", label: "Profile", roles: ["admin", "hr"] },
+  { to: "/payslips", label: "Payslips", roles: ["admin", "hr"] },
+  { to: "/attendance", label: "Attendance", roles: ["admin", "hr"] },
   ];
 
   // Determine which menu to render

@@ -7,13 +7,14 @@ const router = express.Router();
 (async function ensureOvertimeTable() {
   try {
     await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
       CREATE TABLE IF NOT EXISTS overtime_records (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
         date DATE NOT NULL,
         worked_seconds INTEGER DEFAULT 0,
         overtime_seconds INTEGER DEFAULT 0,
-        shift_id INTEGER,
+        shift_id UUID,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, date)
       );
@@ -41,8 +42,8 @@ export async function computeOvertimeFor(userId, dateStr) {
   try {
     if (!userId || !dateStr) return null;
     // fetch punches for the day
-    const attQ = `SELECT MIN(created_at) FILTER (WHERE type='in') AS punch_in, MAX(created_at) FILTER (WHERE type='out') AS punch_out FROM attendances WHERE user_id=$1 AND created_at::date = $2`;
-    const attRes = await pool.query(attQ, [Number(userId), dateStr]);
+  const attQ = `SELECT MIN(created_at) FILTER (WHERE type='in') AS punch_in, MAX(created_at) FILTER (WHERE type='out') AS punch_out FROM attendance WHERE user_id=$1 AND created_at::date = $2`;
+  const attRes = await pool.query(attQ, [userId, dateStr]);
     const row = attRes.rows[0] ?? {};
     const punchIn = row.punch_in ? new Date(row.punch_in) : null;
     const punchOut = row.punch_out ? new Date(row.punch_out) : null;
@@ -56,8 +57,8 @@ export async function computeOvertimeFor(userId, dateStr) {
     let shiftId = null;
     let thresholdSeconds = 8 * 3600; // default 8 hours
     try {
-      const saQ = `SELECT sa.shift_id, s.start_time, s.end_time FROM shift_assignments sa JOIN shifts s ON sa.shift_id = s.id WHERE sa.user_id=$1 AND sa.date=$2 LIMIT 1`;
-      const saRes = await pool.query(saQ, [Number(userId), dateStr]);
+  const saQ = `SELECT sa.shift_id, s.start_time, s.end_time FROM shift_assignments sa JOIN shifts s ON sa.shift_id = s.id WHERE sa.user_id::text=$1 AND sa.date=$2 LIMIT 1`;
+  const saRes = await pool.query(saQ, [userId, dateStr]);
       if (saRes.rows && saRes.rows.length) {
         const srow = saRes.rows[0];
         shiftId = srow.shift_id;
@@ -82,7 +83,7 @@ export async function computeOvertimeFor(userId, dateStr) {
       ON CONFLICT (user_id, date) DO UPDATE SET worked_seconds = EXCLUDED.worked_seconds, overtime_seconds = EXCLUDED.overtime_seconds, shift_id = EXCLUDED.shift_id, created_at = CURRENT_TIMESTAMP
       RETURNING *;
     `;
-    const r = await pool.query(q, [Number(userId), dateStr, Number(workedSeconds), Number(overtimeSeconds), shiftId]);
+  const r = await pool.query(q, [userId, dateStr, Number(workedSeconds), Number(overtimeSeconds), shiftId]);
     return r.rows && r.rows[0] ? r.rows[0] : null;
   } catch (err) {
     console.error('computeOvertimeFor error', err?.message ?? err);
@@ -102,9 +103,13 @@ router.get("/", async (req, res) => {
 
     const vals = [start, end];
     let where = `WHERE date BETWEEN $1 AND $2`;
-    if (userId) { vals.push(Number(userId)); where += ` AND user_id = $${vals.length}`; }
+    if (userId) {
+      // Accept both UUID and legacy integer-like user IDs. Use text comparison to
+      // avoid type mismatches between uuid and integer representations.
+      vals.push(String(userId)); where += ` AND user_id::text = $${vals.length}`;
+    }
 
-    const q = `SELECT o.*, u.name AS user_name FROM overtime_records o LEFT JOIN users u ON u.id = o.user_id ${where} ORDER BY o.date ASC`;
+  const q = `SELECT o.*, u.name AS user_name FROM overtime_records o LEFT JOIN users u ON u.id::text = o.user_id::text ${where} ORDER BY o.date ASC`;
     const result = await pool.query(q, vals);
     return res.json(result.rows);
   } catch (err) {
@@ -116,9 +121,9 @@ router.get("/", async (req, res) => {
 // POST /api/overtime/recompute  body: { userId, date }
 router.post('/recompute', async (req, res) => {
   try {
-    const { userId, date } = req.body || {};
-    if (!userId || !date) return res.status(400).json({ success: false, message: 'userId and date required' });
-    const rec = await computeOvertimeFor(Number(userId), date);
+  const { userId, date } = req.body || {};
+  if (!userId || !date) return res.status(400).json({ success: false, message: 'userId and date required' });
+  const rec = await computeOvertimeFor(userId, date);
     return res.json({ success: true, record: rec });
   } catch (err) {
     console.error('/overtime/recompute error', err);

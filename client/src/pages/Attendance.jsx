@@ -19,6 +19,20 @@ function AttendancePage() {
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+  const getAuthHeaders = () => {
+    try {
+      const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+      if (!raw) return { id: null, headers: {} };
+      const p = JSON.parse(raw);
+      const u = p?.user ?? p?.data ?? p;
+      const id = u?.id ?? u?.userId ?? null;
+      if (!id) return { id: null, headers: {} };
+      return { id: String(id), headers: { 'x-user-id': String(id) } };
+    } catch {
+      return { id: null, headers: {} };
+    }
+  };
+
   const fetchReport = async () => {
   setLoading(true);
   try {
@@ -40,15 +54,21 @@ function AttendancePage() {
     if (end) params.end = end;
     // choose endpoint: for single-user summary use /summary, else use summary/all
     let res;
-    if (params.userId) {
+      if (params.userId) {
       // fetch per-user summary for the month range
       const s = params.start;
       const e = params.end;
       // call /api/attendance/summary?userId=...&month=YYYY-MM
       // derive month from start
       const month = s ? s.slice(0,7) : new Date().toISOString().slice(0,7);
-      res = await fetch(`${API_URL}/api/attendance/summary?` + new URLSearchParams({ userId: params.userId, month }));
-      const data = await res.json();
+  const { id, headers } = getAuthHeaders();
+  if (!id) console.warn('fetchReport: no user id found in localStorage');
+  // ensure the server can also accept ?userId as a fallback
+  const reqParams = { userId: params.userId, month };
+  if (!headers || !headers['x-user-id']) reqParams.userId = params.userId;
+  console.debug('fetchReport: calling summary with', { params: reqParams, headers });
+  res = await axios.get(`${API_URL}/api/attendance/summary`, { params: reqParams, headers });
+  const data = res.data;
       if (data.success) {
         // normalize to an array shape compatible with table (one row)
         setReport([{ user_id: data.userId, name: currentUser?.name ?? 'You', role: currentUser?.role ?? '', worked_days: data.workedDays, leave_days: data.leaveDays, present_today: null, today_punch_in: null, today_punch_out: null }]);
@@ -58,9 +78,15 @@ function AttendancePage() {
       setLoading(false);
       return;
     } else {
-      res = await fetch(`${API_URL}/api/attendance/summary/all?` + new URLSearchParams(params));
+      const { id, headers } = getAuthHeaders();
+      if (!id) console.warn('fetchReport: no user id found in localStorage');
+      const reqParams = { ...params };
+      // attach userId fallback when header missing
+      if (!headers || !headers['x-user-id']) reqParams.userId = reqParams.userId ?? id;
+  console.debug('fetchReport: calling summary/all with', { params: reqParams, headers });
+  res = await axios.get(`${API_URL}/api/attendance/summary/all`, { params: reqParams, headers });
     }
-    const data = await res.json();
+    const data = res.data;
     if (data.success) {
       let rows = data.data || [];
       try {
@@ -86,6 +112,38 @@ function AttendancePage() {
   }
 };
 
+  // Fetch raw attendance records (admin/HR) for the selected range and optional user
+  const [rawRecords, setRawRecords] = useState([]);
+  const [showRaw, setShowRaw] = useState(false);
+
+  const fetchRawRecords = async () => {
+    try {
+      const params = {};
+      if (start) params.start = start;
+      if (end) params.end = end;
+      // if user selected a specific user (current user), include userId
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if ((u.role || '').toLowerCase() === 'admin' || (u.role || '').toLowerCase() === 'hr') {
+          // admin/HR can fetch all; optionally filter by a selected user
+        } else {
+          params.userId = u.id;
+        }
+      }
+      const { id, headers } = getAuthHeaders();
+      if (!id) console.warn('fetchRawRecords: no user id found in localStorage');
+      const reqParams = { ...params };
+      if (!headers || !headers['x-user-id']) reqParams.userId = reqParams.userId ?? id;
+  console.debug('fetchRawRecords: calling records with', { params: reqParams, headers });
+  const res = await axios.get(`${API_URL}/api/attendance/records`, { params: reqParams, headers });
+      setRawRecords(res.data.rows || []);
+    } catch (err) {
+      console.error('Failed to fetch raw attendance records', err?.response?.data ?? err);
+      setRawRecords([]);
+    }
+  };
+
 
   function getStoredUserId() {
     try {
@@ -104,9 +162,11 @@ function AttendancePage() {
     if (!userId) { setLatestPunch(null); return; }
     const date = forDate ?? new Date().toISOString().slice(0, 10);
     try {
-      const res = await axios.get(`${API_URL}/api/attendance/report`, {
-        params: { userId, start: date, end: date }
-      });
+      const { id, headers } = getAuthHeaders();
+      const reqParams = { userId, start: date, end: date };
+      if (!headers || !headers['x-user-id']) reqParams.userId = userId;
+  console.debug('fetchLatestPunch: calling report with', { params: reqParams, headers });
+  const res = await axios.get(`${API_URL}/api/attendance/report`, { params: reqParams, headers });
       const data = res.data;
       let row = null;
       // handle different response shapes defensively
@@ -138,7 +198,39 @@ function AttendancePage() {
     });
 
     try {
-      const res = await axios.post(`${API_URL}/api/attendance/punch`, { userId, type });
+      // Determine current user's role. For HR/Admin we intentionally DO NOT include location.
+      let role = null;
+      try {
+        const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+        if (raw) {
+          const p = JSON.parse(raw);
+          const u = p?.user ?? p?.data ?? p;
+          role = (u?.role || '').toString().toLowerCase();
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+
+      const payload = { userId, type };
+      if (role !== 'hr' && role !== 'admin') {
+        // try to get current location (graceful, non-blocking if denied) only for non-HR/admin
+        const getCurrentLocation = (timeoutMs = 5000) => new Promise((resolve) => {
+          if (!navigator?.geolocation) return resolve(null);
+          let resolved = false;
+          const onSuccess = (pos) => { if (!resolved) { resolved = true; resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); } };
+          const onError = () => { if (!resolved) { resolved = true; resolve(null); } };
+          navigator.geolocation.getCurrentPosition(onSuccess, onError, { timeout: timeoutMs });
+          // fallback timeout
+          setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, timeoutMs + 200);
+        });
+
+        const loc = await getCurrentLocation(5000);
+        if (loc) { payload.latitude = loc.latitude; payload.longitude = loc.longitude; }
+      }
+  const { id, headers } = getAuthHeaders();
+  if (!id) console.warn('handlePunch: no user id found in localStorage');
+  console.debug('handlePunch: sending punch', { payload, headers });
+  const res = await axios.post(`${API_URL}/api/attendance/punch`, payload, { headers });
       const att = res?.data?.attendance ?? res?.data;
 
       // if backend returned created_at and type, use it to reconcile exact server time
@@ -210,6 +302,20 @@ function AttendancePage() {
               >
                 Punch Out
               </button>
+              {(() => {
+                try {
+                  const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+                  if (raw) {
+                    const p = JSON.parse(raw);
+                    const u = p?.user ?? p?.data ?? p;
+                    const role = (u?.role || '').toString().toLowerCase();
+                    if (role === 'hr' || role === 'admin') {
+                      return <div className="text-xs text-gray-500 self-center">(Your punches will not include location)</div>;
+                    }
+                  }
+                } catch (e) {}
+                return null;
+              })()}
                <select value={group} onChange={(e) => setGroup(e.target.value)} className="px-3 py-2 rounded border">
                  <option value="day">Daily</option>
                  <option value="week">Weekly</option>
@@ -267,11 +373,15 @@ function AttendancePage() {
           {/* Report table */}
           <div className="mt-6 bg-white rounded shadow p-4">
             <h2 className="text-lg font-semibold mb-3">Attendance Report</h2>
+            <div className="mb-3 flex gap-2 items-center">
+              <button onClick={() => { setShowRaw(v => !v); if (!showRaw) fetchRawRecords(); }} className="px-3 py-1 bg-gray-200 rounded">{showRaw ? 'Hide' : 'Show'} Raw Records</button>
+            </div>
             {loading ? (
               <div className="text-gray-500">Loading...</div>
             ) : !report || report.length === 0 ? (
               <div className="text-gray-500">No records</div>
             ) : (
+              <>
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50">
@@ -300,6 +410,53 @@ function AttendancePage() {
                   </tbody>
                 </table>
               </div>
+
+              {showRaw && (
+                <div className="mt-6 bg-white rounded shadow p-4">
+                  <h3 className="text-md font-semibold mb-2">Raw Attendance Records</h3>
+                  {rawRecords.length === 0 ? (
+                    <div className="text-gray-500">No records</div>
+                  ) : (
+                    <div className="overflow-auto max-h-96">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="py-2 px-3">When</th>
+                            <th className="py-2 px-3">User</th>
+                            <th className="py-2 px-3">Role</th>
+                            <th className="py-2 px-3">Type</th>
+                            <th className="py-2 px-3">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rawRecords.map(r => (
+                            <tr key={r.id} className="border-t hover:bg-gray-50">
+                              <td className="py-2 px-3">{r.created_at}</td>
+                              <td className="py-2 px-3">{r.user_name ?? r.user_id}</td>
+                              <td className="py-2 px-3">{r.user_role ?? ''}</td>
+                              <td className="py-2 px-3">{r.type}</td>
+                              <td className="py-2 px-3">{r.notes ?? ''}</td>
+                              <td className="py-2 px-3">
+                                {r.latitude && r.longitude ? (
+                                  <button
+                                    onClick={() => window.open(`https://www.google.com/maps?q=${r.latitude},${r.longitude}`, '_blank')}
+                                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
+                                  >
+                                    View Map
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-gray-400">No location</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+              </>
             )}
           </div>
 

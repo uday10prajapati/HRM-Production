@@ -16,6 +16,8 @@ const HrDashboard = () => {
   const [assignForm, setAssignForm] = useState({ userId: "", shiftId: "", date: "" });
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [adjustForm, setAdjustForm] = useState({ userId: "", leave_balance: "" });
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -103,6 +105,45 @@ const HrDashboard = () => {
       }
       setUsers(all);
     } catch (e) { console.error(e); }
+  }
+
+  // fetch latest attendance row for a user that contains latitude/longitude
+  async function fetchUserLocation(user) {
+    try {
+      setLocLoading(true);
+      const today = new Date().toISOString().slice(0,10);
+      // request a wide range; the endpoint will filter and we pick the latest row with coords
+      const params = { userId: user.id, start: '1970-01-01', end: today };
+      // include x-user-id header if present for auth fallback
+      let headers = {};
+      try {
+        const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+        if (raw) {
+          const p = JSON.parse(raw);
+          const u = p?.user ?? p?.data ?? p;
+          const id = u?.id ?? u?.userId ?? null;
+          if (id) headers['x-user-id'] = String(id);
+        }
+      } catch (e) {}
+
+      const res = await axios.get(`/api/attendance/records`, { params, headers });
+      const rows = res?.data?.rows ?? [];
+      // find most recent row that has both latitude and longitude
+      const withCoords = (rows || []).filter(r => r.latitude != null && r.longitude != null);
+      if (!withCoords || withCoords.length === 0) {
+        alert('No recent location found for this user');
+        return;
+      }
+      // sort by created_at descending
+      withCoords.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+      const latest = withCoords[0];
+      setSelectedLocation({ user, latitude: latest.latitude, longitude: latest.longitude, when: latest.created_at });
+    } catch (err) {
+      console.error('Could not fetch user location', err?.response?.data ?? err);
+      alert('Failed to fetch user location');
+    } finally {
+      setLocLoading(false);
+    }
   }
 
   async function handleOpenAdjust(user) {
@@ -217,6 +258,7 @@ const HrDashboard = () => {
                         <div className="text-sm text-gray-600">Leave balance: {u.leave_balance ?? u.leaveBalance ?? 'N/A'}</div>
                       </div>
                       <div className="flex gap-2">
+                        <button onClick={() => fetchUserLocation(u)} className="px-3 py-1 bg-blue-500 text-white rounded text-sm">Location</button>
                         {((u.role || '').toLowerCase() !== 'admin') ? (
                           <button onClick={() => handleOpenAdjust(u)} className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Adjust Leave</button>
                         ) : (
@@ -287,6 +329,23 @@ const HrDashboard = () => {
               <button type="submit" className="px-3 py-1 bg-yellow-500 text-white rounded">Save</button>
             </div>
           </form>
+        </div>
+      )}
+      {/* Location modal */}
+      {selectedLocation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white p-6 rounded shadow w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Last Known Location for {selectedLocation.user?.name}</h3>
+            <div className="mb-2 text-sm text-gray-700">When: {selectedLocation.when}</div>
+            <div className="mb-4">
+              <div className="text-sm">Latitude: <span className="font-mono">{selectedLocation.latitude}</span></div>
+              <div className="text-sm">Longitude: <span className="font-mono">{selectedLocation.longitude}</span></div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setSelectedLocation(null)} className="px-3 py-1 border rounded">Close</button>
+              <button onClick={() => window.open(`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}`, '_blank')} className="px-3 py-1 bg-blue-600 text-white rounded">View on Google Maps</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -148,7 +148,7 @@ const Admin = () => {
               <h4 className="font-medium">Roles & Permissions</h4>
               <p className="text-xs text-gray-500">Manage user roles and access control.</p>
               <div className="mt-2">
-                <button onClick={() => navigate('/roles')} className="px-2 py-1 bg-gray-200 rounded text-sm">Manage Roles</button>
+                <button onClick={() => navigate('/all-users')} className="px-2 py-1 bg-gray-200 rounded text-sm">Manage Roles</button>
               </div>
             </div>
           </div>

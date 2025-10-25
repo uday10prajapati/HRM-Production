@@ -1,1 +1,12 @@
-node_modules
+node_modules/
+
+# Uploaded files (user uploaded files)
+storage/uploads/
+
+# Env files
+.env
+backend/.env
+
+# OS
+.DS_Store
+Thumbs.db

@@ -23,6 +23,27 @@ const GiveTaskModal = ({ selectedUser, taskData, setTaskData, onSubmit, onClose 
         onChange={(e) => setTaskData({ ...taskData, description: e.target.value })}
         required
       />
+      <input
+        type="text"
+        placeholder="Customer Name (optional)"
+        className="w-full border px-3 py-2 rounded"
+        value={taskData.customerName || ''}
+        onChange={(e) => setTaskData({ ...taskData, customerName: e.target.value })}
+      />
+      <textarea
+        placeholder="Customer Address (optional)"
+        className="w-full border px-3 py-2 rounded"
+        rows="2"
+        value={taskData.customerAddress || ''}
+        onChange={(e) => setTaskData({ ...taskData, customerAddress: e.target.value })}
+      />
+      <input
+        type="text"
+        placeholder="Customer Mobile (optional)"
+        className="w-full border px-3 py-2 rounded"
+        value={taskData.customerMobile || ''}
+        onChange={(e) => setTaskData({ ...taskData, customerMobile: e.target.value })}
+      />
 
       <div className="flex justify-end gap-2">
         <button

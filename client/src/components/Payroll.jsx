@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import Sidebar from "./Sidebar";
+import Navbar from "./Navbar";
 
 export default function Payroll() {
     const [payroll, setPayroll] = useState([]);
@@ -11,7 +13,10 @@ export default function Payroll() {
     }, []);
 
     return (
+        
         <div>
+            <Navbar />
+            <Sidebar />
             <h2 className="text-2xl font-bold mb-4">Payroll & Compliance</h2>
             <table className="min-w-full bg-white rounded-xl shadow">
                 <thead className="bg-blue-500 text-white">

@@ -9,6 +9,20 @@ export default function Attendance() {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
 
+  const getAuthHeaders = () => {
+    try {
+      const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+      if (!raw) return {};
+      const p = JSON.parse(raw);
+      const u = p?.user ?? p?.data ?? p;
+      const id = u?.id ?? u?.userId ?? null;
+      if (!id) return {};
+      return { id: String(id), headers: { 'x-user-id': String(id) } };
+    } catch {
+      return {};
+    }
+  };
+
   useEffect(() => {
     // try to get logged user id from localStorage
     try {
@@ -32,9 +46,14 @@ export default function Attendance() {
       const start = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
       const end = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
 
-      const r = await axios.get(`/api/attendance/report?userId=${userId}&start=${start}&end=${end}`);
-      setRecords(Array.isArray(r.data) ? r.data : []);
-      const s = await axios.get(`/api/attendance/summary?userId=${userId}&month=${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const { id, headers } = getAuthHeaders();
+  if (!id) console.warn('fetchReport(component): no user id in storage');
+  const reqParams = { userId, start, end };
+  if (!headers || !headers['x-user-id']) reqParams.userId = userId;
+  console.debug('fetchReport(component): calling report', { params: reqParams, headers });
+  const r = await axios.get(`/api/attendance/report`, { params: reqParams, headers });
+  setRecords(Array.isArray(r.data) ? r.data : []);
+  const s = await axios.get(`/api/attendance/summary`, { params: { userId, month: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` }, ...(headers) });
       if (s?.data?.success) setSummary({ workedDays: s.data.workedDays, leaveDays: s.data.leaveDays });
     } catch (err) {
       console.error("Failed fetching attendance report/summary:", err?.response?.data ?? err);
@@ -49,7 +68,20 @@ export default function Attendance() {
       return;
     }
     try {
-      await axios.post("/api/attendance/punch", { userId, type });
+      // attempt to fetch geolocation, but don't block if unavailable
+      const getLoc = (timeoutMs = 4000) => new Promise((resolve) => {
+        if (!navigator?.geolocation) return resolve(null);
+        let done = false;
+        navigator.geolocation.getCurrentPosition((p) => { if (!done) { done = true; resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude }); } }, () => { if (!done) { done = true; resolve(null); } }, { timeout: timeoutMs });
+        setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs + 100);
+      });
+      const loc = await getLoc(4000);
+      const payload = { userId, type };
+      if (loc) { payload.latitude = loc.latitude; payload.longitude = loc.longitude; }
+  const { id, headers } = getAuthHeaders();
+  if (!id) console.warn('handlePunch(component): no user id in storage');
+  console.debug('handlePunch(component): sending punch', { payload, headers });
+  await axios.post("/api/attendance/punch", payload, { headers });
       await fetchReport();
       alert(`Punched ${type}`);
     } catch (err) {

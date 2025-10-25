@@ -72,7 +72,15 @@ export default function Stock() {
       <div className="flex flex-1 min-h-screen">
         <Sidebar />
         <main className="p-6 bg-gray-100 flex-1 overflow-auto">
-          <h1 className="text-2xl font-semibold mb-4">Inventory & Stock Management</h1>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-semibold">Inventory & Stock Management</h1>
+              <p className="text-sm text-gray-600">Overview of central stock, low-stock alerts and engineer allocations.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={exportCsv} className="px-3 py-1 bg-green-600 text-white rounded shadow">Export CSV</button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
@@ -86,39 +94,60 @@ export default function Stock() {
           {/* engineer-facing stock UI is shown on engineer dashboard only */}
 
           <div className="mt-6 bg-white rounded shadow p-4">
-            <h2 className="text-lg font-semibold mb-3">Engineer Allocations & Reports</h2>
-            <div className="mb-3 flex gap-2">
-              <button onClick={exportCsv} className="px-3 py-1 bg-green-600 text-white rounded">Export CSV</button>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Engineer Allocations & Reports</h2>
+              <div className="text-sm text-gray-600">Engineers with low-stock: <strong className="text-gray-800">{lowEngineersCount}</strong></div>
             </div>
-            {overviewLoading ? <div>Loading...</div> : (
-              allocations.length === 0 ? <div className="text-gray-500">No allocations</div> : (
-                <div className="overflow-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-2 py-2 text-left">Engineer</th>
-                        <th className="px-2 py-2 text-left">Item</th>
-                        <th className="px-2 py-2">Qty</th>
-                        <th className="px-2 py-2">Threshold</th>
-                        <th className="px-2 py-2">Last Reported</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allocations.map(a => (
-                        <tr key={a.id} className={`border-t ${Number(a.quantity) <= Number(a.item_threshold || 0) ? 'bg-yellow-50' : ''}`}>
-                          <td className="px-2 py-2">
-                            <button onClick={() => openEngineerModal(a.engineer_id || a.engineer_name)} className="text-blue-600 underline">{a.engineer_name || a.engineer_id}</button>
+
+            {overviewLoading ? (
+              <div>Loading...</div>
+            ) : allocations.length === 0 ? (
+              <div className="text-gray-500">No allocations</div>
+            ) : (
+              <div className="overflow-auto">
+                {/* Top alert if any item touches threshold */}
+                {allocations.some(a => Number(a.quantity) <= Number(a.item_threshold || 0)) && (
+                  <div className="mb-3 p-3 rounded bg-yellow-50 border border-yellow-200 text-yellow-800">
+                    ⚠️ Some stock items are low — <strong>stock is almost empty</strong> for one or more allocations. Please refill soon.
+                  </div>
+                )}
+
+                <table className="min-w-full text-sm divide-y">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-3 py-2 text-left">Engineer</th>
+                      <th className="px-3 py-2 text-left">Item</th>
+                      <th className="px-3 py-2 text-center">Qty</th>
+                      <th className="px-3 py-2 text-center">Threshold</th>
+                      <th className="px-3 py-2">Last Reported</th>
+                      <th className="px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allocations.map(a => {
+                      const isLow = Number(a.quantity) <= Number(a.item_threshold || 0);
+                      return (
+                        <tr key={a.id} className={`border-t ${isLow ? 'bg-yellow-50' : ''}`}>
+                          <td className="px-3 py-2">
+                            <button onClick={() => openEngineerModal(a.engineer_id || a.engineer_name)} className="text-blue-600 hover:underline">{a.engineer_name || a.engineer_id}</button>
                           </td>
-                          <td className="px-2 py-2">{a.item_name || a.stock_item_id}</td>
-                          <td className="px-2 py-2 text-center">{a.quantity}</td>
-                          <td className="px-2 py-2 text-center">{a.item_threshold}</td>
-                          <td className="px-2 py-2">{a.last_reported_at ? new Date(a.last_reported_at).toLocaleString() : '—'}</td>
+                          <td className="px-3 py-2">{a.item_name || a.stock_item_id}</td>
+                          <td className="px-3 py-2 text-center">{a.quantity}</td>
+                          <td className="px-3 py-2 text-center">{a.item_threshold}</td>
+                          <td className="px-3 py-2">{a.last_reported_at ? new Date(a.last_reported_at).toLocaleString() : '—'}</td>
+                          <td className="px-3 py-2">
+                            {isLow ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800 border border-yellow-200">Almost empty</span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-50 text-green-800">OK</span>
+                            )}
+                          </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
           {/* Low engineers summary */}

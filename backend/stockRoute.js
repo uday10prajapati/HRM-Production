@@ -7,8 +7,9 @@ const router = express.Router();
 // Create tables if not exist
 async function ensureTables() {
   await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE TABLE IF NOT EXISTS stock_items (
-      id SERIAL PRIMARY KEY,
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       sku TEXT UNIQUE,
       name TEXT NOT NULL,
       description TEXT,
@@ -18,9 +19,9 @@ async function ensureTables() {
     );
 
     CREATE TABLE IF NOT EXISTS engineer_stock (
-      id SERIAL PRIMARY KEY,
-      engineer_id INTEGER NOT NULL,
-      stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID NOT NULL,
+      stock_item_id UUID NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
       quantity INTEGER NOT NULL DEFAULT 0,
       assigned_at TIMESTAMP DEFAULT now(),
       last_reported_at TIMESTAMP,
@@ -29,9 +30,9 @@ async function ensureTables() {
     );
 
     CREATE TABLE IF NOT EXISTS stock_consumption (
-      id SERIAL PRIMARY KEY,
-      engineer_id INTEGER,
-      stock_item_id INTEGER REFERENCES stock_items(id) ON DELETE SET NULL,
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID,
+      stock_item_id UUID REFERENCES stock_items(id) ON DELETE SET NULL,
       quantity INTEGER NOT NULL,
       note TEXT,
       consumed_at TIMESTAMP DEFAULT now()
@@ -76,11 +77,38 @@ router.post('/assign', async (req, res) => {
   const { engineerId, stockItemId, quantity = 0 } = req.body;
   if (!engineerId || !stockItemId) return res.status(400).json({ error: 'engineerId and stockItemId required' });
   try {
+    // Ensure existing schema can accept UUID/text values: if columns are integer type
+    // convert them to TEXT so UUID strings won't break.
+    try {
+      const colRes = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='engineer_stock' AND column_name IN ('engineer_id','stock_item_id')");
+      const colMap = {};
+      for (const r of colRes.rows) colMap[r.column_name] = r.data_type;
+      if (colMap['engineer_id'] && colMap['engineer_id'].toLowerCase().includes('int')) {
+        try {
+          await pool.query("ALTER TABLE engineer_stock ALTER COLUMN engineer_id TYPE TEXT USING engineer_id::text");
+          console.log('Converted engineer_stock.engineer_id to TEXT');
+        } catch (e) {
+          console.warn('Could not convert engineer_id to TEXT', e?.message || e);
+        }
+      }
+      if (colMap['stock_item_id'] && colMap['stock_item_id'].toLowerCase().includes('int')) {
+        try {
+          await pool.query("ALTER TABLE engineer_stock ALTER COLUMN stock_item_id TYPE TEXT USING stock_item_id::text");
+          console.log('Converted engineer_stock.stock_item_id to TEXT');
+        } catch (e) {
+          console.warn('Could not convert stock_item_id to TEXT', e?.message || e);
+        }
+      }
+    } catch (colErr) {
+      // ignore schema check errors and proceed
+      console.warn('Could not inspect engineer_stock columns', colErr?.message || colErr);
+    }
+
     const up = await pool.query(
       `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) VALUES ($1,$2,$3)
        ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
        RETURNING *`,
-      [engineerId, stockItemId, Number(quantity || 0)]
+      [String(engineerId), String(stockItemId), Number(quantity || 0)]
     );
     res.json({ assigned: up.rows[0] });
   } catch (err) {
@@ -93,13 +121,14 @@ router.post('/assign', async (req, res) => {
 router.get('/engineer/:id', async (req, res) => {
   const id = req.params.id;
   try {
+    // Accept both UUID and legacy integer-like engineer IDs by comparing as text.
     const q = await pool.query(
       `SELECT es.id as engineer_stock_id, es.engineer_id, es.quantity as engineer_quantity, si.*
        FROM engineer_stock es
        JOIN stock_items si ON si.id = es.stock_item_id
-       WHERE es.engineer_id = $1
+       WHERE es.engineer_id::text = $1
        ORDER BY si.name`,
-      [id]
+      [String(id)]
     );
     res.json(q.rows);
   } catch (err) {
@@ -115,7 +144,10 @@ router.post('/consume', async (req, res) => {
   const q = await pool.query('BEGIN').catch(() => null);
   try {
     // Prefer deducting from engineer stock
-    const es = await pool.query('SELECT * FROM engineer_stock WHERE engineer_id=$1 AND stock_item_id=$2 FOR UPDATE', [engineerId || null, stockItemId]);
+    const es = await pool.query(
+      'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2 FOR UPDATE',
+      [engineerId != null ? String(engineerId) : null, stockItemId != null ? String(stockItemId) : null]
+    );
     if (es.rowCount > 0 && es.rows[0].quantity >= quantity) {
       await pool.query('UPDATE engineer_stock SET quantity = quantity - $1 WHERE id = $2', [quantity, es.rows[0].id]);
     } else {
@@ -149,10 +181,10 @@ router.get('/alerts', async (req, res) => {
   try {
     const central = await pool.query('SELECT id, sku, name, quantity, threshold FROM stock_items WHERE quantity <= threshold ORDER BY quantity');
     let engineer = [];
-    if (engineerId) {
+      if (engineerId) {
       engineer = await pool.query(`SELECT es.engineer_id, es.quantity, si.id as stock_item_id, si.sku, si.name, si.threshold
         FROM engineer_stock es JOIN stock_items si ON si.id = es.stock_item_id
-        WHERE es.engineer_id=$1 AND es.quantity <= si.threshold ORDER BY es.quantity`, [engineerId]);
+        WHERE es.engineer_id::text = $1 AND es.quantity <= si.threshold ORDER BY es.quantity`, [String(engineerId)]);
     }
     res.json({ central: central.rows, engineer: engineer.rows });
   } catch (err) {
@@ -177,9 +209,9 @@ router.get('/overview', async (req, res) => {
 router.put('/engineer/:engineerId/item/:itemId', async (req, res) => {
   const { engineerId, itemId } = req.params;
   const { quantity } = req.body;
-  if (!/^[0-9]+$/.test(String(engineerId)) || !/^[0-9]+$/.test(String(itemId))) {
-    return res.status(400).json({ error: 'Invalid engineerId or itemId' });
-  }
+  // Accept both UUID and legacy numeric IDs. We avoid strict regex checks so
+  // clients that still send integer-like ids don't get rejected. Postgres will
+  // be able to compare text representations when necessary.
   const qQty = Number(quantity);
   if (!Number.isFinite(qQty) || qQty < 0) return res.status(400).json({ error: 'quantity must be a non-negative number' });
   try {
@@ -190,19 +222,19 @@ router.put('/engineer/:engineerId/item/:itemId', async (req, res) => {
       `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity, last_reported_at, last_reported_by) VALUES ($1,$2,$3, now(), $4)
        ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = EXCLUDED.quantity, last_reported_at = now(), last_reported_by = EXCLUDED.last_reported_by
        RETURNING *`,
-      [Number(engineerId), Number(itemId), qQty, reporter]
+      [engineerId, itemId, qQty, reporter]
     );
 
     // Check threshold and optionally notify via webhook
     try {
-      const it = await pool.query('SELECT threshold, name FROM stock_items WHERE id=$1 LIMIT 1', [Number(itemId)]);
+  const it = await pool.query('SELECT threshold, name FROM stock_items WHERE id=$1 LIMIT 1', [itemId]);
       const threshold = it.rows && it.rows[0] ? Number(it.rows[0].threshold || 0) : null;
       const itemName = it.rows && it.rows[0] ? it.rows[0].name : null;
       if (threshold !== null && qQty <= threshold) {
         // send webhook if configured (or fallback to stub)
         const webhook = process.env.STOCK_WEBHOOK_URL || null;
         try {
-          await sendNotification({ webhookUrl: webhook, subject: 'low_stock_report', payload: { event: 'low_stock_report', engineerId: Number(engineerId), itemId: Number(itemId), itemName, quantity: qQty, threshold, reportedBy: reporter, reportedAt: new Date().toISOString() } });
+          await sendNotification({ webhookUrl: webhook, subject: 'low_stock_report', payload: { event: 'low_stock_report', engineerId, itemId, itemName, quantity: qQty, threshold, reportedBy: reporter, reportedAt: new Date().toISOString() } });
         } catch (fw) {
           console.warn('Failed to call stock webhook', fw?.message || fw);
         }
@@ -236,8 +268,8 @@ router.get('/overview/full', async (req, res) => {
     const allocations = await pool.query(`
       SELECT es.*, u.name as engineer_name, si.name as item_name, si.threshold as item_threshold
       FROM engineer_stock es
-      LEFT JOIN users u ON u.id = es.engineer_id
-      LEFT JOIN stock_items si ON si.id = es.stock_item_id
+  LEFT JOIN users u ON u.id::text = es.engineer_id::text
+  LEFT JOIN stock_items si ON si.id::text = es.stock_item_id::text
       ORDER BY u.name, si.name
     `);
     res.json({ items: items.rows, allocations: allocations.rows });

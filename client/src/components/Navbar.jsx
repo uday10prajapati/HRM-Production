@@ -1,11 +1,14 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import axios from 'axios';
 
 const Navbar = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
     localStorage.clear();
+    // remove axios auth fallback header
+    try { delete axios.defaults.headers.common['x-user-id']; } catch(e) {}
     navigate("/login");
   };
 

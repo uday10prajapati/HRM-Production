@@ -20,7 +20,8 @@ export default function EngineerStock({ engineerId }) {
 
   // optimistic update handler: if child reports a new quantity, update local items immediately
   function handleReported(itemId, reportedQty) {
-    setItems(prev => prev.map(it => (Number(it.id) === Number(itemId) ? { ...it, engineer_quantity: Number(reportedQty) } : it)));
+  // compare ids as strings (avoid Number coercion which fails for UUIDs)
+  setItems(prev => prev.map(it => (String(it.id) === String(itemId) ? { ...it, engineer_quantity: Number(reportedQty) } : it)));
     // also re-fetch in background to reconcile
     fetchItems();
   }

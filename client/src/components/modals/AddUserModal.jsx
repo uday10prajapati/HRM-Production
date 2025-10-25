@@ -63,6 +63,17 @@ const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile number</label>
+            <input
+              type="text"
+              placeholder="Mobile number"
+              className="w-full border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={formData.mobile_number || formData.mobileNumber || ''}
+              onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Leave balance</label>
             <input
               type="number"
@@ -70,17 +81,6 @@ const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
               className="w-full border px-3 py-2 rounded focus:outline-none"
               value={formData.leave_balance}
               onChange={(e) => setFormData({ ...formData, leave_balance: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Attendance status</label>
-            <input
-              type="text"
-              placeholder="Attendance Status"
-              className="w-full border px-3 py-2 rounded focus:outline-none"
-              value={formData.attendance_status}
-              onChange={(e) => setFormData({ ...formData, attendance_status: e.target.value })}
             />
           </div>
         </div>

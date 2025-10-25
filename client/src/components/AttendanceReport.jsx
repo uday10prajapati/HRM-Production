@@ -13,23 +13,42 @@ export default function AttendanceReport({ userId }) {
     fetchReport();
   }, [userId]);
 
+  useEffect(() => {
+    // initialize to last 7 days on mount
+    const now = new Date();
+    const toISO = (d) => d.toISOString().slice(0,10);
+    if (!start || !end) {
+      const from = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+      setStart(toISO(from));
+      setEnd(toISO(now));
+    }
+  }, []);
+
   async function fetchReport() {
     setLoading(true);
     try {
-      const q = userId ? `?userId=${encodeURIComponent(userId)}` : "";
-      const res = await axios.get(`/api/attendance/report${q}`);
-      let data = Array.isArray(res.data) ? res.data : [];
+      // server-side filtering: pass userId, start, end as query params
+      const params = {};
+      if (userId) params.userId = userId;
+      if (start) params.start = start;
+      if (end) params.end = end;
 
-      // ✅ client-side date filtering
-      if (start && end) {
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        data = data.filter((r) => {
-          const date = new Date(r.day || r.date || r.created_at);
-          return date >= startDate && date <= endDate;
-        });
+      // include x-user-id header if available in localStorage for auth fallback
+      let headers = {};
+      try {
+        const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
+        if (raw) {
+          const p = JSON.parse(raw);
+          const u = p?.user ?? p?.data ?? p;
+          const id = u?.id ?? u?.userId ?? null;
+          if (id) headers['x-user-id'] = String(id);
+        }
+      } catch (e) {
+        // ignore
       }
 
+      const res = await axios.get(`/api/attendance/report`, { params, headers });
+      const data = Array.isArray(res.data) ? res.data : (res.data?.rows ?? []);
       setRows(data);
     } catch (err) {
       console.error("Failed to load attendance report:", err);

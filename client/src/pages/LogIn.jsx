@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom"; // <-- Add this import
+import axios from 'axios';
 import bg from "../assets/bg.png";
 
 function Login() {
@@ -18,11 +19,27 @@ function Login() {
         try {
             const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-            const response = await fetch(`${API_URL}/api/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password }),
-            });
+            let response;
+            try {
+                response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password }),
+                });
+            } catch (netErr) {
+                console.error('Network error when calling auth:', netErr);
+                setMessage('⚠️ Could not reach authentication server (check backend)');
+                return;
+            }
+
+            if (!response.ok) {
+                // try to read error text/json
+                let errText = '';
+                try { errText = await response.text(); } catch (e) { errText = String(e); }
+                console.error('Auth endpoint returned error', response.status, errText);
+                setMessage(`❌ Login failed: ${response.status} ${errText}`);
+                return;
+            }
 
             const data = await response.json();
 
@@ -40,13 +57,20 @@ function Login() {
 
                 // Store user details in localStorage and log for debugging
                 localStorage.setItem("user", JSON.stringify(userData));
+                // set axios default auth header so subsequent axios calls include the user id
+                axios.defaults.headers.common['x-user-id'] = String(userData.id);
                 console.log("Stored user:", localStorage.getItem("user"));
 
                 setTimeout(() => {
                     if (data.role === "admin") navigate("/admin-dashboard");
                     else if (data.role === "hr" || data.role=== "Hr") navigate("/hr-dashboard");
-                    else if (data.role === "engineer") navigate("/engineer");
-                    else navigate("/employee");
+                    else {
+                        // engineers and employees are not allowed to access the portal per new policy
+                        setMessage('Access denied: portal available to HR and Admin only');
+                        // remove stored user and redirect back to login after brief delay
+                        localStorage.removeItem('user');
+                        setTimeout(() => navigate('/login'), 1200);
+                    }
                 }, 1000);
             } else {
                 setMessage("❌ Invalid email or password");
@@ -106,12 +130,7 @@ function Login() {
                         </button>
                     </form>
 
-                    <p className="text-sm text-gray-800 text-center mt-4">
-                        Don’t have an account?{" "}
-                        <a href="/signup" className="text-blue-500 hover:underline">
-                            Sign up
-                        </a>
-                    </p>
+                    
 
                     {message && (
                         <p

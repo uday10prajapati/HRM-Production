@@ -2,7 +2,19 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { pool } from './db.js';
+
+// Compute repository root so uploads path is stable regardless of process.cwd()
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+// Base uploads directory (configurable via UPLOADS_DIR env var). If UPLOADS_DIR is
+// absolute it will be used as-is; otherwise it defaults to <repo>/storage/uploads
+const UPLOADS_BASE = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(REPO_ROOT, 'storage', 'uploads');
+// ensure base directory exists
+try { fs.mkdirSync(UPLOADS_BASE, { recursive: true }); } catch (e) { /* ignore */ }
 
 const router = express.Router();
 
@@ -10,9 +22,10 @@ const router = express.Router();
 async function ensureDocumentsTable() {
   try {
     await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
       CREATE TABLE IF NOT EXISTS documents (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
         type VARCHAR(64) NOT NULL,
         filename TEXT NOT NULL,
         path TEXT NOT NULL,
@@ -28,11 +41,11 @@ async function ensureDocumentsTable() {
 
 ensureDocumentsTable().catch(err => console.error('ensureDocumentsTable failed:', err));
 
-// storage configuration: files saved under backend/uploads/users/:id/
+// storage configuration: files saved under UPLOADS_BASE/users/:id/ (public URL path exposed at /uploads/users/:id/:filename)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const userId = req.params.id;
-    const base = path.join(process.cwd(), 'backend', 'uploads', 'users', String(userId));
+    const base = path.join(UPLOADS_BASE, 'users', String(userId));
     fs.mkdirSync(base, { recursive: true });
     cb(null, base);
   },
@@ -69,8 +82,8 @@ router.post('/:id/documents', upload.fields([
       const arr = files[fieldName];
       if (Array.isArray(arr) && arr.length > 0) {
         const f = arr[0];
-        // store relative path for serving: uploads/users/:id/:filename
-        const relPath = path.join('uploads', 'users', String(id), f.filename);
+  // store public URL path for serving: /uploads/users/:id/:filename
+  const relPath = `/uploads/users/${String(id)}/${f.filename}`;
         entries.push({ type: typeName, filename: f.filename, path: relPath });
       }
     };
@@ -82,6 +95,23 @@ router.post('/:id/documents', upload.fields([
     // Insert metadata rows
     const client = await pool.connect();
     try {
+      // Defensive: ensure documents.user_id column accepts UUID/text values.
+      // Some older schemas may have user_id as integer; try to convert to TEXT so UUIDs work.
+      try {
+        const colQ = await client.query("SELECT data_type FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id' LIMIT 1");
+        const dtype = colQ.rows && colQ.rows[0] ? (colQ.rows[0].data_type || '').toString().toLowerCase() : null;
+        if (dtype && (dtype.includes('int') || dtype === 'integer')) {
+          try {
+            await client.query('ALTER TABLE documents ALTER COLUMN user_id TYPE TEXT USING user_id::text');
+            console.log('documentsRoute: converted documents.user_id to TEXT to accept UUIDs');
+          } catch (convertErr) {
+            console.warn('documentsRoute: failed to convert documents.user_id to TEXT:', convertErr?.message || convertErr);
+          }
+        }
+      } catch (checkErr) {
+        console.warn('documentsRoute: could not verify/convert documents.user_id column type:', checkErr?.message || checkErr);
+      }
+
       await client.query('BEGIN');
       for (const e of entries) {
         await client.query(
@@ -109,7 +139,7 @@ router.post('/:id/documents', upload.fields([
 router.get('/user/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('SELECT id, user_id, type, filename, path, uploaded_at FROM documents WHERE user_id = $1 ORDER BY uploaded_at DESC', [id]);
+  const result = await pool.query('SELECT id, user_id, type, filename, path, uploaded_at FROM documents WHERE user_id::text = $1 ORDER BY uploaded_at DESC', [id]);
     res.json({ success: true, documents: result.rows });
   } catch (err) {
     console.error('Error fetching documents for user', err);
@@ -162,7 +192,22 @@ router.delete('/:docId', async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Document not found' });
     const doc = result.rows[0];
     // remove file from disk
-    const absPath = path.isAbsolute(doc.path) ? doc.path : path.join(process.cwd(), 'backend', doc.path);
+    // Stored paths are relative like 'uploads/users/:id/:filename' (public URL path)
+    // Map them to actual filesystem path under UPLOADS_BASE (which is <repo>/storage/uploads)
+    let absPath;
+    if (path.isAbsolute(doc.path)) {
+      absPath = doc.path;
+    } else {
+      // strip leading '/uploads/' or 'uploads/' then join with UPLOADS_BASE
+      const p = doc.path.replace(/^\/|^\//, ''); // remove leading slash if any
+      if (p.toLowerCase().startsWith('uploads' + path.posix.sep) || p.toLowerCase().startsWith('uploads/')) {
+        const relativeInsideUploads = p.replace(/^uploads[\\/]/i, '');
+        absPath = path.join(UPLOADS_BASE, relativeInsideUploads);
+      } else {
+        // fallback: resolve against repo root
+        absPath = path.join(REPO_ROOT, doc.path);
+      }
+    }
     try {
       if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
     } catch (fsErr) {

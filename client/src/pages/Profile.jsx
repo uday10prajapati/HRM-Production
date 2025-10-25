@@ -27,10 +27,7 @@ export default function Profile() {
                 <div className="text-sm text-gray-500">Role</div>
                 <div className="font-medium capitalize">{user?.role ?? '-'}</div>
               </div>
-              <div>
-                <div className="text-sm text-gray-500">Attendance Status</div>
-                <div className="font-medium">{user?.attendance_status ?? '-'}</div>
-              </div>
+              
             </div>
           </div>
         </main>

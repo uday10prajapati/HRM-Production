@@ -42,8 +42,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
     email: "",
     role: "",
     leave_balance: 20,
-    attendance_status: "",
     password: "",
+    mobile_number: "",
   });
 
   const [taskData, setTaskData] = useState({
@@ -76,8 +76,9 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
       setUsers(allUsers);
       setLoading(false);
     } catch (err) {
-      console.error(err);
-      setError("Failed to load users");
+      // Log full axios response (status + body) when available to aid debugging
+      console.error('GET /api/users failed:', err.response?.status, err.response?.data || err.message);
+      setError(`Failed to load users (${err.response?.status || 'network error'})`);
       setLoading(false);
     }
   };
@@ -93,8 +94,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
       email: "",
       role: "",
       leave_balance: 20,
-      attendance_status: "",
       password: "",
+      mobile_number: "",
     });
     setAddModalOpen(true);
   };
@@ -106,8 +107,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
       email: user.email,
       role: user.role,
       leave_balance: user.leave_balance || 20,
-      attendance_status: user.attendance_status || "",
       password: "",
+      mobile_number: user.mobile_number || user.mobile || "",
     });
     setEditModalOpen(true);
   };
@@ -124,7 +125,9 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
 
   const openTaskModal = (user) => {
     setSelectedUser(user);
-    setTaskData({ title: "", description: "" });
+    setTaskData({ title: "", description: "", customerName: "", customerAddress: "" });
+  // ensure mobile is present in state
+  setTaskData(prev => ({ ...prev, customerMobile: "" }));
     setTaskModalOpen(true);
   };
 
@@ -194,8 +197,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
         tasks: [taskData], // <--- send an array of tasks
       });
       alert(`Task assigned to ${selectedUser.name}`);
-      setTaskModalOpen(false);
-      setTaskData({ title: "", description: "" });
+  setTaskModalOpen(false);
+  setTaskData({ title: "", description: "", customerName: "", customerAddress: "", customerMobile: "" });
     } catch (err) {
       console.error("Assign task failed", err);
       alert("Failed to assign task. Please check console.");
@@ -282,23 +285,14 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-100">
                   <tr>
-                    {[
-                      "ID",
-                      "Name",
-                      "Email",
-                      "Role",
-                      "Leave Balance",
-                      "Attendance Status",
-                      "Tasks",
-                      "Actions",
-                    ].map((header) => (
-                      <th
-                        key={header}
-                        className="px-6 py-3 text-left text-sm font-semibold text-gray-700"
-                      >
-                        {header}
-                      </th>
-                    ))}
+                            {["ID","Name","Email","Role","Leave Balance","Tasks","Actions"].map((header) => (
+                              <th
+                                key={header}
+                                className="px-6 py-3 text-left text-sm font-semibold text-gray-700"
+                              >
+                                {header}
+                              </th>
+                            ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -313,11 +307,10 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {u.leave_balance ?? "N/A"}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {u.attendance_status ?? "N/A"}
-                      </td>
+                      
        <td className="px-6 py-4 text-sm text-gray-900">
-  {u.tasks && u.tasks.length > 0 ? (
+  {/* Only HR/Admin see a clickable View Tasks link. Other roles (employees) see non-clickable text. */}
+  {((user?.role || '').toString().toLowerCase() === 'hr' || (user?.role || '').toString().toLowerCase() === 'admin') ? (
     <button
       onClick={() => openTaskStatusModal(u)}
       className="text-indigo-600 hover:underline"
@@ -325,7 +318,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
       View Tasks
     </button>
   ) : (
-    "No tasks"
+    (u.tasks && u.tasks.length > 0) ? `${u.tasks.length} task${u.tasks.length > 1 ? 's' : ''}` : 'No tasks'
   )}
 </td>
 
@@ -343,7 +336,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                         >
                           Delete
                         </button>
-                        { (u.role || '').toString().toLowerCase() !== 'admin' && (
+                        {(((user?.role || '').toString().toLowerCase() === 'hr') || ((user?.role || '').toString().toLowerCase() === 'admin')) && ((u.role || '').toString().toLowerCase() === 'engineer') && (
                           <button
                             onClick={() => openTaskModal(u)}
                             className="text-indigo-600 hover:underline"

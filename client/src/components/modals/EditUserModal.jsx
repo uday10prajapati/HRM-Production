@@ -43,12 +43,10 @@ const EditUserModal = ({ formData, setFormData, onSubmit, onClose }) => (
       />
       <input
         type="text"
-        placeholder="Attendance Status"
+        placeholder="Mobile number"
         className="w-full border px-3 py-2 rounded"
-        value={formData.attendance_status}
-        onChange={(e) =>
-          setFormData({ ...formData, attendance_status: e.target.value })
-        }
+        value={formData.mobile_number || formData.mobile || ''}
+        onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
       />
 
       <div className="flex justify-end gap-2 mt-4">

@@ -21,23 +21,37 @@ const TaskStatusModal = ({ selectedUser, onClose }) => (
           {selectedUser.tasks.map((task) => (
             <div
               key={task.id}
-              className="p-4 border rounded-lg shadow-sm hover:shadow-md transition flex justify-between items-start bg-gray-50"
+              className="p-4 border rounded-lg shadow-sm hover:shadow-md transition bg-white"
             >
-              <div>
-                <p className="font-semibold text-gray-800">{task.title}</p>
-                <p className="text-gray-600 mt-1 text-sm">{task.description}</p>
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">{task.title}</p>
+                  <p className="text-gray-600 mt-1 text-sm">{task.description}</p>
+                  <div className="mt-2 text-sm text-gray-700">
+                    {task.customerName && <p><strong>Customer:</strong> {task.customerName}</p>}
+                    {task.customerAddress && <p><strong>Address:</strong> {task.customerAddress}</p>}
+                    {task.customerMobile && <p><strong>Mobile:</strong> {task.customerMobile}</p>}
+                    {task.assignedBy && <p><strong>Assigned by:</strong> {task.assignedBy}</p>}
+                    {task.assignedTo && <p><strong>Assigned to:</strong> {task.assignedTo}</p>}
+                    {task.created_at && <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleString()}</p>}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <span
+                    className={`text-sm font-medium px-2 py-1 rounded-full ${
+                      task.status?.toLowerCase() === "completed"
+                        ? "bg-green-100 text-green-800"
+                        : task.status?.toLowerCase() === "in progress"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {task.status || "Pending"}
+                  </span>
+                  {/* Placeholder for future detail view link */}
+                  <a href="#" className="text-indigo-600 hover:underline text-sm">View Details</a>
+                </div>
               </div>
-              <span
-                className={`text-sm font-medium px-2 py-1 rounded-full ${
-                  task.status?.toLowerCase() === "completed"
-                    ? "bg-green-100 text-green-800"
-                    : task.status?.toLowerCase() === "in progress"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-gray-100 text-gray-800"
-                }`}
-              >
-                {task.status || "Pending"}
-              </span>
             </div>
           ))}
         </div>

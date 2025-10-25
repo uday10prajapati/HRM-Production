@@ -1,38 +1,60 @@
 import express from "express";
 import { pool } from "./db.js";
-import bcrypt from "bcryptjs";
+// bcrypt removed - storing plain-text passwords (INSECURE)
+import requireAuth from './authMiddleware.js';
 
 const router = express.Router();
 
 // Ensure tasks table has expected columns (safe on startup)
 (async function ensureTaskColumns() {
   try {
-    await pool.query(
-      `ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`
-    );
-    await pool.query(
-      `ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`
-    );
+    await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending';
+      ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128);
+    `);
     console.log("✅ Ensured tasks table columns: status, assigned_by");
   } catch (err) {
     console.warn("Could not ensure tasks columns:", err.message || err);
   }
 })();
 
+// Ensure users table has mobile_number column (safe on startup)
+(async function ensureUsersMobileColumn() {
+  try {
+    await pool.query(`ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(32)`);
+    console.log('✅ Ensured users.mobile_number column exists (or table missing)');
+  } catch (err) {
+    console.warn('Could not ensure users.mobile_number column:', err?.message || err);
+  }
+})();
+
+// Ensure pgcrypto extension exists so gen_random_uuid() is available for inserts
+(async function ensurePgcrypto() {
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    // also ensure users.id default exists where possible (safe no-op if table missing)
+    await pool.query("ALTER TABLE IF EXISTS users ALTER COLUMN id SET DEFAULT gen_random_uuid();").catch(() => null);
+  } catch (err) {
+    // do not block startup - just warn
+    console.warn('Could not ensure pgcrypto extension or id default:', err?.message || err);
+  }
+})();
+
 // Create tasks table if it doesn't exist (safe startup helper)
 (async function createTasksTableIfMissing() {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        title TEXT NOT NULL,
-        description TEXT,
-        status VARCHAR(32) DEFAULT 'pending',
-        assigned_by VARCHAR(128),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS tasks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          description TEXT,
+          status VARCHAR(32) DEFAULT 'pending',
+          assigned_by VARCHAR(128),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
     console.log("✅ Ensured tasks table exists");
   } catch (err) {
     console.warn("Could not create tasks table:", err.message || err);
@@ -46,10 +68,11 @@ router.get("/", async (req, res) => {
       SELECT 
         u.id AS id,
         u.name,
+        u.mobile_number,
         u.email,
         u.role,
         u.leave_balance,
-        u.attendance_status,
+        
         COALESCE(
           json_agg(
             json_build_object(
@@ -58,20 +81,34 @@ router.get("/", async (req, res) => {
               'description', t.description,
               'status', t.status,
               'assignedBy', t.assigned_by,
+              'assignedTo', t.assigned_to,
+              'customerName', t.customer_name,
+              'customerAddress', t.customer_address,
+              'customerMobile', t.customer_mobile,
               'created_at', t.created_at
             )
           ) FILTER (WHERE t.id IS NOT NULL),
           '[]'
         ) AS tasks
       FROM users u
-      LEFT JOIN tasks t ON u.id = t.user_id
+  LEFT JOIN tasks t ON u.id::text = t.user_id::text
       GROUP BY u.id
       ORDER BY u.id ASC
     `);
-
     res.json({ success: true, users: result.rows });
   } catch (err) {
-    console.error(err);
+    console.error('GET /api/users query error:', err?.message || err);
+    // If tasks or other joined table is missing (e.g., migrations didn't run or extension unavailable),
+    // fall back to a simpler users-only query so the frontend can still load a user list.
+      if (/relation \"tasks\" does not exist/i.test(String(err?.message || '')) || /does not exist/i.test(String(err?.message || ''))) {
+      try {
+        const fallback = await pool.query('SELECT id, name, email, role, leave_balance FROM users ORDER BY id ASC');
+        return res.json({ success: true, users: fallback.rows });
+      } catch (err2) {
+        console.error('Fallback users query failed:', err2?.message || err2);
+      }
+    }
+
     res.status(500).json({ success: false, message: "Error fetching users", error: err.message });
   }
 });
@@ -91,19 +128,18 @@ router.get("/me", async (req, res) => {
       });
     }
 
-    if (!/^\d+$/.test(String(id))) {
-      return res.status(400).json({ success: false, message: "Invalid user id" });
-    }
-
-    const result = await pool.query(
+      // Accept both UUID and legacy integer-like ids. We'll compare as text
+      // so Postgres doesn't error when comparing uuid = integer.
+      const result = await pool.query(
       `
       SELECT 
         u.id AS id,
         u.name,
+        u.mobile_number,
         u.email,
         u.role,
         u.leave_balance,
-        u.attendance_status,
+        
         COALESCE(
           json_agg(
             json_build_object(
@@ -112,18 +148,22 @@ router.get("/me", async (req, res) => {
               'description', t.description,
               'status', t.status,
               'assignedBy', t.assigned_by,
+              'assignedTo', t.assigned_to,
+              'customerName', t.customer_name,
+              'customerAddress', t.customer_address,
+              'customerMobile', t.customer_mobile,
               'created_at', t.created_at
             )
           ) FILTER (WHERE t.id IS NOT NULL),
           '[]'
         ) AS tasks
       FROM users u
-      LEFT JOIN tasks t ON u.id = t.user_id
-      WHERE u.id = $1
+  LEFT JOIN tasks t ON u.id::text = t.user_id::text
+  WHERE u.id::text = $1
       GROUP BY u.id
       LIMIT 1
     `,
-      [Number(id)]
+      [id]
     );
 
     if (!result.rows || result.rows.length === 0) {
@@ -141,19 +181,18 @@ router.get("/me", async (req, res) => {
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    if (!/^\d+$/.test(String(id))) {
-      return res.status(400).json({ success: false, message: "Invalid user id" });
-    }
-
+    // Accept both UUID and legacy integer-like ids. Compare as text to avoid
+    // uuid = integer operator errors.
     const result = await pool.query(
       `
       SELECT 
         u.id AS id,
         u.name,
+        u.mobile_number,
         u.email,
         u.role,
         u.leave_balance,
-        u.attendance_status,
+        
         COALESCE(
           json_agg(
             json_build_object(
@@ -162,18 +201,21 @@ router.get("/:id", async (req, res) => {
               'description', t.description,
               'status', t.status,
               'assignedBy', t.assigned_by,
+              'customerName', t.customer_name,
+              'customerAddress', t.customer_address,
+              'customerMobile', t.customer_mobile,
               'created_at', t.created_at
             )
           ) FILTER (WHERE t.id IS NOT NULL),
           '[]'
         ) AS tasks
       FROM users u
-      LEFT JOIN tasks t ON u.id = t.user_id
-      WHERE u.id = $1
+  LEFT JOIN tasks t ON u.id::text = t.user_id::text
+  WHERE u.id::text = $1
       GROUP BY u.id
       LIMIT 1
     `,
-      [Number(id)]
+      [id]
     );
 
     if (!result.rows || result.rows.length === 0) {
@@ -188,7 +230,11 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST create new user
-router.post("/create", async (req, res) => {
+// POST /create - create a user. Only admin may create users via the API.
+router.post("/create", requireAuth, async (req, res) => {
+  // only admin allowed
+  const roleRequester = req.user?.role ?? null;
+  if (roleRequester !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden: only admin may create users' });
   const {
     name,
     email,
@@ -196,24 +242,25 @@ router.post("/create", async (req, res) => {
     password,
     leave_balance,
     leaveBalance,
-    attendance_status,
-    attendanceStatus,
+  attendanceStatus,
+    mobile_number,
   } = req.body;
 
   const leaveBal = Number(leave_balance ?? leaveBalance ?? 20);
-  const attendanceStat = attendance_status ?? attendanceStatus ?? "";
+  const attendanceStat = attendanceStatus ?? "";
 
   if (!password) {
     return res.status(400).json({ success: false, message: "Password is required" });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  // store plain password directly (INSECURE)
+  const hashedPassword = password;
 
   try {
     const result = await pool.query(
-      `INSERT INTO users (name, email, role, leave_balance, attendance_status, password)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, email, role, leaveBal, attendanceStat, hashedPassword]
+      `INSERT INTO users (id, name, email, role, leave_balance, password, mobile_number)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6) RETURNING *`,
+      [name, email, role, leaveBal, hashedPassword, mobile_number]
     );
     res.status(201).json({ success: true, user: result.rows[0] });
   } catch (err) {
@@ -231,18 +278,19 @@ router.put("/update/:id", async (req, res) => {
     role,
     leave_balance,
     leaveBalance,
-    attendance_status,
+    
     attendanceStatus,
+    mobile_number,
   } = req.body;
 
   const leaveBal = Number(leave_balance ?? leaveBalance ?? null);
-  const attendanceStat = attendance_status ?? attendanceStatus ?? null;
+  const attendanceStat = attendanceStatus ?? null;
 
   try {
     const result = await pool.query(
-      `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, attendance_status=$5
+      `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, mobile_number=$5
        WHERE id=$6 RETURNING *`,
-      [name, email, role, leaveBal, attendanceStat, id]
+      [name, email, role, leaveBal, mobile_number, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -269,9 +317,29 @@ router.delete("/delete/:id", async (req, res) => {
   }
 });
 
+// POST /api/users/fcm-token - set the caller's FCM token (or admin can set for a user)
+router.post('/fcm-token', requireAuth, async (req, res) => {
+  try {
+    const requesterId = req.user?.id;
+    const requesterRole = req.user?.role;
+    const { fcm_token, userId } = req.body;
+    // allow admins to set for any user, otherwise set for requester only
+    const targetId = (requesterRole && requesterRole.toString().toLowerCase() === 'admin' && userId) ? userId : requesterId;
+    if (!targetId) return res.status(400).json({ success: false, message: 'Missing user id' });
+    await pool.query('ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS fcm_token TEXT');
+    const r = await pool.query('UPDATE users SET fcm_token=$1 WHERE id::text=$2 RETURNING id, fcm_token', [fcm_token || null, String(targetId)]);
+    if (!r.rows || r.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.json({ success: true, message: 'FCM token updated', user: r.rows[0] });
+  } catch (err) {
+    console.error('/users/fcm-token error', err);
+    return res.status(500).json({ success: false, message: 'Error updating fcm token', error: err?.message || String(err) });
+  }
+});
+
 // POST assign a task to a user
 router.post("/assign-task", async (req, res) => {
-  const { userId } = req.body;
+  // Accept either userId or userEmail to identify the target engineer/user
+  const { userId, userEmail } = req.body;
 
   let tasks = req.body.tasks;
   if (!tasks || !Array.isArray(tasks)) {
@@ -282,8 +350,8 @@ router.post("/assign-task", async (req, res) => {
     }
   }
 
-  if (!userId) {
-    return res.status(400).json({ success: false, message: "User ID is required" });
+  if (!userId && !userEmail) {
+    return res.status(400).json({ success: false, message: "userId or userEmail is required" });
   }
 
   if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
@@ -291,24 +359,108 @@ router.post("/assign-task", async (req, res) => {
   }
 
   try {
-    const queryText =
-      "INSERT INTO tasks (user_id, title, description, status, assigned_by) VALUES ($1, $2, $3, $4, $5)";
+    // Ensure tasks table exists and has the expected columns (safe guard for environments
+    // where migrations did not run or startup helpers failed due to pool issues).
+    await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      CREATE TABLE IF NOT EXISTS tasks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT,
+        status VARCHAR(32) DEFAULT 'pending',
+        assigned_by VARCHAR(128),
+        assigned_to TEXT,
+        customer_name TEXT,
+    customer_address TEXT,
+    customer_mobile TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-    const promises = tasks.map((task) => {
+    // make sure columns exist
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`);
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`);
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_name TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_address TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_mobile TEXT`);
+
+    const queryText =
+      "INSERT INTO tasks (user_id, title, description, status, assigned_by, assigned_to, customer_name, customer_address, customer_mobile) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
+
+    // Resolve target user either by email or id (accept integer-like legacy ids)
+    let targetUserId = null;
+    let targetEmail = null;
+    if (userEmail) {
+      const r = await pool.query('SELECT id, email FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1', [String(userEmail)]);
+      if (!r.rows || r.rows.length === 0) return res.status(404).json({ success: false, message: 'Target user not found by email' });
+      targetUserId = r.rows[0].id;
+      targetEmail = r.rows[0].email;
+    } else {
+      const resolved = await pool.query('SELECT id, email FROM users WHERE id::text = $1 LIMIT 1', [String(userId)]);
+      if (!resolved.rows || resolved.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Target user not found' });
+      }
+      targetUserId = resolved.rows[0].id;
+      targetEmail = resolved.rows[0].email;
+    }
+
+      // Inspect tasks table column types so we insert values matching existing schema
+      const cols = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='tasks' AND column_name IN ('user_id','assigned_by')");
+      const colMap = {};
+      for (const r of cols.rows) colMap[r.column_name] = r.data_type;
+
+      // If tasks.user_id is integer in existing schema, convert resolved id to integer (if possible)
+      if (colMap['user_id'] && colMap['user_id'].toLowerCase().includes('int')) {
+        // If the existing tasks.user_id column is integer, convert it to TEXT so it can accept UUIDs
+        try {
+          // drop foreign key if present
+          await pool.query("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_user_id_fkey");
+        } catch (e) {
+          // ignore
+        }
+        try {
+          await pool.query("ALTER TABLE tasks ALTER COLUMN user_id TYPE TEXT USING user_id::text");
+          // update local map
+          colMap['user_id'] = 'text';
+        } catch (e) {
+          console.warn('Could not alter tasks.user_id to text:', e?.message || e);
+        }
+      }
+
+    // Use requester header as assigned_by if client didn't provide one
+    const requester = req.header('x-user-id') || null;
+
+  const promises = tasks.map(async (task) => {
       if (!task.title || !task.description) {
         throw new Error("Task title and description are required");
       }
       const status = task.status || "pending";
-      const assignedBy = task.assignedBy || task.assigned_by || null;
-      return pool.query(queryText, [userId, task.title, task.description, status, assignedBy]);
+      let assignedBy = task.assignedBy || task.assigned_by || requester || null;
+      // If assigned_by column exists and is integer, convert column to text to accept UUIDs
+      if (assignedBy != null && colMap['assigned_by'] && colMap['assigned_by'].toLowerCase().includes('int')) {
+        try {
+          await pool.query("ALTER TABLE tasks ALTER COLUMN assigned_by TYPE TEXT USING assigned_by::text");
+          colMap['assigned_by'] = 'text';
+        } catch (e) {
+          // ignore and fall back to null
+          assignedBy = null;
+        }
+      }
+      const customerName = task.customer_name || task.customerName || null;
+      const customerAddress = task.customer_address || task.customerAddress || null;
+      const customerMobile = task.customer_mobile || task.customerMobile || null;
+      return pool.query(queryText, [targetUserId, task.title, task.description, status, assignedBy, targetEmail, customerName, customerAddress, customerMobile]);
     });
 
     await Promise.all(promises);
 
     res.json({ success: true, message: "Tasks assigned successfully" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Error assigning tasks", error: err.message });
+    console.error('Error in /assign-task:', err?.message || err, err?.stack || '');
+    // reply with a clearer message for clients (but do not leak stack in prod)
+    return res.status(500).json({ success: false, message: 'Error assigning tasks', error: String(err?.message || err) });
   }
 });
 
@@ -342,7 +494,7 @@ router.put("/tasks/:taskId", async (req, res) => {
           u.email,
           u.role,
           u.leave_balance,
-          u.attendance_status,
+
           COALESCE(
             json_agg(
               json_build_object(
@@ -351,13 +503,15 @@ router.put("/tasks/:taskId", async (req, res) => {
                 'description', t.description,
                 'status', t.status,
                 'assignedBy', t.assigned_by,
+                'customerName', t.customer_name,
+                'customerAddress', t.customer_address,
                 'created_at', t.created_at
               )
             ) FILTER (WHERE t.id IS NOT NULL),
             '[]'
           ) AS tasks
         FROM users u
-        LEFT JOIN tasks t ON u.id = t.user_id
+  LEFT JOIN tasks t ON u.id::text = t.user_id::text
         WHERE u.id = $1
         GROUP BY u.id
         LIMIT 1
@@ -378,3 +532,31 @@ router.put("/tasks/:taskId", async (req, res) => {
 });
 
 export default router;
+
+// Simple helper endpoint: GET /api/tasks/by-email?email=...
+// Returns tasks assigned to the user with that email.
+router.get('/tasks/by-email', async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ success: false, message: 'email query param required' });
+  try {
+    const userR = await pool.query('SELECT id, name, email FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1', [String(email)]);
+    if (!userR.rows || userR.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    const uid = userR.rows[0].id;
+    const tasksR = await pool.query('SELECT id, user_id, title, description, status, assigned_by, created_at FROM tasks WHERE user_id::text = $1 ORDER BY created_at DESC', [String(uid)]);
+    return res.json({ success: true, tasks: tasksR.rows });
+  } catch (err) {
+    console.error('Failed to fetch tasks by email', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch tasks', error: String(err?.message || err) });
+  }
+});
+
+// Simple listing of recent tasks (used by mobile app)
+router.get('/tasks', async (req, res) => {
+  try {
+    const q = await pool.query(`SELECT id, user_id, title, description, status, assigned_by, assigned_to, created_at FROM tasks ORDER BY created_at DESC LIMIT 200`);
+    return res.json({ success: true, tasks: q.rows });
+  } catch (err) {
+    console.error('Failed to list tasks', err);
+    return res.status(500).json({ success: false, message: 'Failed to list tasks', error: String(err?.message || err) });
+  }
+});
