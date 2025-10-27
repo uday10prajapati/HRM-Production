@@ -41,55 +41,19 @@ const router = express.Router();
 // stores timestamp in created_at
 router.post("/punch", async (req, res) => {
   try {
-    const body = req.body || {};
-    const userId = body.userId ?? body.user_id ?? null;
-    const typeRaw = (body.type ?? "").toString().toLowerCase();
-    if (!userId) return res.status(400).json({ success: false, message: "Missing userId" });
-
-    const type = typeRaw === "in" || typeRaw === "punch_in" ? "in"
-               : typeRaw === "out" || typeRaw === "punch_out" ? "out"
-               : null;
-    if (!type) return res.status(400).json({ success: false, message: "Invalid punch type, expected 'in' or 'out'" });
-
-  const q = `INSERT INTO attendance (user_id, type, notes) VALUES ($1,$2,$3) RETURNING *;`;
-  const qParams = [];
-  const qCols = ['user_id','type','notes'];
-  qParams.push(userId, type, body.notes ?? null);
-  // optional lat/lng
-  if (body.latitude != null) {
-    qCols.push('latitude');
-    qParams.push(body.latitude);
-  }
-  if (body.longitude != null) {
-    // if longitude provided but latitude not, still push column and null for latitude handled above
-    if (!qCols.includes('longitude')) qCols.push('longitude');
-    if (!qParams.includes(body.longitude)) qParams.push(body.longitude);
-  }
-  const placeholders = qParams.map((_, idx) => `$${idx+1}`).join(',');
-  const q2 = `INSERT INTO attendance (${qCols.join(',')}) VALUES (${placeholders}) RETURNING *;`;
-  const result = await pool.query(q2, qParams);
-    if (!result || !result.rows || result.rows.length === 0) {
-      console.error('attendanceRoute /punch: insert returned no rows', { userId, type, notes: body.notes });
-      return res.status(500).json({ success: false, message: 'Failed to save attendance' });
-    }
-
-    // recompute overtime for the date of the punch (best-effort)
-    try {
-      const { computeOvertimeFor } = await import("./overtimeRoute.js");
-      const created = result.rows[0]?.created_at;
-      if (created) {
-        const date = new Date(created).toISOString().slice(0,10);
-        // fire-and-forget
-        computeOvertimeFor(userId, date).catch(e => console.warn('computeOvertimeFor failed', e));
-      }
-    } catch (e) {
-      console.warn('Could not import overtime recompute:', e?.message ?? e);
-    }
-
-    return res.json({ success: true, message: "Attendance saved", attendance: result.rows[0] });
+    const { userId, type, latitude, longitude } = req.body;
+    
+    const query = `
+      INSERT INTO attendance (user_id, type, location) 
+      VALUES ($1, $2, point($3, $4))
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [userId, type, latitude, longitude]);
+    res.json({ success: true, data: result.rows[0] });
   } catch (err) {
-    console.error("attendanceRoute /punch error:", err?.message ?? err);
-    return res.status(500).json({ success: false, message: "Error saving attendance", error: err?.message ?? String(err) });
+    console.error("Error saving attendance:", err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -338,4 +302,115 @@ router.get('/summary/all', requireAuth, async (req, res) => {
     }
   });
 
-  export default router;
+// GET /api/attendance/latest?userId=...
+router.get('/latest', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    const query = `
+      SELECT 
+        type,
+        location[0] as latitude,
+        location[1] as longitude,
+        created_at
+      FROM attendance
+      WHERE user_id = $1 
+      AND DATE(created_at) = CURRENT_DATE
+      AND location IS NOT NULL
+      ORDER BY created_at ASC
+    `;
+    
+    const result = await pool.query(query, [userId]);
+    const locations = result.rows;
+
+    // Group locations by type
+    const punchIn = locations.find(loc => loc.type === 'in');
+    const punchOut = locations.find(loc => loc.type === 'out');
+
+    res.json({
+      success: true,
+      data: {
+        punch_in: punchIn ? {
+          latitude: punchIn.latitude,
+          longitude: punchIn.longitude,
+          time: punchIn.created_at
+        } : null,
+        punch_out: punchOut ? {
+          latitude: punchOut.latitude,
+          longitude: punchOut.longitude,
+          time: punchOut.created_at
+        } : null,
+        all_locations: locations
+      }
+    });
+  } catch (err) {
+    console.error("Error fetching attendance:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Add this new route after other routes
+router.get('/engineers', async (req, res) => {
+  try {
+    const query = await pool.query(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.role,
+        (
+          WITH last_attendance AS (
+            SELECT 
+              type,
+              latitude,
+              longitude,
+              created_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY type 
+                ORDER BY created_at DESC
+              ) as rn
+            FROM attendance
+            WHERE user_id = u.id 
+              AND latitude IS NOT NULL 
+              AND longitude IS NOT NULL
+              AND type IN ('punch_in', 'punch_out')  -- ✅ Only punch_in / punch_out records
+          )
+          SELECT json_build_object(
+            'punch_in', (
+              SELECT json_build_object(
+                'latitude', latitude,
+                'longitude', longitude,
+                'created_at', created_at
+              )
+              FROM last_attendance
+              WHERE type = 'punch_in' AND rn = 1
+            ),
+            'punch_out', (
+              SELECT json_build_object(
+                'latitude', latitude,
+                'longitude', longitude,
+                'created_at', created_at
+              )
+              FROM last_attendance
+              WHERE type = 'punch_out' AND rn = 1
+            )
+          )
+        ) as locations
+      FROM users u
+      WHERE u.role IN ('engineer', 'employee')
+      ORDER BY u.name;
+    `);
+
+    console.log('Engineers with last punch_in/punch_out locations:', JSON.stringify(query.rows, null, 2));
+    res.json(query.rows);
+  } catch (err) {
+    console.error('Error fetching engineers:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch engineers',
+      error: err.message 
+    });
+  }
+});
+
+
+export default router;

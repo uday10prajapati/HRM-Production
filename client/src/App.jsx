@@ -16,6 +16,7 @@ import Stock from "./pages/Inovetry/Stock";
 import PayrollReports from "./pages/reports/PayrollReports";
 import MapView from "./pages/MapView";
 import EngineerTasks from "./pages/EngineerTasks";
+import 'leaflet/dist/leaflet.css';
 
 function App() {
   return (

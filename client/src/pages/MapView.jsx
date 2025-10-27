@@ -1,273 +1,221 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
-function useQuery() {
-  return new URLSearchParams(useLocation().search);
-}
+// Create custom colored icons
+const blueIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+});
+
+const redIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+});
 
 export default function MapView() {
-  const q = useQuery();
-  const navigate = useNavigate();
-  const queryLat = q.get('lat');
-  const queryLng = q.get('lng') || q.get('lon') || q.get('long');
-  const userId = q.get('userId');
-  const name = q.get('name') || '';
+    const [engineers, setEngineers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedEngineer, setSelectedEngineer] = useState(null);
 
-  const [lat, setLat] = useState(queryLat || null);
-  const [lng, setLng] = useState(queryLng || null);
-  const [when, setWhen] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; // Radius of earth in KM
+        const dLat = deg2rad(lat2 - lat1);
+        const dLon = deg2rad(lon2 - lon1);
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    };
 
-  useEffect(() => {
-    // If lat/lng not provided but userId is, fetch latest attendance record with coords
-    if ((!queryLat || !queryLng) && userId) {
-      (async () => {
-        setLoading(true);
+    const deg2rad = (deg) => {
+        return deg * (Math.PI/180);
+    };
+
+    const handleViewLocation = (engineer) => {
+        console.log('Selected engineer:', engineer);
+        setSelectedEngineer(engineer);
+    };
+
+    // Fetch all engineers
+    useEffect(() => {
+        fetchEngineers();
+    }, []);
+
+    const fetchEngineers = async () => {
         try {
-          // fetch latest live location for the user
-          const params = { userId };
-          // include x-user-id header fallback for auth
-          let headers = {};
-          try {
-            const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
-            if (raw) {
-              const p = JSON.parse(raw);
-              const u = p?.user ?? p?.data ?? p;
-              const id = u?.id ?? u?.userId ?? null;
-              if (id) headers['x-user-id'] = String(id);
-            }
-          } catch (e) {
-            // ignore
-          }
-
-          const res = await axios.get('/api/live_locations/latest', { params, headers });
-          const loc = res?.data?.location ?? null;
-          if (!loc || loc.latitude == null || loc.longitude == null) {
-            setLat(null); setLng(null); setWhen(null);
-          } else {
-            setLat(loc.latitude);
-            setLng(loc.longitude);
-            setWhen(loc.updated_at || null);
-          }
-        } catch (err) {
-          console.error('MapView: failed to fetch live location', err?.response?.data ?? err);
-          setLat(null); setLng(null); setWhen(null);
-        } finally {
-          setLoading(false);
+            const response = await axios.get('/api/attendance/engineers');
+            console.log('Engineers data:', response.data);
+            setEngineers(response.data);
+            setLoading(false);
+        } catch (error) {
+            console.error('Failed to fetch engineers:', error);
+            setLoading(false);
         }
-      })();
-    }
-    // if no explicit userId in query, fetch available users to let the operator pick one
-    if (!userId) {
-      (async () => {
-        setLoadingUsers(true);
-        try {
-          // try to include x-user-id header for auth fallback
-          let headers = {};
-          try {
-            const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
-            if (raw) {
-              const p = JSON.parse(raw);
-              const u = p?.user ?? p?.data ?? p;
-              const id = u?.id ?? u?.userId ?? null;
-              if (id) headers['x-user-id'] = String(id);
-            }
-          } catch (e) {}
-          const res = await axios.get('/api/users', { headers });
-          const arr = res?.data?.users ?? [];
-          // only include employees and engineers in this picker
-          const filtered = (arr || []).filter(u => {
-            const r = (u?.role || '').toString().toLowerCase();
-            return r === 'employee' || r === 'engineer';
-          });
-          setUsers(filtered);
-        } catch (err) {
-          console.warn('MapView: failed to fetch users', err?.response?.data ?? err);
-          setUsers([]);
-        } finally {
-          setLoadingUsers(false);
+    };
+
+    // Add default coordinates (you can change these to your desired default location)
+    const defaultCenter = [21.1702, 72.8311]; // Default coordinates for Surat, Gujarat
+
+    // Add function to get map center
+    const getMapCenter = (locations) => {
+        if (locations?.punch_in?.latitude && locations?.punch_in?.longitude) {
+            return [locations.punch_in.latitude, locations.punch_in.longitude];
         }
-      })();
-    }
-  }, [queryLat, queryLng, userId]);
-
-  // removed live-tracking effect — MapView will fetch on demand when user clicks View
-
-  async function fetchLatestForUser(uid) {
-    setLoading(true);
-    try {
-      const params = { userId: uid };
-      let headers = {};
-      try {
-        const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
-        if (raw) {
-          const p = JSON.parse(raw);
-          const u = p?.user ?? p?.data ?? p;
-          const id = u?.id ?? u?.userId ?? null;
-          if (id) headers['x-user-id'] = String(id);
+        if (locations?.punch_out?.latitude && locations?.punch_out?.longitude) {
+            return [locations.punch_out.latitude, locations.punch_out.longitude];
         }
-      } catch (e) {}
-      const res = await axios.get('/api/live_locations/latest', { params, headers });
-      const loc = res?.data?.location ?? null;
-      if (!loc || loc.latitude == null || loc.longitude == null) {
-        setLat(null); setLng(null); setWhen(null);
-        return null;
-      }
-      setLat(loc.latitude);
-      setLng(loc.longitude);
-      setWhen(loc.updated_at || null);
-      return loc;
-    } catch (err) {
-      console.error('MapView: failed to fetch attendance records', err?.response?.data ?? err);
-      setLat(null); setLng(null); setWhen(null);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }
+        return defaultCenter;
+    };
 
-  // removed live tracking function
+    return (
+        <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <div className="flex flex-1">
+                <Sidebar />
+                <main className="flex-1 p-6">
+                    <div className="mb-6">
+                        <h1 className="text-2xl font-semibold">Engineer Locations</h1>
+                    </div>
 
-  async function handleViewAndOpen(uid) {
-    // enforce role restriction: only show for employee and engineer
-    const allowedRoles = ['employee', 'engineer'];
-    let user = (users || []).find(u => String(u.id) === String(uid));
-    if (!user) {
-      // try fetching users list as a fallback
-      try {
-        const headers = {};
-        try {
-          const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
-          if (raw) {
-            const p = JSON.parse(raw);
-            const uu = p?.user ?? p?.data ?? p;
-            const id = uu?.id ?? uu?.userId ?? null;
-            if (id) headers['x-user-id'] = String(id);
-          }
-        } catch (e) {}
-        const res = await axios.get('/api/users', { headers });
-        const arr = res?.data?.users ?? [];
-        user = arr.find(u => String(u.id) === String(uid));
-      } catch (e) {
-        console.warn('MapView: failed to fetch user for role check', e?.response?.data ?? e);
-      }
-    }
-
-    const role = (user?.role || '').toString().toLowerCase();
-    if (!allowedRoles.includes(role)) {
-      alert('Location is only visible for users with role Employee or Engineer');
-      return;
-    }
-
-    const latest = await fetchLatestForUser(uid);
-    if (latest && latest.latitude != null && latest.longitude != null) {
-      const lat = latest.latitude;
-      const lng = latest.longitude;
-      const googleLink = `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}`;
-      window.open(googleLink, '_blank');
-    } else {
-      alert('No coordinates available for this user');
-    }
-  }
-
-  const hasCoords = lat != null && lng != null;
-  const src = hasCoords ? `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}&output=embed` : null;
-  const googleLink = hasCoords ? `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}` : null;
-
-  return (
-    <div className="flex flex-col h-screen">
-      <Navbar />
-      <div className="flex flex-1 min-h-screen">
-        <Sidebar />
-        <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-          <div className="bg-white rounded shadow p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-semibold mb-1">{name || 'Map'}</h2>
-                <div className="text-sm text-gray-600">{userId ? `User: ${userId}` : ''}</div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => navigate(-1)} className="px-3 py-1 border rounded">Back</button>
-              </div>
-            </div>
-
-            {/* If we don't have a specific user in the query, show a user pick list */}
-            {!userId && (
-              <div className="mt-4 mb-4 bg-gray-50 p-3 rounded">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium">Select user to view on map</div>
-                  <div className="text-xs text-gray-500">{loadingUsers ? 'Loading users...' : `${users.length} users`}</div>
-                </div>
-                {loadingUsers ? (
-                  <div className="text-sm text-gray-600">Loading users...</div>
-                ) : users.length === 0 ? (
-                  <div className="text-sm text-gray-600">No users available.</div>
-                ) : (
-                  <div className="overflow-auto max-h-48">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-gray-500">
-                          <th className="py-1 px-2">Name</th>
-                          <th className="py-1 px-2">Email</th>
-                          <th className="py-1 px-2">Role</th>
-                          <th className="py-1 px-2">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {users.map(u => {
-                          const role = (u.role || '').toString().toLowerCase();
-                          const allowed = ['employee', 'engineer'].includes(role);
-                          return (
-                            <tr key={u.id} className="border-t">
-                              <td className="py-1 px-2">{u.name}</td>
-                              <td className="py-1 px-2">{u.email}</td>
-                              <td className="py-1 px-2">{u.role}</td>
-                              <td className="py-1 px-2">
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleViewAndOpen(u.id)}
-                                    className={`px-2 py-1 rounded text-xs ${allowed ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
-                                    disabled={!allowed}
-                                    title={allowed ? 'View latest location' : 'Location restricted to Employee/Engineer'}
-                                  >
-                                    View
-                                  </button>
+                    {loading ? (
+                        <div className="text-center py-4">Loading engineers...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {engineers.map(engineer => (
+                                <div key={engineer.id} className="bg-white rounded-lg shadow p-4">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="font-medium">{engineer.name}</h3>
+                                            <p className="text-sm text-gray-500 capitalize">{engineer.role}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleViewLocation(engineer)}
+                                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                                        >
+                                            View Location
+                                        </button>
+                                    </div>
                                 </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
+                            ))}
+                        </div>
+                    )}
 
-            <div className="mt-4">
-              {loading ? (
-                <div className="text-sm text-gray-600">Loading location...</div>
-              ) : !hasCoords ? null : (
-                <>
-                  <div className="mb-2 text-sm text-gray-700">Lat: <span className="font-mono">{lat}</span>, Lng: <span className="font-mono">{lng}</span></div>
-                  {when && <div className="mb-2 text-xs text-gray-500">When: {when}</div>}
-                  <div className="bg-white rounded shadow overflow-hidden" style={{height: '70vh'}}>
-                    <iframe title="map" src={src} width="100%" height="100%" style={{border:0}} allowFullScreen loading="lazy"></iframe>
-                  </div>
-                  <div className="mt-3">
-                    <a className="px-3 py-2 bg-blue-600 text-white rounded" href={googleLink} target="_blank" rel="noreferrer">Open in Google Maps</a>
-                  </div>
-                </>
-              )}
+                    {selectedEngineer && (
+                        <div className="mt-6">
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <h2 className="text-xl font-medium mb-4">
+                                    Location Details for {selectedEngineer.name}
+                                </h2>
+                                
+                                {selectedEngineer.locations?.punch_in && selectedEngineer.locations?.punch_out && (
+                                    <div className="mb-4 bg-blue-50 p-3 rounded">
+                                        <p className="text-blue-800">
+                                            Distance Traveled: {calculateDistance(
+                                                selectedEngineer.locations.punch_in.latitude,
+                                                selectedEngineer.locations.punch_in.longitude,
+                                                selectedEngineer.locations.punch_out.latitude,
+                                                selectedEngineer.locations.punch_out.longitude
+                                            ).toFixed(2)} km
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="h-96">
+                                    <MapContainer 
+                                        center={[
+                                            selectedEngineer.locations.punch_in.latitude,
+                                            selectedEngineer.locations.punch_in.longitude
+                                        ]} 
+                                        zoom={18} 
+                                        style={{ height: '100%', width: '100%' }}
+                                    >
+                                        <TileLayer
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                        />
+                                        
+                                        {/* Punch In Marker (Blue) */}
+                                        <Marker 
+                                            position={[
+                                                selectedEngineer.locations.punch_in.latitude,
+                                                selectedEngineer.locations.punch_in.longitude
+                                            ]}
+                                            icon={blueIcon}
+                                        >
+                                            <Popup>
+                                                <strong>Punch In Location</strong><br />
+                                                Time: {new Date(selectedEngineer.locations.punch_in.created_at).toLocaleString()}<br />
+                                                Lat: {selectedEngineer.locations.punch_in.latitude.toFixed(6)}<br />
+                                                Lng: {selectedEngineer.locations.punch_in.longitude.toFixed(6)}
+                                            </Popup>
+                                        </Marker>
+
+                                        {/* Punch Out Marker (Red) */}
+                                        <Marker 
+                                            position={[
+                                                selectedEngineer.locations.punch_out.latitude,
+                                                selectedEngineer.locations.punch_out.longitude
+                                            ]}
+                                            icon={redIcon}
+                                        >
+                                            <Popup>
+                                                <strong>Punch Out Location</strong><br />
+                                                Time: {new Date(selectedEngineer.locations.punch_out.created_at).toLocaleString()}<br />
+                                                Lat: {selectedEngineer.locations.punch_out.latitude.toFixed(6)}<br />
+                                                Lng: {selectedEngineer.locations.punch_out.longitude.toFixed(6)}
+                                            </Popup>
+                                        </Marker>
+
+                                        {/* Line connecting the points */}
+                                        <Polyline 
+                                            positions={[
+                                                [
+                                                    selectedEngineer.locations.punch_in.latitude,
+                                                    selectedEngineer.locations.punch_in.longitude
+                                                ],
+                                                [
+                                                    selectedEngineer.locations.punch_out.latitude,
+                                                    selectedEngineer.locations.punch_out.longitude
+                                                ]
+                                            ]}
+                                            color="purple"
+                                            weight={3}
+                                            opacity={0.6}
+                                            dashArray="10, 10"
+                                        />
+                                    </MapContainer>
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                    <div className="flex items-center">
+                                        <div className="w-4 h-4 bg-blue-500 rounded-full mr-2"></div>
+                                        <span>Punch In</span>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <div className="w-4 h-4 bg-red-500 rounded-full mr-2"></div>
+                                        <span>Punch Out</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </main>
             </div>
-          </div>
-        </main>
-      </div>
-    </div>
-  );
+        </div>
+    );
 }
