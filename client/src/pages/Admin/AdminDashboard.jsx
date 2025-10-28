@@ -103,7 +103,7 @@ const Admin = () => {
               <h3 className="font-semibold mb-2">Field Service Management (FSM)</h3>
               <p className="text-sm text-gray-600 mb-3">Call assignment, live tracking, task lifecycle management.</p>
               <div className="flex gap-2">
-                <button onClick={() => navigate('/engineer/tasks')} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Assign Calls</button>
+                <button onClick={() => navigate('/assign-call')} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Assign Calls</button>
                 <button onClick={() => navigate('/map')} className="px-3 py-1 bg-gray-200 rounded text-sm">Live Map</button>
               </div>
             </div>

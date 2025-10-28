@@ -75,3 +75,8 @@ export async function ensureDbConnection(retries = 6, delayMs = 2000) {
     }
   }
 }
+
+export const getConnection = async () => {
+    const client = await pool.connect();
+    return client;
+};

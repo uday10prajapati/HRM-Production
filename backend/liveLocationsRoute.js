@@ -79,8 +79,6 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-export default router;
-
 // POST /api/live_locations/upsert
 // Body: { userId, latitude, longitude }
 // Inserts a new live location row (keeps history). Admin/hr can upsert for any user; others only for themselves.
@@ -107,3 +105,79 @@ router.post('/upsert', requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Error inserting live location', error: err?.message ?? String(err) });
   }
 });
+
+// POST /api/live_locations/upload-location
+// Body: [{ userId, latitude, longitude, timestamp }, ...]
+// Inserts or updates multiple live location rows. Each request processes an array of location objects.
+router.post('/upload-location', async (req, res) => {
+  try {
+    // Validate input
+    const locations = req.body;
+    if (!Array.isArray(locations)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Input must be an array of location points'
+      });
+    }
+
+    // Validate each location object
+    for (const loc of locations) {
+      if (!loc.userId || !loc.latitude || !loc.longitude || !loc.timestamp) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Each location must have userId, latitude, longitude, and timestamp'
+        });
+      }
+    }
+
+    // Get database connection
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Process each location
+      for (const loc of locations) {
+        const query = `
+                    INSERT INTO live_locations 
+                        (user_id, latitude, longitude, updated_at)
+                    VALUES 
+                        ($1, $2, $3, $4)
+                    ON CONFLICT (user_id, updated_at) 
+                    DO UPDATE SET
+                        latitude = EXCLUDED.latitude,
+                        longitude = EXCLUDED.longitude
+                `;
+
+        await client.query(query, [
+          loc.userId,
+          loc.latitude,
+          loc.longitude,
+          loc.timestamp
+        ]);
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        status: 'success',
+        message: 'Location data updated successfully'
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+  } catch (err) {
+    console.error('Error processing location data:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to process location data'
+    });
+  }
+});
+
+export default router;

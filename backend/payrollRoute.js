@@ -1,5 +1,5 @@
 import express from 'express';
-import { pool } from './db.js';
+import { pool, getConnection } from './db.js';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
@@ -1080,6 +1080,69 @@ router.get('/view-pdf', async (req, res) => {
     } catch (err) {
         console.error('Error serving PDF:', err);
         res.status(500).send('Error serving PDF file');
+    }
+});
+
+// Create payslips table if not exists
+async function ensurePayslipsTable() {
+    let client = null;
+    try {
+        client = await getConnection();
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS payslips (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID REFERENCES users(id),
+                month INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                basic_salary DECIMAL(10,2),
+                allowances DECIMAL(10,2),
+                deductions DECIMAL(10,2),
+                net_salary DECIMAL(10,2),
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, month, year)
+            );
+        `);
+        console.log("✅ Ensured payslips table exists");
+    } catch (err) {
+        console.error("Failed to create payslips table:", err);
+    } finally {
+        if (client) client.release();
+    }
+}
+
+// Ensure table exists on startup
+ensurePayslipsTable();
+
+// Get payslip details
+router.get('/payslip-details', async (req, res) => {
+    let client = null;
+    try {
+        client = await getConnection();
+        const result = await client.query(`
+            SELECT 
+                p.id,
+                p.month,
+                p.year,
+                p.basic_salary,
+                p.allowances,
+                p.deductions,
+                p.net_salary,
+                p.status,
+                p.created_at,
+                u.name as employee_name,
+                u.email as employee_email
+            FROM payslips p
+            JOIN users u ON p.user_id = u.id
+            ORDER BY p.year DESC, p.month DESC, u.name ASC
+        `);
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching payslip details:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        if (client) client.release();
     }
 });
 

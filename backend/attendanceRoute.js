@@ -1,5 +1,5 @@
 import express from "express";
-import { pool } from "./db.js";
+import { pool, getConnection } from "./db.js";
 import requireAuth from './authMiddleware.js';
 
 const router = express.Router();
@@ -39,6 +39,36 @@ const router = express.Router();
 // POST /api/attendance/punch
 // body: { userId, type: 'in'|'out', notes? }
 // stores timestamp in created_at
+// Use pool for simple queries
+router.get("/", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM attendance ORDER BY date DESC");
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Error fetching attendance:", err);
+        res.status(500).json({ error: "Failed to fetch attendance" });
+    }
+});
+
+// Use getConnection for transactions or multiple queries
+router.post("/", async (req, res) => {
+    let client = null;
+    try {
+        client = await getConnection();
+        await client.query('BEGIN');
+        
+        // Your transaction queries here
+        
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error("Error creating attendance:", err);
+        res.status(500).json({ error: "Failed to create attendance" });
+    } finally {
+        if (client) client.release();
+    }
+});
 router.post("/punch", async (req, res) => {
   try {
     const { userId, type, latitude, longitude } = req.body;
@@ -412,5 +442,95 @@ router.get('/engineers', async (req, res) => {
   }
 });
 
+// Get attendance summary for all users
+router.get('/summary/all', async (req, res) => {
+    let client = null;
+    try {
+        const { start, end } = req.query;
+        client = await getConnection();
+        
+        const result = await client.query(`
+            SELECT 
+                u.id,
+                u.name,
+                COUNT(a.id) as total_days,
+                SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) as present_days
+            FROM users u
+            LEFT JOIN attendance a ON u.id = a.user_id 
+                AND a.date BETWEEN $1 AND $2
+            GROUP BY u.id, u.name
+            ORDER BY u.name
+        `, [start, end]);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching attendance summary:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get attendance report for specific user
+router.get('/report', async (req, res) => {
+    let client = null;
+    try {
+        const { userId, start, end } = req.query;
+        client = await getConnection();
+        
+        const result = await client.query(`
+            SELECT 
+                id,
+                date,
+                punch_in,
+                punch_out,
+                status,
+                notes
+            FROM attendance
+            WHERE user_id = $1 
+            AND date BETWEEN $2 AND $3
+            ORDER BY date DESC
+        `, [userId, start, end]);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching attendance report:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// Get raw attendance records
+router.get('/records', async (req, res) => {
+    let client = null;
+    try {
+        const { start, end } = req.query;
+        client = await getConnection();
+        
+        const result = await client.query(`
+            SELECT 
+                a.id,
+                a.date,
+                a.punch_in,
+                a.punch_out,
+                a.status,
+                a.notes,
+                u.name as user_name,
+                u.id as user_id
+            FROM attendance a
+            JOIN users u ON a.user_id = u.id
+            WHERE a.date BETWEEN $1 AND $2
+            ORDER BY a.date DESC, u.name
+        `, [start, end]);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching attendance records:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        if (client) client.release();
+    }
+});
 
 export default router;

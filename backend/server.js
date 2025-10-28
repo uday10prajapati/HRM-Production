@@ -99,7 +99,7 @@ async function startServer() {
     app.use('/api/stock', stockRoute);
     app.use('/api/payroll', payrollRoute);
     app.use('/api/live_locations', liveLocationsRoute);
-    app.use('/api/service_calls', serviceCallsRoute);
+    app.use('/api/service-calls', serviceCallsRoute);
 
     // --- Payroll scheduler: daily check, run on configured day of month ---
     const PAYROLL_RUN_DAY = Number(process.env.PAYROLL_RUN_DAY || 1); // day of month to run (1-28/29/30/31)

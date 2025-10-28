@@ -32,7 +32,7 @@ async function ensureTables() {
     CREATE TABLE IF NOT EXISTS stock_consumption (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       engineer_id UUID,
-      stock_item_id UUID REFERENCES stock_items(id) ON DELETE SET NULL,
+      stock_item_id UUID,
       quantity INTEGER NOT NULL,
       note TEXT,
       consumed_at TIMESTAMP DEFAULT now()
@@ -56,19 +56,26 @@ router.get('/items', async (req, res) => {
 
 // Create or update item
 router.post('/items', async (req, res) => {
-  const { sku, name, description, quantity = 0, threshold = 5 } = req.body;
-  if (!name) return res.status(400).json({ error: 'name required' });
   try {
-    const insert = await pool.query(
-      `INSERT INTO stock_items (sku,name,description,quantity,threshold) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (sku) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, quantity=EXCLUDED.quantity, threshold=EXCLUDED.threshold
-       RETURNING *`,
-      [sku || null, name, description || null, Number(quantity || 0), Number(threshold || 5)]
+    const { productId, name, description, quantity, threshold } = req.body;
+    const result = await pool.query(
+      `
+      INSERT INTO stock_items (
+        product_id,
+        name,
+        description,
+        quantity,
+        threshold
+      ) VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `,
+      [productId, name, description, quantity, threshold]
     );
-    res.json({ item: insert.rows[0] });
+
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to create/update item' });
+    console.error('Error creating stock item:', err);
+    res.status(500).json({ error: 'Failed to create stock item' });
   }
 });
 
@@ -276,6 +283,21 @@ router.get('/overview/full', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch full overview' });
+  }
+});
+
+// List all product items
+router.get('/product-items', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT "Product Name"
+      FROM product_items 
+      ORDER BY "Product Name" ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching product items:', err);
+    res.status(500).json({ error: 'Failed to fetch product items' });
   }
 });
 

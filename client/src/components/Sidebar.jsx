@@ -32,12 +32,12 @@ const Sidebar = () => {
   const menuItems = [
     { to: "/admin-dashboard", label: "Dashboard", roles: ["admin"] },
     { to: "/hr-dashboard", label: "HR Dashboard", roles: ["hr"] },
-  { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
-  { to: "/inventory", label: "Inventory", roles: ["admin", "hr"] },
-  { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
-  { to: "/profile", label: "Profile", roles: ["admin", "hr"] },
-  { to: "/payslips", label: "Payslips", roles: ["admin", "hr"] },
-  { to: "/attendance", label: "Attendance", roles: ["admin", "hr"] },
+    { to: "/all-users", label: "All Users", roles: ["admin", "hr"] },
+    { to: "/inventory", label: "Inventory", roles: ["admin", "hr"] },
+    { to: "/leave-management", label: "Leave Requests", roles: ["admin", "hr"] },
+    { to: "/profile", label: "Profile", roles: ["admin", "hr"] },
+    { to: "/payslips", label: "Payslips", roles: ["admin", "hr"] },
+    { to: "/attendance", label: "Attendance", roles: ["admin", "hr"] },
   ];
 
   // Determine which menu to render

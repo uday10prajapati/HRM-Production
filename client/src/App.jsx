@@ -15,6 +15,7 @@ import AllUsers from "./pages/AllUsers"
 import Stock from "./pages/Inovetry/Stock";
 import PayrollReports from "./pages/reports/PayrollReports";
 import MapView from "./pages/MapView";
+import AssignCalls from "./pages/AssignCalls";
 import EngineerTasks from "./pages/EngineerTasks";
 import 'leaflet/dist/leaflet.css';
 
@@ -46,8 +47,7 @@ function App() {
   <Route path="/reports/payroll" element={<ProtectedRoute role="hr"><PayrollReports /></ProtectedRoute>} />
   <Route path="/leave-management" element={<LeaveManagement />} />
   <Route path="/map" element={<MapView />} />
-  <Route path="/engineer/tasks" element={<ProtectedRoute><EngineerTasks /></ProtectedRoute>} />
-
+  <Route path="/assign-call" element={<AssignCalls />} />
       </Routes>
     </Router>
   );

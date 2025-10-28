@@ -4,29 +4,8 @@ import requireAuth from './authMiddleware.js';
 
 const router = express.Router();
 
-// ensure service_calls table exists
-(async function ensureServiceCallsTable() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS service_calls (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        title TEXT,
-        description TEXT,
-        customer_id UUID,
-        engineer_id UUID,
-        status VARCHAR(32) DEFAULT 'open',
-        scheduled_at TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_calls_engineer ON service_calls (engineer_id);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_calls_customer ON service_calls (customer_id);`);
-    console.log('serviceCallsRoute: ensured service_calls table exists');
-  } catch (err) {
-    console.error('serviceCallsRoute startup error:', err?.message ?? err);
-  }
-})();
+
+
 
 // Ensure users table has optional fcm_token column (safe on startup)
 (async function ensureUsersFcmColumn() {
@@ -270,5 +249,126 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Error assigning engineer', error: err?.message ?? String(err) });
   }
 });
+
+// Move this route to the top of your routes (before any :id routes)
+router.post('/search', async (req, res) => {
+    let client = null;
+    try {
+        const { soccd, society } = req.body;
+        console.log('Search params:', { soccd, society });
+        
+        client = await pool.connect();
+        
+        // Query for societies
+        const societyQuery = `
+            SELECT * FROM (
+                SELECT 
+                    UPPER('Tapi') as SOURCE,
+                    "SOCCD" as SOCCD,
+                    UPPER("SOCIETY") as SOCIETY,
+                    UPPER("TALUKA NAME") as TALUKA
+                FROM service_call_tapi 
+                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
+                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+                UNION ALL
+                SELECT 
+                    UPPER('Surat') as SOURCE,
+                    "SOCCD" as SOCCD,
+                    UPPER("SOCIETY") as SOCIETY,
+                    UPPER("TALUKA NAME") as TALUKA
+                FROM service_call_surat 
+                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
+                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+                UNION ALL
+                SELECT 
+                    UPPER('Dairy') as SOURCE,
+                    "SOCCD" as SOCCD,
+                    UPPER("SOCIETY") as SOCIETY,
+                    UPPER("TALUKA NAME") as TALUKA
+                FROM service_call_dairy_list 
+                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
+                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+            ) combined_results
+            ORDER BY SOURCE, SOCIETY
+            LIMIT 2000
+        `;
+
+        // Query for engineers
+        const engineerQuery = `
+            SELECT 
+                id,
+                name,
+                email,
+                mobile_number,
+                role
+            FROM users 
+            WHERE LOWER(role) = 'engineer'
+            ORDER BY name ASC
+        `;
+
+        // Execute both queries
+        const [societyResult, engineerResult] = await Promise.all([
+            client.query(societyQuery, [
+                soccd ? Number(soccd.trim()) : null,
+                society ? society.trim().toUpperCase() : null
+            ]),
+            client.query(engineerQuery)
+        ]);
+        
+        console.log('Query results - Societies:', societyResult.rows.length);
+        console.log('Query results - Engineers:', engineerResult.rows.length);
+        
+        res.json({
+            success: true,
+            data: {
+                societies: societyResult.rows,
+                engineers: engineerResult.rows
+            }
+        });
+        
+    } catch (err) {
+        console.error('Search error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Search failed',
+            message: err.message
+        });
+    } finally {
+        if (client) {
+            client.release();
+        }
+    }
+});
+
+// Add this new route
+router.post('/send-sms', async (req, res) => {
+    try {
+        const { mobileNumber, message } = req.body;
+
+        if (!mobileNumber || !message) {
+            return res.status(400).json({
+                success: false,
+                message: 'Mobile number and message are required'
+            });
+        }
+
+        // Use your SMS service here (Twilio, etc.)
+        // For example with Twilio:
+        const messageResponse = await sendSmsViaTwilio(mobileNumber, message);
+
+        res.json({
+            success: true,
+            message: 'SMS sent successfully'
+        });
+    } catch (err) {
+        console.error('SMS error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send SMS'
+        });
+    }
+});
+
+
 
 export default router;

@@ -531,6 +531,27 @@ router.put("/tasks/:taskId", async (req, res) => {
   }
 });
 
+// Get all engineers
+router.get('/engineers', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                id,
+                name,
+                email,
+                mobile_number,
+                role
+            FROM users 
+            WHERE LOWER(role) = 'engineer'
+            ORDER BY name ASC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching engineers:', err);
+        res.status(500).json({ error: 'Failed to fetch engineers' });
+    }
+});
+
 export default router;
 
 // Simple helper endpoint: GET /api/tasks/by-email?email=...

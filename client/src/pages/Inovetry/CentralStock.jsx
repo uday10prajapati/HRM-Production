@@ -4,10 +4,31 @@ import EngineerStock from './EngineerStock';
 
 export default function CentralStock() {
   const [items, setItems] = useState([]);
+  const [productItems, setProductItems] = useState([]); // New state for product items
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ sku: '', name: '', description: '', quantity: 0, threshold: 5 });
+  const [form, setForm] = useState({ 
+    productName: '', // Changed from productId to productName
+    name: '', 
+    description: '', 
+    quantity: 0, 
+    threshold: 5 
+  });
   const [users, setUsers] = useState([]);
   const [assign, setAssign] = useState({ engineerId: '', stockItemId: '', quantity: 1 });
+
+  // Fetch product items from database
+  useEffect(() => {
+    async function fetchProductItems() {
+      try {
+        const response = await axios.get('/api/stock/product-items');
+        setProductItems(response.data || []);
+      } catch (err) {
+        console.error('Failed to load product items', err);
+        setProductItems([]);
+      }
+    }
+    fetchProductItems();
+  }, []);
 
   async function fetchItems() {
     setLoading(true);
@@ -35,20 +56,18 @@ export default function CentralStock() {
   async function handleSubmit(e) {
     e.preventDefault();
     try {
-      // Basic validation so users don't mix up the two numeric fields
       const q = Number(form.quantity ?? 0);
       const th = Number(form.threshold ?? 0);
       if (Number.isNaN(q) || Number.isNaN(th) || q < 0 || th < 0) {
         return alert('Quantity and Threshold must be non-negative numbers');
       }
-      // If threshold is greater than quantity, warn user (likely low stock)
       if (th > q) {
         const ok = window.confirm('Threshold is greater than Quantity — this item is already low. Do you want to continue saving?');
         if (!ok) return;
       }
 
       await axios.post('/api/stock/items', form);
-      setForm({ sku: '', name: '', description: '', quantity: 0, threshold: 5 });
+      setForm({ productName: '', name: '', description: '', quantity: 0, threshold: 5 });
       await fetchItems();
       alert('Saved');
     } catch (err) {
@@ -62,8 +81,25 @@ export default function CentralStock() {
       <h2 className="text-lg font-semibold mb-4">Central Stock</h2>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         <div>
-          <label className="block text-sm text-gray-700 mb-1">SKU</label>
-          <input value={form.sku} onChange={e => setForm(f => ({...f, sku: e.target.value}))} placeholder="SKU" className="border p-2 w-full" />
+          <label className="block text-sm text-gray-700 mb-1">Product</label>
+          <select 
+            value={form.productName} 
+            onChange={e => {
+              setForm(f => ({
+                ...f, 
+                productName: e.target.value,
+                name: e.target.value // Auto-fill name with selected product name
+              }));
+            }} 
+            className="border p-2 w-full"
+          >
+            <option value="">Select Product</option>
+            {productItems.map(product => (
+              <option key={product['Product Name']} value={product['Product Name']}>
+                {product['Product Name']}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
