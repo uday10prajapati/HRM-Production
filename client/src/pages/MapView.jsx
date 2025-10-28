@@ -29,32 +29,24 @@ export default function MapView() {
     const [engineers, setEngineers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedEngineer, setSelectedEngineer] = useState(null);
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [timelineData, setTimelineData] = useState(null);
 
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371; // Radius of earth in KM
         const dLat = deg2rad(lat2 - lat1);
         const dLon = deg2rad(lon2 - lon1);
-        const a = 
-            Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
     };
 
     const deg2rad = (deg) => {
-        return deg * (Math.PI/180);
+        return deg * (Math.PI / 180);
     };
-
-    const handleViewLocation = (engineer) => {
-        console.log('Selected engineer:', engineer);
-        setSelectedEngineer(engineer);
-    };
-
-    // Fetch all engineers
-    useEffect(() => {
-        fetchEngineers();
-    }, []);
 
     const fetchEngineers = async () => {
         try {
@@ -68,10 +60,34 @@ export default function MapView() {
         }
     };
 
-    // Add default coordinates (you can change these to your desired default location)
+    const fetchTimeline = async (userId, date) => {
+        try {
+            const response = await axios.get(
+                `http://localhost:5000/api/live_locations/timeline/${userId}`,
+                {
+                    params: { date: date.toISOString().split('T')[0] }
+                }
+            );
+
+            if (response.data.success) {
+                setTimelineData(response.data.timeline);
+            }
+        } catch (err) {
+            console.error('Failed to fetch timeline:', err);
+        }
+    };
+
+    const handleViewLocation = async (engineer) => {
+        setSelectedEngineer(engineer);
+        await fetchTimeline(engineer.id, selectedDate);
+    };
+
+    useEffect(() => {
+        fetchEngineers();
+    }, []);
+
     const defaultCenter = [21.1702, 72.8311]; // Default coordinates for Surat, Gujarat
 
-    // Add function to get map center
     const getMapCenter = (locations) => {
         if (locations?.punch_in?.latitude && locations?.punch_in?.longitude) {
             return [locations.punch_in.latitude, locations.punch_in.longitude];
@@ -80,6 +96,87 @@ export default function MapView() {
             return [locations.punch_out.latitude, locations.punch_out.longitude];
         }
         return defaultCenter;
+    };
+
+    const renderMap = () => {
+        if (!selectedEngineer || !timelineData) return null;
+
+        const positions = timelineData.map(loc => ({
+            position: [loc.latitude, loc.longitude],
+            type: loc.location_type,
+            time: loc.updated_at,
+            icon: loc.location_type === 'PUNCH_IN' ? blueIcon :
+                loc.location_type === 'PUNCH_OUT' ? redIcon :
+                    new L.divIcon({
+                        className: 'bg-yellow-500 w-2 h-2 rounded-full',
+                        iconSize: [8, 8]
+                    })
+        }));
+
+        return (
+            <div className="mt-6">
+                <div className="bg-white rounded-lg shadow p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-medium">
+                            {selectedEngineer.name}'s Timeline
+                        </h2>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="date"
+                                value={selectedDate.toISOString().split('T')[0]}
+                                onChange={(e) => {
+                                    const newDate = new Date(e.target.value);
+                                    setSelectedDate(newDate);
+                                    fetchTimeline(selectedEngineer.id, newDate);
+                                }}
+                                className="border rounded px-2 py-1"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="h-96">
+                        <MapContainer
+                            bounds={positions.map(p => p.position)}
+                            zoom={12}
+                            style={{ height: '100%', width: '100%' }}
+                        >
+                            <TileLayer
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            />
+                            {positions.map((pos, idx) => (
+                                <Marker key={idx} position={pos.position} icon={pos.icon}>
+                                    <Popup>
+                                        <div className="text-sm">
+                                            <strong>{pos.type}</strong><br />
+                                            Time: {new Date(pos.time).toLocaleString()}<br />
+                                            {idx > 0 && (
+                                                <>
+                                                    Distance from previous: {
+                                                        calculateDistance(
+                                                            positions[idx - 1].position[0],
+                                                            positions[idx - 1].position[1],
+                                                            pos.position[0],
+                                                            pos.position[1]
+                                                        ).toFixed(2)
+                                                    } KM
+                                                </>
+                                            )}
+                                        </div>
+                                    </Popup>
+                                </Marker>
+                            ))}
+                            <Polyline
+                                positions={positions.map(p => p.position)}
+                                color="#007BFF"
+                                opacity={0.8}
+                                weight={4}
+                            />
+                        </MapContainer>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -121,7 +218,7 @@ export default function MapView() {
                                 <h2 className="text-xl font-medium mb-4">
                                     Location Details for {selectedEngineer.name}
                                 </h2>
-                                
+
                                 {selectedEngineer.locations?.punch_in && selectedEngineer.locations?.punch_out && (
                                     <div className="mb-4 bg-blue-50 p-3 rounded">
                                         <p className="text-blue-800">
@@ -136,21 +233,21 @@ export default function MapView() {
                                 )}
 
                                 <div className="h-96">
-                                    <MapContainer 
+                                    <MapContainer
                                         center={[
                                             selectedEngineer.locations.punch_in.latitude,
                                             selectedEngineer.locations.punch_in.longitude
-                                        ]} 
-                                        zoom={18} 
+                                        ]}
+                                        zoom={18}
                                         style={{ height: '100%', width: '100%' }}
                                     >
                                         <TileLayer
                                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                         />
-                                        
+
                                         {/* Punch In Marker (Blue) */}
-                                        <Marker 
+                                        <Marker
                                             position={[
                                                 selectedEngineer.locations.punch_in.latitude,
                                                 selectedEngineer.locations.punch_in.longitude
@@ -166,7 +263,7 @@ export default function MapView() {
                                         </Marker>
 
                                         {/* Punch Out Marker (Red) */}
-                                        <Marker 
+                                        <Marker
                                             position={[
                                                 selectedEngineer.locations.punch_out.latitude,
                                                 selectedEngineer.locations.punch_out.longitude
@@ -182,22 +279,34 @@ export default function MapView() {
                                         </Marker>
 
                                         {/* Line connecting the points */}
-                                        <Polyline 
-                                            positions={[
-                                                [
-                                                    selectedEngineer.locations.punch_in.latitude,
-                                                    selectedEngineer.locations.punch_in.longitude
-                                                ],
-                                                [
-                                                    selectedEngineer.locations.punch_out.latitude,
-                                                    selectedEngineer.locations.punch_out.longitude
-                                                ]
-                                            ]}
-                                            color="purple"
-                                            weight={3}
-                                            opacity={0.6}
-                                            dashArray="10, 10"
-                                        />
+                                        {/* Full path polyline if timeline data exists */}
+                                        {timelineData && timelineData.length > 1 ? (
+                                            <Polyline
+                                                positions={timelineData.map(p => [p.latitude, p.longitude])}
+                                                color="blue"
+                                                weight={4}
+                                                opacity={0.8}
+                                            />
+                                        ) : (
+                                            // fallback dashed line between punch in/out
+                                            <Polyline
+                                                positions={[
+                                                    [
+                                                        selectedEngineer.locations.punch_in.latitude,
+                                                        selectedEngineer.locations.punch_in.longitude
+                                                    ],
+                                                    [
+                                                        selectedEngineer.locations.punch_out.latitude,
+                                                        selectedEngineer.locations.punch_out.longitude
+                                                    ]
+                                                ]}
+                                                color="purple"
+                                                weight={3}
+                                                opacity={0.6}
+                                                dashArray="10, 10"
+                                            />
+                                        )}
+
                                     </MapContainer>
                                 </div>
 
@@ -214,6 +323,8 @@ export default function MapView() {
                             </div>
                         </div>
                     )}
+
+                    {renderMap()}
                 </main>
             </div>
         </div>

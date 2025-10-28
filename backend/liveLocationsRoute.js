@@ -180,4 +180,121 @@ router.post('/upload-location', async (req, res) => {
   }
 });
 
+// Update the timeline route to use live_locations table
+router.get('/timeline/:userId', requireAuth, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { date } = req.query;
+
+        const query = `
+            WITH daily_points AS (
+                SELECT 
+                    user_id,
+                    latitude,
+                    longitude,
+                    updated_at,
+                    -- Get the first and last points for the day
+                    FIRST_VALUE(updated_at) OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at) as day_start,
+                    LAST_VALUE(updated_at) OVER (
+                        PARTITION BY DATE(updated_at) 
+                        ORDER BY updated_at
+                        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                    ) as day_end
+                FROM live_locations
+                WHERE user_id = $1
+                AND ($2::date IS NULL OR DATE(updated_at) = $2::date)
+            )
+            SELECT 
+                user_id,
+                latitude,
+                longitude,
+                updated_at,
+                CASE 
+                    WHEN updated_at = day_start THEN 'START'
+                    WHEN updated_at = day_end THEN 'END'
+                    ELSE 'MOVEMENT'
+                END as point_type,
+                -- Calculate time difference from previous point
+                EXTRACT(EPOCH FROM (
+                    updated_at - LAG(updated_at) OVER (ORDER BY updated_at)
+                )) / 60 as minutes_since_last_point
+            FROM daily_points
+            ORDER BY updated_at ASC
+        `;
+
+        const result = await pool.query(query, [
+            userId,
+            date ? new Date(date) : null
+        ]);
+
+        // Process results to add additional metadata
+        const timeline = result.rows.map((row, index, arr) => {
+            // Calculate distance from previous point if exists
+            let distanceFromLast = null;
+            if (index > 0) {
+                const prevPoint = arr[index - 1];
+                distanceFromLast = calculateDistance(
+                    prevPoint.latitude,
+                    prevPoint.longitude,
+                    row.latitude,
+                    row.longitude
+                );
+            }
+
+            return {
+                latitude: row.latitude,
+                longitude: row.longitude,
+                updated_at: row.updated_at,
+                point_type: row.point_type,
+                minutes_since_last: row.minutes_since_last_point 
+                    ? Math.round(row.minutes_since_last_point) 
+                    : null,
+                distance_from_last: distanceFromLast 
+                    ? Number(distanceFromLast.toFixed(2)) 
+                    : null
+            };
+        });
+
+        // Calculate total distance and duration
+        const totalDistance = timeline.reduce((acc, curr) => 
+            acc + (curr.distance_from_last || 0), 0);
+
+        const duration = timeline.length > 1 
+            ? Math.round((new Date(timeline[timeline.length - 1].updated_at) - 
+                         new Date(timeline[0].updated_at)) / (1000 * 60))
+            : 0;
+
+        res.json({
+            success: true,
+            timeline: timeline,
+            summary: {
+                total_distance: Number(totalDistance.toFixed(2)),
+                total_duration_minutes: duration,
+                points_count: timeline.length
+            }
+        });
+
+    } catch (err) {
+        console.error('Error fetching timeline:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch timeline',
+            error: err.message
+        });
+    }
+});
+
+// Helper function to calculate distance between two points
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Distance in kilometers
+}
+
 export default router;
