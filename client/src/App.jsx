@@ -17,6 +17,7 @@ import PayrollReports from "./pages/reports/PayrollReports";
 import MapView from "./pages/MapView";
 import AssignCalls from "./pages/AssignCalls";
 import EngineerTasks from "./pages/EngineerTasks";
+import AssignedCalls from './pages/AssignCalls';
 import 'leaflet/dist/leaflet.css';
 
 function App() {
@@ -48,6 +49,7 @@ function App() {
   <Route path="/leave-management" element={<LeaveManagement />} />
   <Route path="/map" element={<MapView />} />
   <Route path="/assign-call" element={<AssignCalls />} />
+  <Route path="/assigned-calls" element={<AssignedCalls />} />
       </Routes>
     </Router>
   );

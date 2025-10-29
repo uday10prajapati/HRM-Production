@@ -3,6 +3,9 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
+// Add a base URL constant
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const AssignCalls = () => {
     const [soccd, setSoccd] = useState('');
     const [society, setSociety] = useState('');
@@ -14,21 +17,47 @@ const AssignCalls = () => {
     const [selectedEngineer, setSelectedEngineer] = useState(null);
     const [dairyName, setDairyName] = useState('');
     const [problem, setProblem] = useState('');
+    const [assignedCalls, setAssignedCalls] = useState([]);
+    const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
+    const [userRole, setUserRole] = useState(''); // Add this line
+
+    // Add this helper function at the top of your component
+    const isHrOrAdmin = (userRole) => {
+        if (!userRole) return false;
+        const role = userRole.toLowerCase();
+        return role === 'admin' || role === 'hr';
+    };
 
     useEffect(() => {
         // Fetch engineers on mount so they always show
         fetchEngineers();
     }, []);
 
+    useEffect(() => {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        setUserRole(user.role || '');
+    }, []);
+
     const fetchEngineers = async () => {
         try {
-            const res = await axios.post('http://localhost:5000/api/service-calls/search', {}); // empty body returns engineers
+            setLoading(true);
+            const res = await axios.post('http://localhost:5000/api/service-calls/search', {}, {
+                timeout: 5000 // Add timeout
+            });
+            
             if (res.data?.success) {
                 setEngineers(res.data.data.engineers || []);
             }
         } catch (err) {
             console.error('fetchEngineers error', err);
+            if (err.code === 'ERR_NETWORK') {
+                setError('Cannot connect to server. Please make sure the server is running.');
+            } else {
+                setError(err.message || 'Failed to fetch engineers');
+            }
             setEngineers([]);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -43,7 +72,7 @@ const AssignCalls = () => {
                 return;
             }
 
-            const response = await axios.post('http://localhost:5000/api/service-calls/search', {
+            const response = await axios.post(`${API_URL}/api/service-calls/search`, {
                 soccd: soccd || undefined,
                 society: society || undefined
             });
@@ -74,29 +103,85 @@ const AssignCalls = () => {
         setProblem('');
     };
 
+    // Update handleSubmitAssignment function
     const handleSubmitAssignment = async () => {
         try {
-            if (!dairyName || !problem) {
-                alert('Please fill in all fields');
+            if (!selectedEngineer || !dairyName || !problem) {
+                alert('Please fill in all required fields');
                 return;
             }
 
-            // Send SMS API call
-            const response = await axios.post('http://localhost:5000/api/service_calls/send-sms', {
-                mobileNumber: selectedEngineer.mobile_number,
-                message: `Dairy Name: ${dairyName}\nProblem: ${problem}`
-            });
+            const assignData = {
+                id: selectedEngineer.id,
+                name: selectedEngineer.name,
+                role: selectedEngineer.role,
+                mobile_number: selectedEngineer.mobile_number,
+                dairy_name: dairyName,
+                problem: problem,
+                description: problem
+            };
+
+            const response = await axios.post(
+                'http://localhost:5000/api/service-calls/assign-call',
+                assignData,
+                {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
 
             if (response.data.success) {
-                alert('Assignment successful and SMS sent!');
-                setShowPopup(false);
-                setSelectedEngineer(null);
+                alert('Call assigned successfully!');
                 setDairyName('');
                 setProblem('');
+                setSelectedEngineer(null);
+                fetchAssignedCalls(); // Refresh the list
             }
         } catch (err) {
             console.error('Assignment error:', err);
-            alert('Failed to send assignment. Please try again.');
+            alert(err.response?.data?.message || 'Failed to assign call');
+        }
+    };
+
+    const fetchAssignedCalls = async () => {
+        try {
+            const response = await axios.get('http://localhost:5000/api/service-calls/assigned-calls', {
+                timeout: 5000 // Add timeout
+            });
+            
+            if (response.data?.success) {
+                setAssignedCalls(response.data.calls);
+            }
+        } catch (err) {
+            console.error('Error fetching assigned calls:', err);
+            if (err.code === 'ERR_NETWORK') {
+                setError('Cannot connect to server. Please make sure the server is running.');
+            } else {
+                setError(err.message || 'Failed to fetch assigned calls');
+            }
+        }
+    };
+
+    useEffect(() => {
+        fetchAssignedCalls();
+        // Refresh assigned calls every 5 minutes
+        const interval = setInterval(fetchAssignedCalls, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const updateCallStatus = async (callId, newStatus) => {
+        try {
+            const response = await axios.put(
+                `http://localhost:5000/api/service-calls/update-status/${callId}`,
+                { status: newStatus }
+            );
+            if (response.data.success) {
+                fetchAssignedCalls();
+            }
+        } catch (err) {
+            console.error('Error updating status:', err);
+            alert('Failed to update call status');
         }
     };
 
@@ -199,6 +284,71 @@ const AssignCalls = () => {
                                     ))
                                 )}
                             </div>
+                        </div>
+
+                        {/* Assigned Calls Section */}
+                        <div className="bg-white p-4 rounded shadow mt-8">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-semibold">Assigned Calls</h2>
+                                <button
+                                    onClick={() => setShowAssignedCalls(!showAssignedCalls)}
+                                    className="text-blue-500 hover:text-blue-600"
+                                >
+                                    {showAssignedCalls ? 'Hide' : 'Show'} Assigned Calls
+                                </button>
+                            </div>
+
+                            {showAssignedCalls && (
+                                <div className="grid gap-4">
+                                    {assignedCalls.length === 0 ? (
+                                        <div className="text-center text-gray-500 p-4">
+                                            No assigned calls found
+                                        </div>
+                                    ) : (
+                                        assignedCalls.map(call => (
+                                            <div key={call.id} 
+                                                 className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                                <div className="flex justify-between">
+                                                    <div>
+                                                        <h3 className="font-medium text-lg">
+                                                            {call.dairy_name}
+                                                        </h3>
+                                                        <p className="text-sm text-gray-600">
+                                                            Engineer: {call.name}
+                                                        </p>
+                                                        <p className="text-sm text-gray-600">
+                                                            Problem: {call.problem}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 mt-1">
+                                                            Created: {new Date(call.created_at).toLocaleString()}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={`px-2 py-1 rounded text-sm ${
+                                                            call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                                            call.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                            'bg-blue-100 text-blue-800'
+                                                        }`}>
+                                                            {call.status}
+                                                        </span>
+                                                        {!isHrOrAdmin(userRole) && (
+                                                            <select 
+                                                                className="mt-2 border rounded p-1 text-sm"
+                                                                value={call.status}
+                                                                onChange={(e) => updateCallStatus(call.id, e.target.value)}
+                                                            >
+                                                                <option value="pending">Pending</option>
+                                                                <option value="in_progress">In Progress</option>
+                                                                <option value="completed">Completed</option>
+                                                            </select>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </main>

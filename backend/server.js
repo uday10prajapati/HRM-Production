@@ -27,8 +27,11 @@ let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shi
 dotenv.config();
 const app = express();
 
+// Enable CORS
 app.use(cors());
-app.use(bodyParser.json());
+
+// Parse JSON bodies
+app.use(express.json());
 
 // Serve uploaded files (documents, user files) from UPLOADS_BASE (defaults to <repo>/storage/uploads)
 // Client requests to /uploads/... will be served by Express, not the React router.
