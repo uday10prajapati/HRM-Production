@@ -98,6 +98,15 @@ export default function MapView() {
         return defaultCenter;
     };
 
+    const hasValidLocations = (engineer) => {
+        return engineer?.locations?.punch_in && 
+               engineer?.locations?.punch_out &&
+               engineer.locations.punch_in.latitude != null &&
+               engineer.locations.punch_in.longitude != null &&
+               engineer.locations.punch_out.latitude != null &&
+               engineer.locations.punch_out.longitude != null;
+    };
+
     const renderMap = () => {
         if (!selectedEngineer || !timelineData) return null;
 
@@ -233,14 +242,14 @@ export default function MapView() {
                         </div>
                     )}
 
-                    {selectedEngineer && (
+                    {selectedEngineer && hasValidLocations(selectedEngineer) && (
                         <div className="mt-6">
                             <div className="bg-white rounded-lg shadow p-4">
                                 <h2 className="text-xl font-medium mb-4">
                                     Location Details for {selectedEngineer.name}
                                 </h2>
 
-                                {selectedEngineer.locations?.punch_in && selectedEngineer.locations?.punch_out && (
+                                {hasValidLocations(selectedEngineer) && (
                                     <div className="mb-4 bg-blue-50 p-3 rounded">
                                         <p className="text-blue-800">
                                             Distance Traveled: {calculateDistance(
@@ -255,10 +264,7 @@ export default function MapView() {
 
                                 <div className="h-96">
                                     <MapContainer
-                                        center={[
-                                            selectedEngineer.locations.punch_in.latitude,
-                                            selectedEngineer.locations.punch_in.longitude
-                                        ]}
+                                        center={getMapCenter(selectedEngineer.locations)}
                                         zoom={18}
                                         style={{ height: '100%', width: '100%' }}
                                     >
@@ -267,67 +273,56 @@ export default function MapView() {
                                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                                         />
 
-                                        {/* Punch In Marker (Blue) */}
-                                        <Marker
-                                            position={[
-                                                selectedEngineer.locations.punch_in.latitude,
-                                                selectedEngineer.locations.punch_in.longitude
-                                            ]}
-                                            icon={blueIcon}
-                                        >
-                                            <Popup>
-                                                <strong>Punch In Location</strong><br />
-                                                Time: {new Date(selectedEngineer.locations.punch_in.created_at).toLocaleString()}<br />
-                                                Lat: {selectedEngineer.locations.punch_in.latitude.toFixed(6)}<br />
-                                                Lng: {selectedEngineer.locations.punch_in.longitude.toFixed(6)}
-                                            </Popup>
-                                        </Marker>
-
-                                        {/* Punch Out Marker (Red) */}
-                                        <Marker
-                                            position={[
-                                                selectedEngineer.locations.punch_out.latitude,
-                                                selectedEngineer.locations.punch_out.longitude
-                                            ]}
-                                            icon={redIcon}
-                                        >
-                                            <Popup>
-                                                <strong>Punch Out Location</strong><br />
-                                                Time: {new Date(selectedEngineer.locations.punch_out.created_at).toLocaleString()}<br />
-                                                Lat: {selectedEngineer.locations.punch_out.latitude.toFixed(6)}<br />
-                                                Lng: {selectedEngineer.locations.punch_out.longitude.toFixed(6)}
-                                            </Popup>
-                                        </Marker>
-
-                                        {/* Line connecting the points */}
-                                        {/* Full path polyline if timeline data exists */}
-                                        {timelineData && timelineData.length > 1 ? (
-                                            <Polyline
-                                                positions={timelineData.map(p => [p.latitude, p.longitude])}
-                                                color="blue"
-                                                weight={4}
-                                                opacity={0.8}
-                                            />
-                                        ) : (
-                                            // fallback dashed line between punch in/out
-                                            <Polyline
-                                                positions={[
-                                                    [
+                                        {hasValidLocations(selectedEngineer) && (
+                                            <>
+                                                <Marker
+                                                    position={[
                                                         selectedEngineer.locations.punch_in.latitude,
                                                         selectedEngineer.locations.punch_in.longitude
-                                                    ],
-                                                    [
+                                                    ]}
+                                                    icon={blueIcon}
+                                                >
+                                                    <Popup>
+                                                        <strong>Punch In Location</strong><br />
+                                                        Time: {new Date(selectedEngineer.locations.punch_in.created_at).toLocaleString()}<br />
+                                                        Lat: {selectedEngineer.locations.punch_in.latitude.toFixed(6)}<br />
+                                                        Lng: {selectedEngineer.locations.punch_in.longitude.toFixed(6)}
+                                                    </Popup>
+                                                </Marker>
+
+                                                <Marker
+                                                    position={[
                                                         selectedEngineer.locations.punch_out.latitude,
                                                         selectedEngineer.locations.punch_out.longitude
-                                                    ]
-                                                ]}
-                                                color="purple"
-                                                weight={3}
-                                                opacity={0.6}
-                                                dashArray="10, 10"
-                                            />
-                                        )}
+                                                    ]}
+                                                    icon={redIcon}
+                                                >
+                                                    <Popup>
+                                                        <strong>Punch Out Location</strong><br />
+                                                        Time: {new Date(selectedEngineer.locations.punch_out.created_at).toLocaleString()}<br />
+                                                        Lat: {selectedEngineer.locations.punch_out.latitude.toFixed(6)}<br />
+                                                        Lng: {selectedEngineer.locations.punch_out.longitude.toFixed(6)}
+                                                    </Popup>
+                                                </Marker>
 
+                                                <Polyline
+                                                    positions={[
+                                                        [
+                                                            selectedEngineer.locations.punch_in.latitude,
+                                                            selectedEngineer.locations.punch_in.longitude
+                                                        ],
+                                                        [
+                                                            selectedEngineer.locations.punch_out.latitude,
+                                                            selectedEngineer.locations.punch_out.longitude
+                                                        ]
+                                                    ]}
+                                                    color="purple"
+                                                    weight={3}
+                                                    opacity={0.6}
+                                                    dashArray="10, 10"
+                                                />
+                                            </>
+                                        )}
                                     </MapContainer>
                                 </div>
 
