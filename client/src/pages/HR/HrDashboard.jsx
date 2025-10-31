@@ -18,6 +18,14 @@ const HrDashboard = () => {
   const [adjustForm, setAdjustForm] = useState({ userId: "", leave_balance: "" });
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [locLoading, setLocLoading] = useState(false);
+  const [isAssignCallOpen, setIsAssignCallOpen] = useState(false);
+  const [engineers, setEngineers] = useState([]);
+  const [assignCallForm, setAssignCallForm] = useState({
+    engineerId: "",
+    dairyName: "",
+    problem: "",
+    description: ""
+  });
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -45,6 +53,7 @@ const HrDashboard = () => {
         fetchShifts();
         fetchUsers();
         fetchTomorrowAssignments();
+        fetchEngineers();
       }
     })();
   }, [navigate]);
@@ -106,6 +115,17 @@ const HrDashboard = () => {
       setUsers(all);
     } catch (e) { console.error(e); }
   }
+
+  const fetchEngineers = async () => {
+    try {
+      const res = await axios.get("/api/users", {
+        params: { role: 'engineer' }
+      });
+      setEngineers(res.data?.users?.filter(u => u.role === 'engineer') || []);
+    } catch (err) {
+      console.error('Error fetching engineers:', err);
+    }
+  };
 
   // fetch latest attendance row for a user that contains latitude/longitude
   async function fetchUserLocation(user) {
@@ -213,6 +233,41 @@ const HrDashboard = () => {
     }
   }
 
+  const handleAssignCall = async (e) => {
+    e.preventDefault();
+    try {
+      const selectedEngineer = engineers.find(eng => eng.id === assignCallForm.engineerId);
+      if (!selectedEngineer) {
+        alert('Please select an engineer');
+        return;
+      }
+
+      const response = await axios.post('/api/service-calls/assign-call', {
+        id: selectedEngineer.id,
+        name: selectedEngineer.name,
+        role: selectedEngineer.role,
+        mobile_number: selectedEngineer.mobile_number,
+        dairy_name: assignCallForm.dairyName,
+        problem: assignCallForm.problem,
+        description: assignCallForm.description
+      });
+
+      if (response.data?.success) {
+        alert('Call assigned successfully!');
+        setIsAssignCallOpen(false);
+        setAssignCallForm({
+          engineerId: "",
+          dairyName: "",
+          problem: "",
+          description: ""
+        });
+      }
+    } catch (err) {
+      console.error('Error assigning call:', err);
+      alert('Failed to assign call');
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen">
       <Navbar />
@@ -225,6 +280,7 @@ const HrDashboard = () => {
            <div className="flex gap-2 mb-4">
             <button onClick={() => setIsCreateOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded">Create Shift</button>
             <button onClick={() => { setAssignForm(f => ({...f, date: tomorrowDate()})); setIsAssignOpen(true); }} className="px-3 py-2 bg-blue-600 text-white rounded">Assign Shift (tomorrow)</button>
+            <button onClick={() => setIsAssignCallOpen(true)} className="px-3 py-2 bg-purple-600 text-white rounded">Assign Service Call</button>
           </div>
 
           <div className="mb-4">
@@ -327,6 +383,25 @@ const HrDashboard = () => {
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setIsAdjustOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
               <button type="submit" className="px-3 py-1 bg-yellow-500 text-white rounded">Save</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {/* Assign service call modal */}
+      {isAssignCallOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <form onSubmit={handleAssignCall} className="bg-white p-6 rounded shadow w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Assign Service Call</h3>
+            <select className="mb-2 w-full border p-2" value={assignCallForm.engineerId} onChange={e => setAssignCallForm({...assignCallForm, engineerId: e.target.value})}>
+              <option value="">Select engineer</option>
+              {engineers.map(eng => <option key={eng.id} value={eng.id}>{eng.name} ({eng.role})</option>)}
+            </select>
+            <input className="mb-2 w-full border p-2" placeholder="Dairy name" value={assignCallForm.dairyName} onChange={e => setAssignCallForm({...assignCallForm, dairyName: e.target.value})} />
+            <input className="mb-2 w-full border p-2" placeholder="Problem" value={assignCallForm.problem} onChange={e => setAssignCallForm({...assignCallForm, problem: e.target.value})} />
+            <textarea className="mb-2 w-full border p-2" placeholder="Description" value={assignCallForm.description} onChange={e => setAssignCallForm({...assignCallForm, description: e.target.value})} />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setIsAssignCallOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
+              <button type="submit" className="px-3 py-1 bg-purple-600 text-white rounded">Assign Call</button>
             </div>
           </form>
         </div>
