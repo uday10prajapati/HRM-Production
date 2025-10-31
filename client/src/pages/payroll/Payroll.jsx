@@ -73,20 +73,19 @@ export default function Payroll() {
 
     // NEW: generate & save payslip for a single user (calls backend POST /api/payroll/generate-payslip/:userId/:year/:month)
     async function generatePayslipForUser(user) {
-        const email = user?.email || user;
-        if (!email) return alert('Invalid user');
-        console.log('Generating payslip for:', email); // Debug log
-        setGeneratingMap(m => ({ ...m, [email]: true }));
+        const userId = user?.id || user;
+        if (!userId) return alert('Invalid user');
+        console.log('Generating payslip for:', userId);
+        setGeneratingMap(m => ({ ...m, [userId]: true }));
         try {
             const headers = getRequesterHeaders();
-            console.log('Request headers:', headers); // Debug log
-            const res = await axios.post(`/api/payroll/generate-payslip/${encodeURIComponent(email)}/${year}/${month}`, {}, { headers });
-            alert(`Payslip generated for ${user.name || email}`);
+            const res = await axios.post(`/api/payroll/generate-payslip/${userId}/${year}/${month}`, {}, { headers });
+            alert(`Payslip generated for ${user.name || userId}`);
         } catch (err) {
             console.error('Failed to generate payslip:', err.response?.data || err.message);
             alert(`Failed to generate payslip: ${err.response?.data?.error || err.message}`);
         } finally {
-            setGeneratingMap(m => ({ ...m, [email]: false }));
+            setGeneratingMap(m => ({ ...m, [userId]: false }));
         }
     }
 
@@ -94,7 +93,7 @@ export default function Payroll() {
     async function downloadSlip(user) {
         try {
             const headers = getRequesterHeaders();
-            const res = await axios.get(`/api/payroll/slip/${encodeURIComponent(user.email)}/${year}/${month}`, { headers });
+            const res = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`, { headers });
             const slip = res.data;
             const doc = new jsPDF();
             doc.setFontSize(12);
@@ -124,17 +123,52 @@ export default function Payroll() {
     async function viewSlip(user) {
         try {
             const headers = getRequesterHeaders();
-            const pathRes = await axios.get(`/api/payroll/get-path/${encodeURIComponent(user.email)}/${year}/${month}`, { headers });
+            const checkRes = await axios.get(`/api/payroll/get-path/${user.id}/${year}/${month}`, { headers });
             
-            if (pathRes.data?.path) {
-                setPdfUrl(`http://localhost:5000/api/payroll/view-pdf?path=${encodeURIComponent(pathRes.data.path)}`);
-                setShowPdfModal(true);
+            console.log('Received PDF data:', checkRes.data);
+
+            // Check for both path and pdf_path since we don't know which one backend returns
+            const pdfPath = checkRes.data?.pdf_path || checkRes.data?.path;
+
+            if (pdfPath) {
+                try {
+                    // Create a blob from the PDF content
+                    const pdfResponse = await axios.get(`/api/payroll/pdf-file/${user.id}/${year}/${month}`, {
+                        headers: {
+                            ...headers,
+                            'Accept': 'application/pdf'
+                        },
+                        responseType: 'blob'
+                    });
+
+                    // Create blob URL
+                    const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    
+                    // Set the blob URL
+                    setPdfUrl(blobUrl);
+                    setShowPdfModal(true);
+                } catch (pdfErr) {
+                    console.error('Failed to fetch PDF:', pdfErr);
+                    throw new Error('Failed to load PDF file');
+                }
             } else {
-                alert('Please generate the payslip first before viewing.');
+                console.error('No PDF path in response:', checkRes.data);
+                throw new Error('PDF path not found in server response');
             }
         } catch (err) {
-            console.error('Failed to fetch/view slip:', err?.response?.data || err);
-            alert('Payslip not found. Please generate it first.');
+            console.error('ViewSlip Error:', err);
+            // Only show generate confirmation if PDF really doesn't exist
+            if (err.message.includes('not found')) {
+                const generateConfirm = window.confirm('Payslip not found. Would you like to generate it?');
+                if (generateConfirm) {
+                    await generatePayslipForUser(user);
+                    // Try viewing again after a short delay to allow for generation
+                    setTimeout(() => viewSlip(user), 1000);
+                }
+            } else {
+                alert('Error viewing PDF: ' + err.message);
+            }
         }
     }
 
@@ -143,8 +177,19 @@ export default function Payroll() {
         return email && typeof email === 'string' && email.includes('@');
     }
 
-    // Add PDF Modal component
+    // Update the PdfModal component
     function PdfModal({ url, onClose }) {
+        const [loading, setLoading] = useState(true);
+
+        useEffect(() => {
+            return () => {
+                // Cleanup blob URL when modal closes
+                if (url.startsWith('blob:')) {
+                    window.URL.revokeObjectURL(url);
+                }
+            };
+        }, [url]);
+
         if (!showPdfModal) return null;
 
         return (
@@ -159,11 +204,17 @@ export default function Payroll() {
                             ✕
                         </button>
                     </div>
-                    <div className="flex-1 bg-gray-100">
-                        <iframe 
+                    <div className="flex-1 bg-gray-100 relative">
+                        {loading && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                Loading PDF...
+                            </div>
+                        )}
+                        <iframe
                             src={url}
+                            type="application/pdf"
                             className="w-full h-full"
-                            title="PDF Viewer"
+                            onLoad={() => setLoading(false)}
                         />
                     </div>
                 </div>
@@ -183,12 +234,12 @@ export default function Payroll() {
                             <label className="block text-sm">Select User</label>
                             <select 
                                 className="border p-2 w-full" 
-                                value={selectedUser?.email || selectedUser || ''} 
-                                onChange={e => setSelectedUser(users.find(u => u.email === e.target.value) || e.target.value)}
+                                value={selectedUser?.id || selectedUser || ''} 
+                                onChange={e => setSelectedUser(users.find(u => u.id === e.target.value) || e.target.value)}
                             >
                                 <option value="">-- select --</option>
                                 {users.map(u => (
-                                    <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
                                 ))}
                             </select>
                         </div>
@@ -231,7 +282,7 @@ export default function Payroll() {
                                     <thead><tr><th className="px-2 py-1">Name</th><th className="px-2 py-1">Email</th><th className="px-2 py-1">Actions</th></tr></thead>
                                     <tbody>
                                         {users.map(u => (
-                                            <tr key={u.email} className="border-t">
+                                            <tr key={u.id} className="border-t">
                                                 <td className="px-2 py-1">{u.name}</td>
                                                 <td className="px-2 py-1">{u.email}</td>
                                                 <td className="px-2 py-1 space-x-2">
@@ -250,9 +301,9 @@ export default function Payroll() {
                                                     <button 
                                                         onClick={() => generatePayslipForUser(u)} 
                                                         className="px-2 py-1 bg-orange-600 text-white rounded" 
-                                                        disabled={!!generatingMap[u.email]}
+                                                        disabled={!!generatingMap[u.id]}
                                                     >
-                                                        {generatingMap[u.email] ? 'Generating...' : 'Generate'}
+                                                        {generatingMap[u.id] ? 'Generating...' : 'Generate'}
                                                     </button>
                                                 </td>
                                             </tr>
