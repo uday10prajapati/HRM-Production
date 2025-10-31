@@ -113,6 +113,14 @@ export default function MapView() {
                     })
         }));
 
+        // Calculate center point from positions
+        const center = positions.length > 0
+            ? [
+                positions.reduce((sum, pos) => sum + pos.position[0], 0) / positions.length,
+                positions.reduce((sum, pos) => sum + pos.position[1], 0) / positions.length
+              ]
+            : defaultCenter;
+
         return (
             <div className="mt-6">
                 <div className="bg-white rounded-lg shadow p-4">
@@ -136,7 +144,7 @@ export default function MapView() {
 
                     <div className="h-96">
                         <MapContainer
-                            bounds={positions.map(p => p.position)}
+                            center={center}
                             zoom={12}
                             style={{ height: '100%', width: '100%' }}
                         >
@@ -148,7 +156,7 @@ export default function MapView() {
                                 <Marker key={idx} position={pos.position} icon={pos.icon}>
                                     <Popup>
                                         <div className="text-sm">
-                                            <strong>{pos.type}</strong><br />
+                                            <strong>{pos.type === 'PUNCH_IN' ? 'Punch In' : 'Punch Out'}</strong><br />
                                             Time: {new Date(pos.time).toLocaleString()}<br />
                                             {idx > 0 && (
                                                 <>
@@ -166,13 +174,26 @@ export default function MapView() {
                                     </Popup>
                                 </Marker>
                             ))}
-                            <Polyline
-                                positions={positions.map(p => p.position)}
-                                color="#007BFF"
-                                opacity={0.8}
-                                weight={4}
-                            />
+                            {positions.length > 1 && (
+                                <Polyline
+                                    positions={positions.map(p => p.position)}
+                                    color="#007BFF"
+                                    opacity={0.8}
+                                    weight={4}
+                                />
+                            )}
                         </MapContainer>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div className="flex items-center">
+                            <div className="w-4 h-4 bg-blue-500 rounded-full mr-2"></div>
+                            <span>Punch In</span>
+                        </div>
+                        <div className="flex items-center">
+                            <div className="w-4 h-4 bg-red-500 rounded-full mr-2"></div>
+                            <span>Punch Out</span>
+                        </div>
                     </div>
                 </div>
             </div>
