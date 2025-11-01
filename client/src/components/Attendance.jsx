@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
+import { toast } from "react-toastify";
 
 export default function Attendance() {
   const [records, setRecords] = useState([]);
@@ -62,33 +63,44 @@ export default function Attendance() {
     }
   }
 
-  async function handlePunch(type) {
-    if (!userId) {
-      alert("User not found. Please login.");
-      return;
-    }
+  const handlePunch = async (type) => {
     try {
-      // attempt to fetch geolocation, but don't block if unavailable
-      const getLoc = (timeoutMs = 4000) => new Promise((resolve) => {
-        if (!navigator?.geolocation) return resolve(null);
-        let done = false;
-        navigator.geolocation.getCurrentPosition((p) => { if (!done) { done = true; resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude }); } }, () => { if (!done) { done = true; resolve(null); } }, { timeout: timeoutMs });
-        setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs + 100);
-      });
-      const loc = await getLoc(4000);
-      const payload = { userId, type };
-      if (loc) { payload.latitude = loc.latitude; payload.longitude = loc.longitude; }
-  const { id, headers } = getAuthHeaders();
-  if (!id) console.warn('handlePunch(component): no user id in storage');
-  console.debug('handlePunch(component): sending punch', { payload, headers });
-  await axios.post("/api/attendance/punch", payload, { headers });
-      await fetchReport();
-      alert(`Punched ${type}`);
+        if (!navigator.geolocation) {
+            toast.error('Geolocation is not supported by your browser');
+            return;
+        }
+
+        setLoading(true);
+
+        // Get current position
+        const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject);
+        });
+
+        const { latitude, longitude } = position.coords;
+
+        const response = await axios.post('/api/attendance/punch', {
+            userId: user.id,
+            punchType: type,
+            latitude,
+            longitude,
+            notes: `${type.toUpperCase()} punch at ${new Date().toLocaleString()}`
+        }, {
+            headers: getAuthHeaders()
+        });
+
+        if (response.data.success) {
+            toast.success(`Successfully punched ${type}`);
+            fetchReport();
+        }
+
     } catch (err) {
-      console.error("Punch failed:", err?.response?.data ?? err);
-      alert(err?.response?.data?.message ?? err.message ?? "Punch failed");
+        console.error('Punch error:', err);
+        toast.error('Failed to record attendance');
+    } finally {
+        setLoading(false);
     }
-  }
+};
 
   return (
     <div className="min-h-screen bg-gray-50">

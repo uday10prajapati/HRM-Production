@@ -3,6 +3,7 @@ import { pool, getConnection } from './db.js';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import { requireAuth } from './middleware/auth.js';
 
 const router = express.Router();
 
@@ -1236,85 +1237,130 @@ router.get('/payslip-details', async (req, res) => {
     }
 });
 
-// Add this route to get PDF path
-router.get('/get-path/:userId/:year/:month', async (req, res) => {
+// Add this route to serve PDF files
+router.get('/pdf-file/:userId/:year/:month',  async (req, res) => {
     try {
         const { userId, year, month } = req.params;
-        const dbUserId = await resolveDbUserId(userId);
         
-        if (!dbUserId) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        // Get PDF path from payroll_records
+        // First get the file path
         const query = `
-            SELECT pdf_path, file_name 
-            FROM payroll_records 
+            SELECT pdf_path
+            FROM payslips 
             WHERE user_id = $1 
             AND year = $2 
             AND month = $3
+            ORDER BY created_at DESC 
+            LIMIT 1
         `;
-
-        const result = await pool.query(query, [dbUserId, Number(year), Number(month)]);
-
+        
+        const result = await pool.query(query, [userId, year, month]);
+        
         if (!result.rows[0]?.pdf_path) {
-            // If no PDF exists, generate one
-            const generatedSlip = await generatePayslipForUser(dbUserId, year, month, { savePdf: true });
-            return res.json({
-                success: true,
-                pdf_path: generatedSlip.path,
-                file_name: path.basename(generatedSlip.path)
+            return res.status(404).json({
+                success: false,
+                message: 'PDF not found'
             });
         }
 
-        return res.json({
-            success: true,
-            pdf_path: result.rows[0].pdf_path,
-            file_name: result.rows[0].file_name
-        });
+        const pdfPath = result.rows[0].pdf_path;
 
-    } catch (err) {
-        console.error('Error getting PDF path:', err);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get PDF path'
-        });
-    }
-});
+        // Check if file exists
+        if (!fs.existsSync(pdfPath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'PDF file not found on server'
+            });
+        }
 
-// Add route to serve PDF files
-router.get('/pdf-file/:userId/:year/:month', async (req, res) => {
-    try {
-        const { userId, year, month } = req.params;
-        const dbUserId = await resolveDbUserId(userId);
-        
-        // Get path from payroll_records table
-        const query = `
-            SELECT pdf_path, file_name 
-            FROM payroll_records 
-            WHERE user_id = $1 
-            AND year = $2 
-            AND month = $3`;
+        // Set headers for PDF
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename=payslip.pdf');
 
-        const result = await pool.query(query, [dbUserId, Number(year), Number(month)]);
-        
-        // Just send the path and filename
-        return res.sendFile(result.rows[0].pdf_path, {
-            headers: {
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `inline; filename="${result.rows[0].file_name}"`,
-                'Cache-Control': 'no-cache'
-            }
-        });
+        // Stream the file
+        const fileStream = fs.createReadStream(pdfPath);
+        fileStream.pipe(res);
 
     } catch (err) {
         console.error('Error serving PDF file:', err);
         res.status(500).json({
             success: false,
-            error: 'Failed to serve PDF file'
+            message: 'Failed to serve PDF file'
         });
     }
 });
 
+router.get('/download/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(__dirname, 'storage', 'uploads', 'payslips', filename);
+
+    // Security check to prevent directory traversal
+    if (!filePath.startsWith(path.join(__dirname, 'storage', 'uploads', 'payslips'))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied' 
+      });
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'File not found' 
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+  } catch (err) {
+    console.error('Error serving payslip:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to serve payslip' 
+    });
+  }
+});
+
+// Add this new route handler
+router.get('/get-path/:userId/:year/:month', requireAuth, async (req, res) => {
+    try {
+        const { userId, year, month } = req.params;
+
+        const query = `
+            SELECT pdf_path
+            FROM payslips
+            WHERE user_id = $1 
+            AND year = $2 
+            AND month = $3
+            ORDER BY created_at DESC
+            LIMIT 1
+        `;
+
+        const result = await pool.query(query, [userId, year, month]);
+
+        if (!result.rows.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'Payslip not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            pdf_path: result.rows[0].pdf_path
+        });
+
+    } catch (err) {
+        console.error('Error fetching payslip path:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch payslip path'
+        });
+    }
+});
 
 export default router;

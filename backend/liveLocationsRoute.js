@@ -186,6 +186,8 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
         const { userId } = req.params;
         const { date } = req.query;
 
+        console.log('Timeline request:', { userId, date });
+
         const query = `
             WITH daily_points AS (
                 SELECT 
@@ -193,16 +195,12 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
                     latitude,
                     longitude,
                     updated_at,
-                    -- Get the first and last points for the day
-                    FIRST_VALUE(updated_at) OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at) as day_start,
-                    LAST_VALUE(updated_at) OVER (
-                        PARTITION BY DATE(updated_at) 
-                        ORDER BY updated_at
-                        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                    ) as day_end
+                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at) as first_point,
+                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at DESC) as last_point,
+                    COUNT(*) OVER (PARTITION BY DATE(updated_at)) as total_points
                 FROM live_locations
                 WHERE user_id = $1
-                AND ($2::date IS NULL OR DATE(updated_at) = $2::date)
+                AND DATE(updated_at) = $2::date
             )
             SELECT 
                 user_id,
@@ -210,68 +208,39 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
                 longitude,
                 updated_at,
                 CASE 
-                    WHEN updated_at = day_start THEN 'START'
-                    WHEN updated_at = day_end THEN 'END'
+                    WHEN first_point = 1 THEN 'START'
+                    WHEN last_point = 1 THEN 'END'
                     ELSE 'MOVEMENT'
-                END as point_type,
-                -- Calculate time difference from previous point
-                EXTRACT(EPOCH FROM (
-                    updated_at - LAG(updated_at) OVER (ORDER BY updated_at)
-                )) / 60 as minutes_since_last_point
+                END as point_type
             FROM daily_points
-            ORDER BY updated_at ASC
+            ORDER BY updated_at ASC;
         `;
 
-        const result = await pool.query(query, [
-            userId,
-            date ? new Date(date) : null
-        ]);
+        const result = await pool.query(query, [userId, date]);
 
-        // Process results to add additional metadata
-        const timeline = result.rows.map((row, index, arr) => {
-            // Calculate distance from previous point if exists
-            let distanceFromLast = null;
-            if (index > 0) {
-                const prevPoint = arr[index - 1];
-                distanceFromLast = calculateDistance(
-                    prevPoint.latitude,
-                    prevPoint.longitude,
-                    row.latitude,
-                    row.longitude
-                );
-            }
+        console.log('Query results:', result.rows);
 
-            return {
-                latitude: row.latitude,
-                longitude: row.longitude,
-                updated_at: row.updated_at,
-                point_type: row.point_type,
-                minutes_since_last: row.minutes_since_last_point 
-                    ? Math.round(row.minutes_since_last_point) 
-                    : null,
-                distance_from_last: distanceFromLast 
-                    ? Number(distanceFromLast.toFixed(2)) 
-                    : null
-            };
-        });
+        if (result.rows.length === 0) {
+            return res.json({
+                success: true,
+                timeline: [],
+                message: 'No locations found for this date'
+            });
+        }
 
-        // Calculate total distance and duration
-        const totalDistance = timeline.reduce((acc, curr) => 
-            acc + (curr.distance_from_last || 0), 0);
+        // Format the data
+        const timeline = result.rows.map(row => ({
+            latitude: Number(row.latitude),
+            longitude: Number(row.longitude),
+            updated_at: row.updated_at,
+            point_type: row.point_type
+        }));
 
-        const duration = timeline.length > 1 
-            ? Math.round((new Date(timeline[timeline.length - 1].updated_at) - 
-                         new Date(timeline[0].updated_at)) / (1000 * 60))
-            : 0;
+        console.log('Formatted timeline:', timeline);
 
         res.json({
             success: true,
-            timeline: timeline,
-            summary: {
-                total_distance: Number(totalDistance.toFixed(2)),
-                total_duration_minutes: duration,
-                points_count: timeline.length
-            }
+            timeline: timeline
         });
 
     } catch (err) {

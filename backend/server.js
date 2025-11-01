@@ -37,6 +37,9 @@ app.use(express.json());
 // Client requests to /uploads/... will be served by Express, not the React router.
 app.use('/uploads', express.static(UPLOADS_BASE));
 
+// Add static middleware for payslips
+app.use('/payslips', express.static(path.join(__dirname, 'storage', 'uploads', 'payslips')));
+
 // Quiet startup: suppress noisy console logs from startup helpers and routes.
 // By default we show only the two lines the user asked for. Set SHOW_STARTUP_LOGS=true
 // in the environment to see all logs again.

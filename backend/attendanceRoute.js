@@ -69,21 +69,42 @@ router.post("/", async (req, res) => {
         if (client) client.release();
     }
 });
-router.post("/punch", async (req, res) => {
+router.post("/punch", requireAuth, async (req, res) => {
   try {
-    const { userId, type, latitude, longitude } = req.body;
+    const { userId, punchType, latitude, longitude, notes } = req.body;
     
-    const query = `
-      INSERT INTO attendance (user_id, type, location) 
-      VALUES ($1, $2, point($3, $4))
-      RETURNING *
+    // Insert attendance record
+    const attendanceQuery = `
+      INSERT INTO attendance 
+      (user_id, punch_type, latitude, longitude, notes)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, created_at
     `;
     
-    const result = await pool.query(query, [userId, type, latitude, longitude]);
-    res.json({ success: true, data: result.rows[0] });
+    const attendanceResult = await pool.query(attendanceQuery, 
+      [userId, punchType, latitude, longitude, notes]
+    );
+
+    // Also record location in live_locations table
+    const locationQuery = `
+      INSERT INTO live_locations 
+      (user_id, latitude, longitude)
+      VALUES ($1, $2, $3)
+    `;
+    
+    await pool.query(locationQuery, [userId, latitude, longitude]);
+
+    res.json({
+      success: true,
+      data: attendanceResult.rows[0]
+    });
+
   } catch (err) {
-    console.error("Error saving attendance:", err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error('Attendance recording error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to record attendance'
+    });
   }
 });
 
@@ -530,6 +551,52 @@ router.get('/records', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     } finally {
         if (client) client.release();
+    }
+});
+
+router.get('/timeline/:userId', requireAuth, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { date } = req.query;
+
+        const query = `
+            SELECT 
+                id,
+                punch_type,
+                created_at,
+                latitude,
+                longitude,
+                notes
+            FROM attendance
+            WHERE user_id = $1 
+            AND DATE(created_at) = $2::date
+            AND punch_type IN ('in', 'out')
+            ORDER BY created_at;
+        `;
+
+        const result = await pool.query(query, [userId, date]);
+
+        // Format the data for the frontend
+        const timeline = result.rows.map(record => ({
+            id: record.id,
+            latitude: Number(record.latitude),
+            longitude: Number(record.longitude),
+            updated_at: record.created_at,
+            point_type: record.punch_type === 'in' ? 'START' : 'END',
+            notes: record.notes
+        }));
+
+        res.json({
+            success: true,
+            timeline
+        });
+
+    } catch (err) {
+        console.error('Timeline fetch error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch timeline data'
+        });
     }
 });
 
