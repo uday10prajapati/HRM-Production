@@ -280,189 +280,201 @@ function AttendancePage() {
   }, [start, end, group]);
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col min-h-screen bg-gray-50">
       <Navbar />
-      <div className="flex flex-1 min-h-screen">
+      <div className="flex flex-1">
         <Sidebar />
-        <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold">Attendance Reports</h1>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handlePunch('in')}
-                disabled={punchLoading}
-                className="px-3 py-1 bg-green-600 text-white rounded"
-              >
-                Punch In
-              </button>
-              <button
-                onClick={() => handlePunch('out')}
-                disabled={punchLoading}
-                className="px-3 py-1 bg-red-600 text-white rounded"
-              >
-                Punch Out
-              </button>
-              {(() => {
-                try {
-                  const raw = localStorage.getItem('user') || localStorage.getItem('currentUser');
-                  if (raw) {
-                    const p = JSON.parse(raw);
-                    const u = p?.user ?? p?.data ?? p;
-                    const role = (u?.role || '').toString().toLowerCase();
-                    if (role === 'hr' || role === 'admin') {
-                      return <div className="text-xs text-gray-500 self-center">(Your punches will not include location)</div>;
-                    }
-                  }
-                } catch (e) {}
-                return null;
-              })()}
-               <select value={group} onChange={(e) => setGroup(e.target.value)} className="px-3 py-2 rounded border">
-                 <option value="day">Daily</option>
-                 <option value="week">Weekly</option>
-                 <option value="month">Monthly</option>
-               </select>
-             </div>
-           </div>
-
-           <div className="bg-white rounded shadow p-4 mb-4">
-             <div className="flex gap-2 items-center">
-               <label className="text-sm">Start:</label>
-               <input className="border px-2 py-1 rounded" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-               <label className="text-sm">End:</label>
-               <input className="border px-2 py-1 rounded" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-               <button onClick={fetchReport} className="px-3 py-1 bg-indigo-600 text-white rounded">Refresh</button>
-             </div>
-           </div>
-
-           
-
-          {/* Today's punch times */}
-          <div className="mt-6 bg-white rounded-2xl shadow-md p-5 border border-gray-100">
-  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-    Today’s Attendance
-  </h3>
-
-  {latestPunch ? (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
-      <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-        <div className="text-xs text-gray-500 uppercase">Punch In</div>
-        <div className="text-base font-semibold text-green-700 mt-1">
-          {latestPunch.punch_in ?? latestPunch.punchIn ?? latestPunch.in ?? "-"}
-        </div>
-      </div>
-
-      <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-        <div className="text-xs text-gray-500 uppercase">Punch Out</div>
-        <div className="text-base font-semibold text-red-700 mt-1">
-          {latestPunch.punch_out ?? latestPunch.punchOut ?? latestPunch.out ?? "-"}
-        </div>
-      </div>
-
-      <div className="col-span-full mt-2 text-xs text-gray-500 text-right">
-          Date: {latestPunch.day ?? latestPunch.date ?? new Date().toISOString().slice(0, 10)}
-        </div>
-    </div>
-  ) : (
-    <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 text-center">
-      No punches recorded for today.
-    </div>
-  )}
-</div>
-
-          {/* Report table */}
-          <div className="mt-6 bg-white rounded shadow p-4">
-            <h2 className="text-lg font-semibold mb-3">Attendance Report</h2>
-            <div className="mb-3 flex gap-2 items-center">
-              <button onClick={() => { setShowRaw(v => !v); if (!showRaw) fetchRawRecords(); }} className="px-3 py-1 bg-gray-200 rounded">{showRaw ? 'Hide' : 'Show'} Raw Records</button>
+        <main className="flex-1 p-8">
+          <div className="max-w-7xl mx-auto">
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">Attendance Dashboard</h1>
+                <p className="mt-1 text-gray-600">Track and manage attendance records</p>
+              </div>
+              <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => handlePunch('in')}
+                  disabled={punchLoading}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                  </svg>
+                  Punch In
+                </button>
+                <button
+                  onClick={() => handlePunch('out')}
+                  disabled={punchLoading}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Punch Out
+                </button>
+              </div>
             </div>
-            {loading ? (
-              <div className="text-gray-500">Loading...</div>
-            ) : !report || report.length === 0 ? (
-              <div className="text-gray-500">No records</div>
-            ) : (
-              <>
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="py-2 px-3 text-left">User</th>
-                      <th className="py-2 px-3 text-left">Role</th>
-                      <th className="py-2 px-3 text-left">Work Days</th>
-                      <th className="py-2 px-3 text-left">Leave Days</th>
-                      <th className="py-2 px-3 text-left">Present Today</th>
-                      <th className="py-2 px-3 text-left">Today Punch In</th>
-                      <th className="py-2 px-3 text-left">Today Punch Out</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.isArray(report) && report.map((r) => (
-                      <tr key={r.user_id} className="border-t hover:bg-gray-50">
-                        <td className="py-2 px-3">{r.name ?? 'User ' + r.user_id}</td>
-                        <td className="py-2 px-3">{r.role ?? '-'}</td>
-                        <td className="py-2 px-3">{r.worked_days ?? 0}</td>
-                        <td className="py-2 px-3">{r.leave_days ?? 0}</td>
-                        <td className="py-2 px-3">{r.present_today ? 'Yes' : 'No'}</td>
-                        <td className="py-2 px-3">{r.today_punch_in ?? '-'}</td>
-                        <td className="py-2 px-3">{r.today_punch_out ?? '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            {/* Date Range & Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">Date Range</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Start Date</label>
+                    <input 
+                      type="date" 
+                      value={start} 
+                      onChange={(e) => setStart(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">End Date</label>
+                    <input 
+                      type="date" 
+                      value={end} 
+                      onChange={(e) => setEnd(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {showRaw && (
-                <div className="mt-6 bg-white rounded shadow p-4">
-                  <h3 className="text-md font-semibold mb-2">Raw Attendance Records</h3>
-                  {rawRecords.length === 0 ? (
-                    <div className="text-gray-500">No records</div>
-                  ) : (
-                    <div className="overflow-auto max-h-96">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="py-2 px-3">When</th>
-                            <th className="py-2 px-3">User</th>
-                            <th className="py-2 px-3">Role</th>
-                            <th className="py-2 px-3">Type</th>
-                            <th className="py-2 px-3">Notes</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rawRecords.map(r => (
-                            <tr key={r.id} className="border-t hover:bg-gray-50">
-                              <td className="py-2 px-3">{r.created_at}</td>
-                              <td className="py-2 px-3">{r.user_name ?? r.user_id}</td>
-                              <td className="py-2 px-3">{r.user_role ?? ''}</td>
-                              <td className="py-2 px-3">{r.type}</td>
-                              <td className="py-2 px-3">{r.notes ?? ''}</td>
-                              <td className="py-2 px-3">
-                                {r.latitude && r.longitude ? (
-                                  <button
-                                    onClick={() => window.open(`https://www.google.com/maps?q=${r.latitude},${r.longitude}`, '_blank')}
-                                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
-                                  >
-                                    View Map
-                                  </button>
-                                ) : (
-                                  <span className="text-xs text-gray-400">No location</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">View Options</h2>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Group By</label>
+                    <select 
+                      value={group} 
+                      onChange={(e) => setGroup(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="day">Daily</option>
+                      <option value="week">Weekly</option>
+                      <option value="month">Monthly</option>
+                    </select>
+                  </div>
+                  <button 
+                    onClick={fetchReport}
+                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Generate Report
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Today's Punch Status */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                <h2 className="text-lg font-semibold text-gray-800">Today's Status</h2>
+              </div>
+              {latestPunch ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                    <div className="text-sm text-gray-600 mb-1">Punch In Time</div>
+                    <div className="text-xl font-semibold text-gray-800">
+                      {latestPunch.punch_in ?? '-'}
                     </div>
-                  )}
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                    <div className="text-sm text-gray-600 mb-1">Punch Out Time</div>
+                    <div className="text-xl font-semibold text-gray-800">
+                      {latestPunch.punch_out ?? '-'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No punch records for today
                 </div>
               )}
-              </>
-            )}
-          </div>
+            </div>
 
-         </main>
-       </div>
-     </div>
+            {/* Attendance Report */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg font-semibold text-gray-800">Attendance Report</h2>
+                  <button 
+                    onClick={() => { setShowRaw(v => !v); if (!showRaw) fetchRawRecords(); }}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm font-medium transition-colors"
+                  >
+                    {showRaw ? 'Hide' : 'Show'} Raw Records
+                  </button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Loading report...</p>
+                </div>
+              ) : !report || report.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-gray-500">No attendance records found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Days</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leave Days</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {Array.isArray(report) && report.map((r) => (
+                        <tr key={r.user_id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                <span className="text-blue-600 font-medium">
+                                  {(r.name?.[0] || 'U').toUpperCase()
+                                }</span>
+                              </div>
+                              <div className="ml-4">
+                                <div className="text-sm font-medium text-gray-900">{r.name}</div>
+                                <div className="text-sm text-gray-500">ID: {r.user_id}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                              {r.role}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.worked_days}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.leave_days}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              r.present_today 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {r.present_today ? 'Present' : 'Absent'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+           
+          </div>
+        </main>
+      </div>
+    </div>
    );
  }
 

@@ -269,69 +269,141 @@ const HrDashboard = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <div className="flex flex-1 min-h-screen">
+      <div className="flex">
         <Sidebar />
-        <div className="p-6 bg-gray-100 flex-1">
-          <h2 className="text-2xl font-semibold mb-4">Hi {(() => {
-            try { const s = localStorage.getItem('user'); return s ? JSON.parse(s).name : 'HR'; } catch (e) { return 'HR'; }
-          })()}!</h2>
-           <div className="flex gap-2 mb-4">
-            <button onClick={() => setIsCreateOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded">Create Shift</button>
-            <button onClick={() => { setAssignForm(f => ({...f, date: tomorrowDate()})); setIsAssignOpen(true); }} className="px-3 py-2 bg-blue-600 text-white rounded">Assign Shift (tomorrow)</button>
-            <button onClick={() => setIsAssignCallOpen(true)} className="px-3 py-2 bg-purple-600 text-white rounded">Assign Service Call</button>
-          </div>
-
-          <div className="mb-4">
-            <h3 className="font-semibold">Tomorrow's Assignments</h3>
-            <div className="bg-white rounded shadow mt-2 p-3">
-              {assignments.length === 0 ? <div className="text-sm text-gray-500">No assignments for tomorrow.</div> :
-                <ul className="space-y-2">
-                  {assignments.map(a => (
-                    <li key={a.id} className="flex justify-between items-center">
-                      <div>
-                        <div className="font-medium">{a.user_name ?? a.user_id}</div>
-                        <div className="text-sm text-gray-600">{a.shift_name} • {a.start_time} - {a.end_time}</div>
-                      </div>
-                      <div className="text-xs text-gray-500">{a.date}</div>
-                    </li>
-                  ))}
-                </ul>
-              }
+        <main className="flex-1 p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+            {/* Welcome Banner */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-8 text-white">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-3xl font-bold">Welcome back, {currentUser?.name || 'HR Manager'}</h1>
+                  <p className="mt-2 text-blue-100">Manage your organization's workforce efficiently</p>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setIsCreateOpen(true)}
+                    className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Create Shift
+                  </button>
+                  <button 
+                    onClick={() => setIsAssignCallOpen(true)}
+                    className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    Assign Service Call
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="mb-6">
-            <h3 className="font-semibold">Manage Users</h3>
-            <div className="bg-white rounded shadow mt-2 p-3">
-              {users.length === 0 ? <div className="text-sm text-gray-500">No users found.</div> :
-                <ul className="space-y-2">
-                  {users.map(u => (
-                    <li key={u.id} className="flex justify-between items-center">
-                      <div>
-                        <div className="font-medium">{u.name} <span className="text-xs text-gray-500">({u.role})</span></div>
-                        <div className="text-sm text-gray-600">Leave balance: {u.leave_balance ?? u.leaveBalance ?? 'N/A'}</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => fetchUserLocation(u)} className="px-3 py-1 bg-blue-500 text-white rounded text-sm">Location</button>
-                        {((u.role || '').toLowerCase() !== 'admin') ? (
-                          <button onClick={() => handleOpenAdjust(u)} className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Adjust Leave</button>
-                        ) : (
-                          <span className="text-xs text-gray-400 px-2 py-1">Admin (no adjustments)</span>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              }
+            {/* Quick Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center">
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-sm font-medium text-gray-500">Total Employees</h3>
+                    <div className="mt-1 text-2xl font-semibold text-gray-900">{users.length}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center">
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-sm font-medium text-gray-500">Tomorrow's Shifts</h3>
+                    <div className="mt-1 text-2xl font-semibold text-gray-900">{assignments.length}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center">
+                  <div className="p-3 bg-purple-50 rounded-lg">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-sm font-medium text-gray-500">Active Engineers</h3>
+                    <div className="mt-1 text-2xl font-semibold text-gray-900">{engineers.length}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <p>
-            Welcome to your dashboard. Here you can manage users, attendance, leave, and reports.
-          </p>
-        </div>
+            {/* Tomorrow's Assignments Section */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-800">Tomorrow's Assignments</h2>
+                  <button 
+                    onClick={() => { setAssignForm(f => ({...f, date: tomorrowDate()})); setIsAssignOpen(true); }}
+                    className="inline-flex items-center px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Assign Shift
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {assignments.length === 0 ? (
+                  <div className="text-center py-6">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No assignments</h3>
+                    <p className="mt-1 text-sm text-gray-500">Get started by assigning shifts for tomorrow.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-200">
+                    {assignments.map(a => (
+                      <div key={a.id} className="py-4 flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                            <span className="text-blue-600 font-medium">{(a.user_name || '')[0]?.toUpperCase()}</span>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{a.user_name}</div>
+                            <div className="text-sm text-gray-500">{a.shift_name}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="px-2.5 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                            {a.start_time} - {a.end_time}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rest of the existing modals with enhanced styling... */}
+          </div>
+        </main>
       </div>
 
       {/* Create shift modal */}

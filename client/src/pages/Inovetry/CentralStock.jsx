@@ -77,114 +77,243 @@ export default function CentralStock() {
   }
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold mb-4">Central Stock</h2>
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <div>
-          <label className="block text-sm text-gray-700 mb-1">Product</label>
-          <select 
-            value={form.productName} 
-            onChange={e => {
-              setForm(f => ({
-                ...f, 
-                productName: e.target.value,
-                name: e.target.value // Auto-fill name with selected product name
-              }));
-            }} 
-            className="border p-2 w-full"
-          >
-            <option value="">Select Product</option>
-            {productItems.map(product => (
-              <option key={product['Product Name']} value={product['Product Name']}>
-                {product['Product Name']}
-              </option>
-            ))}
-          </select>
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-800">Central Stock Management</h1>
+          <p className="mt-2 text-gray-600">Manage and track inventory items across the organization</p>
         </div>
 
-        <div>
-          <label className="block text-sm text-gray-700 mb-1">Name</label>
-          <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="Name" className="border p-2 w-full" />
+        {/* Add New Item Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800">Add New Stock Item</h2>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Product</label>
+                <select 
+                  value={form.productName}
+                  onChange={e => {
+                    setForm(f => ({
+                      ...f,
+                      productName: e.target.value,
+                      name: e.target.value
+                    }));
+                  }}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Product</option>
+                  {productItems.map(product => (
+                    <option key={product['Product Name']} value={product['Product Name']}>
+                      {product['Product Name']}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                <input 
+                  value={form.name}
+                  onChange={e => setForm(f => ({...f, name: e.target.value}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter item name"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <input 
+                  value={form.description}
+                  onChange={e => setForm(f => ({...f, description: e.target.value}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter item description"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+                <input 
+                  type="number"
+                  min="0"
+                  value={form.quantity}
+                  onChange={e => setForm(f => ({...f, quantity: Number(e.target.value)}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter quantity"
+                />
+                <p className="mt-1 text-sm text-gray-500">Current stock level</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Threshold</label>
+                <input 
+                  type="number"
+                  min="0"
+                  value={form.threshold}
+                  onChange={e => setForm(f => ({...f, threshold: Number(e.target.value)}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter threshold"
+                />
+                <p className="mt-1 text-sm text-gray-500">Minimum stock level before reorder</p>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <button 
+                type="submit"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Item
+              </button>
+            </div>
+          </form>
         </div>
 
-        <div className="sm:col-span-2">
-          <label className="block text-sm text-gray-700 mb-1">Description</label>
-          <input value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Description" className="border p-2 w-full" />
+        {/* Engineer Assignment Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800">Assign to Engineer</h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Engineer</label>
+                <select 
+                  value={assign.engineerId}
+                  onChange={e => setAssign(a => ({...a, engineerId: e.target.value}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Choose engineer</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Item</label>
+                <select 
+                  value={assign.stockItemId}
+                  onChange={e => setAssign(a => ({...a, stockItemId: e.target.value}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Choose item</option>
+                  {items.map(it => (
+                    <option key={it.id} value={it.id}>
+                      {it.name} (Stock: {it.quantity})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+                <input 
+                  type="number"
+                  min="1"
+                  value={assign.quantity}
+                  onChange={e => setAssign(a => ({...a, quantity: Number(e.target.value)}))}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <button
+                onClick={async () => {
+                  if (!assign.engineerId || !assign.stockItemId) return alert('Please select both engineer and item');
+                  try {
+                    await axios.post('/api/stock/assign', {
+                      engineerId: assign.engineerId,
+                      stockItemId: assign.stockItemId,
+                      quantity: Number(assign.quantity)
+                    });
+                    alert('Successfully assigned');
+                  } catch (err) {
+                    console.error(err);
+                    alert('Failed to assign');
+                  }
+                }}
+                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                Assign Stock
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <label className="block text-sm text-gray-700 mb-1">Quantity (current stock)</label>
-          <input type="number" min="0" value={form.quantity} onChange={e => setForm(f => ({...f, quantity: Number(e.target.value)}))} placeholder="e.g. 12" className="border p-2 w-full" />
-          <div className="text-xs text-gray-400 mt-1">Enter the available quantity in stock</div>
+        {/* Stock Items Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-800">Current Stock Items</h2>
+          </div>
+          
+          {loading ? (
+            <div className="p-8 text-center">
+              <div className="inline-flex items-center">
+                <svg className="animate-spin h-5 w-5 text-blue-500 mr-3" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                </svg>
+                <span className="text-gray-600">Loading stock items...</span>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Details</th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock</th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {items.map(it => (
+                    <tr key={it.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900">{it.name}</div>
+                        <div className="text-sm text-gray-500">{it.description}</div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-medium text-gray-900">{it.quantity}</span>
+                        <div className="text-xs text-gray-500">Threshold: {it.threshold}</div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                          ${it.quantity <= it.threshold 
+                            ? 'bg-red-100 text-red-800' 
+                            : 'bg-green-100 text-green-800'}`}>
+                          {it.quantity <= it.threshold ? 'Low Stock' : 'In Stock'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className="block text-sm text-gray-700 mb-1">Threshold (reorder level)</label>
-          <input type="number" min="0" value={form.threshold} onChange={e => setForm(f => ({...f, threshold: Number(e.target.value)}))} placeholder="e.g. 5" className="border p-2 w-full" />
-          <div className="text-xs text-gray-400 mt-1">If quantity &le; threshold, the item is considered low</div>
-        </div>
-
-        <div className="col-span-2">
-          <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded">Save Item</button>
-        </div>
-      </form>
-
-      <div className="bg-white rounded shadow p-3 mt-4">
-        <h3 className="font-medium mb-2">Assign to Engineer</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <select value={assign.engineerId} onChange={e => setAssign(a => ({...a, engineerId: e.target.value}))} className="border p-2">
-            <option value="">Select engineer</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
-          </select>
-          <select value={assign.stockItemId} onChange={e => setAssign(a => ({...a, stockItemId: e.target.value}))} className="border p-2">
-            <option value="">Select item</option>
-            {items.map(it => <option key={it.id} value={it.id}>{it.name} — Qty: {it.quantity} | Th: {it.threshold}</option>)}
-          </select>
-          <input type="number" value={assign.quantity} onChange={e => setAssign(a => ({...a, quantity: Number(e.target.value)}))} className="border p-2" />
-        </div>
-          <div className="mt-2">
-          <button onClick={async () => {
-            if (!assign.engineerId || !assign.stockItemId) return alert('select engineer and item');
-            try {
-              // send IDs as-is (strings). Avoid coercing to Number() which breaks UUIDs.
-              await axios.post('/api/stock/assign', { engineerId: assign.engineerId, stockItemId: assign.stockItemId, quantity: Number(assign.quantity) });
-              alert('Assigned');
-            } catch (err) { console.error(err); alert('Failed to assign'); }
-          }} className="px-3 py-2 bg-green-600 text-white rounded">Assign</button>
-        </div>
-      </div>
-
-      {/* Show selected engineer's stock */}
-      {assign.engineerId ? (
-        <div className="bg-white rounded shadow p-3 mt-4">
-          <h3 className="font-medium mb-2">Engineer Allocations</h3>
-          <EngineerStock engineerId={assign.engineerId} />
-        </div>
-      ) : null}
-
-      <div className="bg-white rounded shadow p-3">
-        <h3 className="font-medium mb-2">Items</h3>
-        {loading ? <div>Loading...</div> : (
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr>
-                <th className="text-left">Name</th>
-                <th className="text-center">Quantity</th>
-                <th className="text-center">Threshold</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(it => (
-                <tr key={it.id} className="border-t">
-                  <td className="py-2 px-2">{it.name}
-                    <div className="text-xs text-gray-500">Qty: {it.quantity} • Th: {it.threshold}</div>
-                  </td>
-                  <td className="py-2 px-2 text-center">{it.quantity}</td>
-                  <td className="py-2 px-2 text-center">{it.threshold}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Engineer Stock View */}
+        {assign.engineerId && (
+          <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800">Engineer's Current Stock</h2>
+            </div>
+            <div className="p-6">
+              <EngineerStock engineerId={assign.engineerId} />
+            </div>
+          </div>
         )}
       </div>
     </div>

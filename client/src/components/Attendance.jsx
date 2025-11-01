@@ -91,53 +91,152 @@ export default function Attendance() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <div className="flex flex-1 min-h-screen">
+      <div className="flex">
         <Sidebar />
-        <main className="flex-1 p-6 bg-gray-100 overflow-auto">
-          <h2 className="text-2xl font-bold mb-4">Attendance Records</h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="p-4 bg-white rounded shadow">
-              <div className="text-sm text-gray-500">Work Days (this month)</div>
-              <div className="text-2xl font-semibold">{summary.workedDays}</div>
-            </div>
-            <div className="p-4 bg-white rounded shadow">
-              <div className="text-sm text-gray-500">Leave Days (this month)</div>
-              <div className="text-2xl font-semibold">{summary.leaveDays}</div>
-            </div>
-            <div className="p-4 bg-white rounded shadow flex items-center justify-center">
-              <div className="space-x-2">
-                <button onClick={() => handlePunch("in")} className="px-4 py-2 bg-green-600 text-white rounded">Punch In</button>
-                <button onClick={() => handlePunch("out")} className="px-4 py-2 bg-red-600 text-white rounded">Punch Out</button>
+        <main className="flex-1 p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+            {/* Header Section */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-8 text-white">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                <div>
+                  <h1 className="text-3xl font-bold">Attendance Tracker</h1>
+                  <p className="mt-2 text-blue-100">Track your daily attendance and work hours</p>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => handlePunch("in")} 
+                    className="inline-flex items-center px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Punch In
+                  </button>
+                  <button 
+                    onClick={() => handlePunch("out")} 
+                    className="inline-flex items-center px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Punch Out
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow overflow-auto">
-            <table className="min-w-full">
-              <thead className="bg-blue-500 text-white">
-                <tr>
-                  <th className="py-2 px-4 text-left">Date</th>
-                  <th className="py-2 px-4 text-left">Punch In</th>
-                  <th className="py-2 px-4 text-left">Punch Out</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={3} className="p-4 text-center">Loading...</td></tr>
-                ) : records.length === 0 ? (
-                  <tr><td colSpan={3} className="p-4 text-center">No records</td></tr>
-                ) : records.map((r) => (
-                  <tr key={`${r.user_id}-${r.day}`} className="border-b hover:bg-gray-50">
-                    <td className="py-2 px-4">{r.day}</td>
-                    <td className="py-2 px-4">{r.punch_in ?? "-"}</td>
-                    <td className="py-2 px-4">{r.punch_out ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Statistics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center">
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-sm font-medium text-gray-500">Work Days</h3>
+                    <div className="mt-1 flex items-baseline">
+                      <div className="text-2xl font-semibold text-gray-900">{summary.workedDays}</div>
+                      <div className="ml-2 text-sm text-gray-600">this month</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div className="flex items-center">
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-sm font-medium text-gray-500">Leave Days</h3>
+                    <div className="mt-1 flex items-baseline">
+                      <div className="text-2xl font-semibold text-gray-900">{summary.leaveDays}</div>
+                      <div className="ml-2 text-sm text-gray-600">this month</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Attendance Records Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800">Attendance Records</h3>
+              </div>
+
+              {loading ? (
+                <div className="p-8 text-center">
+                  <div className="inline-flex items-center">
+                    <svg className="animate-spin h-5 w-5 text-blue-500 mr-3" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                    <span className="text-gray-600">Loading records...</span>
+                  </div>
+                </div>
+              ) : records.length === 0 ? (
+                <div className="p-8 text-center">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">No records found</h3>
+                  <p className="mt-1 text-sm text-gray-500">Start tracking your attendance by punching in.</p>
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch In</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Out</th>
+                      <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {records.map((r) => (
+                      <tr key={`${r.user_id}-${r.day}`} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.day}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {r.punch_in ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {r.punch_in}
+                            </span>
+                          ) : "-"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {r.punch_out ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {r.punch_out}
+                            </span>
+                          ) : "-"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {r.punch_in && r.punch_out ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              Complete
+                            </span>
+                          ) : r.punch_in ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              In Progress
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              Absent
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </main>
       </div>
