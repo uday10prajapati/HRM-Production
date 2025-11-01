@@ -4,30 +4,7 @@ import requireAuth from './authMiddleware.js';
 
 const router = express.Router();
 
-// Add search route for engineers
-router.post('/search', requireAuth, async (req, res) => {
-    try {
-        const query = `
-            SELECT id, name, role, mobile_number 
-            FROM users 
-            WHERE role = 'engineer'
-        `;
-        const result = await pool.query(query);
-        
-        res.json({
-            success: true,
-            data: {
-                engineers: result.rows
-            }
-        });
-    } catch (err) {
-        console.error('Search error:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to search engineers'
-        });
-    }
-});
+// (removed simple engineers-only /search route)
 
 // Add route for assigned calls
 router.get('/assigned-calls', requireAuth, async (req, res) => {
@@ -455,39 +432,41 @@ router.post('/search', async (req, res) => {
         
         client = await pool.connect();
         
-        // Query for societies
-        const societyQuery = `
-            SELECT * FROM (
-                SELECT 
-                    UPPER('Tapi') as SOURCE,
-                    "SOCCD" as SOCCD,
-                    UPPER("SOCIETY") as SOCIETY,
-                    UPPER("TALUKA NAME") as TALUKA
-                FROM service_call_tapi 
-                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
-                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-                UNION ALL
-                SELECT 
-                    UPPER('Surat') as SOURCE,
-                    "SOCCD" as SOCCD,
-                    UPPER("SOCIETY") as SOCIETY,
-                    UPPER("TALUKA NAME") as TALUKA
-                FROM service_call_surat 
-                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
-                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-                UNION ALL
-                SELECT 
-                    UPPER('Dairy') as SOURCE,
-                    "SOCCD" as SOCCD,
-                    UPPER("SOCIETY") as SOCIETY,
-                    UPPER("TALUKA NAME") as TALUKA
-                FROM service_call_dairy_list 
-                WHERE ($1::numeric IS NULL OR "SOCCD" = $1::numeric)
-                    AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-            ) combined_results
-            ORDER BY SOURCE, SOCIETY
-            LIMIT 2000
-        `;
+    // Query for societies: combine three source tables and return unified
+    // columns named `code`, `society`, `taluka` so the frontend can render
+    // a single table. Keep a SOURCE column to know origin if needed.
+    const societyQuery = `
+      SELECT * FROM (
+        SELECT 
+          'Tapi'::text AS source,
+          "SOCCD"::text AS code,
+          "SOCIETY"::text AS society,
+          "TALUKA NAME"::text AS taluka
+        FROM service_call_tapi
+        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
+          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+        UNION ALL
+        SELECT 
+          'Surat'::text AS source,
+          "SOCCD"::text AS code,
+          "SOCIETY"::text AS society,
+          "TALUKA NAME"::text AS taluka
+        FROM service_call_surat
+        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
+          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+        UNION ALL
+        SELECT 
+          'Dairy'::text AS source,
+          "SOCCD"::text AS code,
+          "SOCIETY"::text AS society,
+          "TALUKA NAME"::text AS taluka
+        FROM service_call_dairy_list
+        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
+          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+      ) combined_results
+      ORDER BY source, society
+      LIMIT 200000
+    `;
 
         // Query for engineers
         const engineerQuery = `

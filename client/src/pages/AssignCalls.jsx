@@ -81,9 +81,9 @@ const AssignCalls = () => {
                 setSocieties(response.data.data.societies || []);
                 // update engineers if backend returns them as well
                 if (response.data.data.engineers) setEngineers(response.data.data.engineers);
-                if ((response.data.data.societies || []).length === 0) {
-                    setError('No societies found');
-                }
+                // If no societies returned, keep societies as empty array and
+                // show the friendly message in the societies area rather than
+                // setting a red error banner.
             } else {
                 throw new Error(response.data.message || 'Search failed');
             }
@@ -234,7 +234,7 @@ const AssignCalls = () => {
                                     <table className="min-w-full bg-white border rounded-lg">
                                         <thead>
                                             <tr className="bg-gray-50">
-                                                <th className="p-3 text-left border">SOCCD</th>
+                                                <th className="p-3 text-left border">Code</th>
                                                 <th className="p-3 text-left border">Society</th>
                                                 <th className="p-3 text-left border">Taluka</th>
                                             </tr>
@@ -242,7 +242,7 @@ const AssignCalls = () => {
                                         <tbody>
                                             {societies.map((row, idx) => (
                                                 <tr key={idx} className="hover:bg-gray-50">
-                                                    <td className="p-3 border">{row.soccd}</td>
+                                                    <td className="p-3 border">{row.code}</td>
                                                     <td className="p-3 border">{row.society}</td>
                                                     <td className="p-3 border">{row.taluka}</td>
                                                 </tr>
