@@ -9,34 +9,18 @@ async function ensureTables() {
   await pool.query(`
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE TABLE IF NOT EXISTS stock_items (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      sku TEXT UNIQUE,
+      id serial NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
       quantity INTEGER NOT NULL DEFAULT 0,
       threshold INTEGER NOT NULL DEFAULT 5,
-      created_at TIMESTAMP DEFAULT now()
+      created_at TIMESTAMP DEFAULT now(),
+      dairy_name TEXT,
+      notes TEXT,
+      use_item NUMERIC
     );
 
-    CREATE TABLE IF NOT EXISTS engineer_stock (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      engineer_id UUID NOT NULL,
-      stock_item_id UUID NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
-      quantity INTEGER NOT NULL DEFAULT 0,
-      assigned_at TIMESTAMP DEFAULT now(),
-      last_reported_at TIMESTAMP,
-      last_reported_by TEXT,
-      UNIQUE(engineer_id, stock_item_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS stock_consumption (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      engineer_id UUID,
-      stock_item_id UUID,
-      quantity INTEGER NOT NULL,
-      note TEXT,
-      consumed_at TIMESTAMP DEFAULT now()
-    );
+        
   `);
 }
 
@@ -57,19 +41,21 @@ router.get('/items', async (req, res) => {
 // Create or update item
 router.post('/items', async (req, res) => {
   try {
-    const { productId, name, description, quantity, threshold } = req.body;
+    const { name, description, quantity, threshold, dairy_name, notes, use_item } = req.body;
     const result = await pool.query(
       `
       INSERT INTO stock_items (
-        product_id,
         name,
         description,
         quantity,
-        threshold
-      ) VALUES ($1, $2, $3, $4, $5)
+        threshold,
+        dairy_name,
+        notes,
+        use_item
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `,
-      [productId, name, description, quantity, threshold]
+      [name, description, quantity, threshold, dairy_name, notes, use_item]
     );
 
     res.json(result.rows[0]);
@@ -186,10 +172,10 @@ router.post('/consume', async (req, res) => {
 router.get('/alerts', async (req, res) => {
   const { engineerId } = req.query;
   try {
-    const central = await pool.query('SELECT id, sku, name, quantity, threshold FROM stock_items WHERE quantity <= threshold ORDER BY quantity');
+    const central = await pool.query('SELECT id, name, quantity, threshold FROM stock_items WHERE quantity <= threshold ORDER BY quantity');
     let engineer = [];
       if (engineerId) {
-      engineer = await pool.query(`SELECT es.engineer_id, es.quantity, si.id as stock_item_id, si.sku, si.name, si.threshold
+      engineer = await pool.query(`SELECT es.engineer_id, es.quantity, si.id as stock_item_id, si.name, si.threshold
         FROM engineer_stock es JOIN stock_items si ON si.id = es.stock_item_id
         WHERE es.engineer_id::text = $1 AND es.quantity <= si.threshold ORDER BY es.quantity`, [String(engineerId)]);
     }

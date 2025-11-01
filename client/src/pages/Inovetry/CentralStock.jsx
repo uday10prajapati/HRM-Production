@@ -168,7 +168,6 @@ export default function CentralStock() {
           <table className="min-w-full text-sm">
             <thead>
               <tr>
-                <th className="text-left">SKU</th>
                 <th className="text-left">Name</th>
                 <th className="text-center">Quantity</th>
                 <th className="text-center">Threshold</th>
@@ -177,7 +176,6 @@ export default function CentralStock() {
             <tbody>
               {items.map(it => (
                 <tr key={it.id} className="border-t">
-                  <td className="py-2 px-2">{it.sku}</td>
                   <td className="py-2 px-2">{it.name}
                     <div className="text-xs text-gray-500">Qty: {it.quantity} • Th: {it.threshold}</div>
                   </td>
