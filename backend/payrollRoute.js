@@ -370,228 +370,173 @@ router.get('/records/:userId', async (req, res) => {
 
 // GET /pdf/:userId/:year/:month - compute and stream PDF (no save)
 router.get('/pdf/:userId/:year/:month', async (req, res) => {
-  try {
-    const { userId, year, month } = req.params;
-    const dbUserId = await resolveDbUserId(userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-
-    // Add initial logging
-  
-    // Get approved leaves count with proper date filtering
-    const leaveQuery = `
-      SELECT COUNT(*) as approved_leaves 
-      FROM leaves 
-      WHERE user_id = $1 
-      AND status = 'approved'  
-      AND EXTRACT(MONTH FROM start_date) = $2
-      AND EXTRACT(YEAR FROM start_date) = $3`;
-
-    // Log the query and parameters
-    console.log('Leave Query:', {
-      query: leaveQuery,
-      parameters: [dbUserId, Number(month), Number(year)]
-    });
-
-    const leaveResult = await pool.query(leaveQuery, [
-      dbUserId, 
-      Number(month),
-      Number(year)
-    ]);
-
-    // Log raw leave result
-    console.log('Leave Query Result:', {
-      rawResult: leaveResult.rows[0],
-      approved_leaves: leaveResult.rows[0]?.approved_leaves
-    });
-
-    const approvedLeaves = parseInt(leaveResult.rows[0]?.approved_leaves || 0);
-    const totalLeaveDeduction = approvedLeaves * LEAVE_DEDUCTION_AMOUNT;
-
-    // Log calculated values
-    console.log('Leave Calculations:', {
-      approvedLeaves,
-      LEAVE_DEDUCTION_AMOUNT,
-      totalLeaveDeduction
-    });
-
-    // Get payroll record with logging
-    console.log('Fetching payroll record...');
-    const payrollRecord = await pool.query(`
-      SELECT pr.*, u.name as employee_name
-      FROM payroll_records pr
-      JOIN users u ON u.id = pr.user_id
-      WHERE pr.user_id = $1 AND pr.year = $2 AND pr.month = $3
-    `, [dbUserId, Number(year), Number(month)]);
-
-    // Log payroll record result
-    console.log('Payroll Record Result:', {
-      found: payrollRecord.rows.length > 0,
-      record: payrollRecord.rows[0]
-    });
-
-    const slip = payrollRecord.rows[0] || {
-      basic: 0,
-      hra: 0,
-      allowancesSum: 0,
-      overtime_pay: 0,
-      pf: 0,
-      esi_employee: 0,
-      professional_tax: 0,
-      tds: 0,
-      leave_days: approvedLeaves,
-      leave_deduction: totalLeaveDeduction,
-      gross: 0,
-      net_pay: 0,
-      employee_name: 'Not Found'
-    };
-
-    // Log final slip data
-    console.log('Final Slip Data:', {
-      leave_days: slip.leave_days,
-      leave_deduction: slip.leave_deduction,
-      net_pay_before: slip.net_pay
-    });
-
-    // Adjust net pay for leave deductions
-    slip.net_pay = Number(slip.net_pay || 0) - totalLeaveDeduction;
-
-    console.log('Final Net Pay:', {
-      net_pay_after: slip.net_pay,
-      deduction_applied: totalLeaveDeduction
-    });
-
-    // Generate PDF with updated leave information
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="payslip_${dbUserId}_${year}_${month}.pdf"`);
-    doc.pipe(res);
-
-    // PDF Header
-    doc.fontSize(16).text('Salary Slip', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(10).text(`Month: ${month}/${year}`);
-    doc.text(`Employee ID: ${dbUserId}`);
-    doc.text(`Employee Name: ${slip.employee_name}`);
-    doc.moveDown(0.5);
-
-    // Attendance & Leave Section
-    doc.fontSize(12).text('Attendance & Leave', { underline: true });
-    doc.fontSize(10);
-    doc.text(`Total Approved Leaves: ${approvedLeaves} days`);
-    doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
-    doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
-    doc.moveDown();
-
-    // Earnings Section
-    doc.fontSize(12).text('Earnings', { underline: true });
-    doc.fontSize(10);
-    doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
-    doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
-    
-    // Display Allowances if present
-    if (slip.allowances) {
-        const allowances = typeof slip.allowances === 'string' 
-            ? JSON.parse(slip.allowances) 
-            : slip.allowances;
-        Object.entries(allowances).forEach(([key, value]) => {
-            doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
-        });
-    }
-    doc.text(`Overtime Pay: ₹${Number(slip.overtime_pay || 0).toFixed(2)}`);
-    doc.moveDown(0.5);
-
-    // Deductions Section
-    doc.fontSize(12).text('Deductions', { underline: true });
-    doc.fontSize(10);
-    doc.text(`PF: ₹${Number(slip.pf).toFixed(2)}`);
-    doc.text(`ESI (Employee): ₹${Number(slip.esi_employee).toFixed(2)}`);
-    doc.text(`Professional Tax: ₹${Number(slip.professional_tax).toFixed(2)}`);
-    doc.text(`TDS: ₹${Number(slip.tds).toFixed(2)}`);
-    doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
-    doc.moveDown(0.5);
-
-    // Calculate total deductions including leave deductions
-    const totalDeductions = Number(slip.pf || 0) +
-        Number(slip.esi_employee || 0) +
-        Number(slip.professional_tax || 0) +
-        Number(slip.tds || 0) +
-        totalLeaveDeduction;
-
-    // Display total deductions
-    doc.moveDown(0.5);
-    doc.fontSize(12).text('Total Deductions', { underline: true });
-    doc.fontSize(10);
-    doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
-        Number(slip.esi_employee || 0) + 
-        Number(slip.professional_tax || 0) + 
-        Number(slip.tds || 0)).toFixed(2)}`);
-    doc.text(`Leave Deductions: ₹${totalLeaveDeduction.toFixed(2)}`);
-    doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-    doc.moveDown(0.5);
-
-    // Summary Section
-    doc.fontSize(12).text('Summary', { underline: true });
-    doc.fontSize(10);
-    doc.text(`Gross Salary: ₹${Number(slip.gross).toFixed(2)}`);
-    doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-    doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
-
-    // Footer
-    doc.moveDown();
-    doc.fontSize(8);
-    doc.text('This is a computer generated payslip and does not require signature.', {
-        align: 'center',
-        italics: true
-    });
-
-    doc.end();
-    
-    await new Promise((resolve, reject) => {
-        ws.on('finish', resolve);
-        ws.on('error', reject);
-    });
-    savedPath = filePath;
-
-        } catch (e) {
-            console.error('Failed to save PDF:', e?.message || e);
-            throw e;
-        }
-    
-
-    return { 
-        ok: true, 
-        user_id: dbUserId, 
-        year: Number(year), 
-        month: Number(month), 
-        path: savedPath,
-        slip
-    };
-
-})
-
-// Generate payslips for all active users for given year/month. Returns summary.
-async function generatePayslipsForAll(year, month, opts = { savePdf: true }) {
-  const out = { generated: 0, failed: 0, errors: [] };
-  // fetch users list (you may filter active employees here)
-  const q = await pool.query('SELECT id FROM users WHERE (role IS NULL OR LOWER(role) <> \'service\')'); // example filter
-  const rows = q.rows || [];
-  for (const r of rows) {
     try {
-      await generatePayslipForUser(r.id, year, month, opts);
-      out.generated++;
-    } catch (e) {
-      out.failed++;
-      out.errors.push({ user_id: r.id, error: e?.message || String(e) });
+        const { userId, year, month } = req.params;
+        const dbUserId = await resolveDbUserId(userId);
+        if (!dbUserId) {
+            return res.status(404).json({ error: 'user not found' });
+        }
+
+        // Get approved leaves count
+        const leaveQuery = `
+            SELECT COUNT(*) as approved_leaves 
+            FROM leaves 
+            WHERE user_id = $1 
+            AND status = 'approved'  
+            AND EXTRACT(MONTH FROM start_date) = $2
+            AND EXTRACT(YEAR FROM start_date) = $3`;
+
+        const leaveResult = await pool.query(leaveQuery, [
+            dbUserId, 
+            Number(month),
+            Number(year)
+        ]);
+
+        const approvedLeaves = parseInt(leaveResult.rows[0]?.approved_leaves || 0);
+        const totalLeaveDeduction = approvedLeaves * LEAVE_DEDUCTION_AMOUNT;
+
+        // Get payroll record
+     // In the generatePayslipForUser function, modify the payroll record query:
+const payrollRecord = await pool.query(`
+    SELECT 
+        pr.*,
+        u.name as employee_name,
+        u.email as employee_email,
+        esc.basic,
+        esc.hra,
+        esc.allowances,
+        esc.deductions,
+        esc.salary_mode
+    FROM payroll_records pr
+    JOIN users u ON u.id = pr.user_id
+    LEFT JOIN employee_salary_config esc ON u.id = esc.user_id
+    WHERE pr.user_id = $1 AND pr.year = $2 AND pr.month = $3
+`, [dbUserId, Number(year), Number(month)]);
+
+        const slip = payrollRecord.rows[0] || {
+            basic: 0,
+            hra: 0,
+            allowances: {},
+            deductions: {},
+            overtime_pay: 0,
+            pf: 0,
+            esi_employee: 0,
+            professional_tax: 0,
+            tds: 0,
+            leave_days: approvedLeaves,
+            leave_deduction: totalLeaveDeduction,
+            gross: 0,
+            net_pay: 0,
+            employee_name: 'Employee'
+        };
+
+        // Adjust net pay for leave deductions
+        slip.net_pay = Number(slip.net_pay || 0) - totalLeaveDeduction;
+
+        // Create PDF document
+        const doc = new PDFDocument({ size: 'A4', margin: 40 });
+
+        // Set response headers
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="payslip_${dbUserId}_${year}_${month}.pdf"`);
+
+        // Pipe the PDF document directly to the response
+        doc.pipe(res);
+
+        // PDF Content Generation
+        doc.fontSize(16).text('Salary Slip', { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(10).text(`Month: ${month}/${year}`);
+        doc.text(`Employee ID: ${dbUserId}`);
+        doc.text(`Employee Name: ${slip.employee_name}`);
+        doc.moveDown(0.5);
+
+        // Attendance & Leave Section
+        doc.fontSize(12).text('Attendance & Leave', { underline: true });
+        doc.fontSize(10);
+        doc.text(`Total Approved Leaves: ${approvedLeaves} days`);
+        doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
+        doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+        doc.moveDown();
+
+        // Earnings Section
+        doc.fontSize(12).text('Earnings', { underline: true });
+        doc.fontSize(10);
+        doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
+        doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
+        
+        // Display Allowances if present
+        if (slip.allowances) {
+            const allowances = typeof slip.allowances === 'string' 
+                ? JSON.parse(slip.allowances) 
+                : slip.allowances;
+            Object.entries(allowances).forEach(([key, value]) => {
+                doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
+            });
+        }
+        doc.text(`Overtime Pay: ₹${Number(slip.overtime_pay || 0).toFixed(2)}`);
+        doc.moveDown(0.5);
+
+        // Deductions Section
+        doc.fontSize(12).text('Deductions', { underline: true });
+        doc.fontSize(10);
+        doc.text(`PF: ₹${Number(slip.pf).toFixed(2)}`);
+        doc.text(`ESI (Employee): ₹${Number(slip.esi_employee).toFixed(2)}`);
+        doc.text(`Professional Tax: ₹${Number(slip.professional_tax).toFixed(2)}`);
+        doc.text(`TDS: ₹${Number(slip.tds).toFixed(2)}`);
+        doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+        doc.moveDown(0.5);
+
+        // Calculate total deductions including leave deductions
+        const totalDeductions = Number(slip.pf || 0) +
+            Number(slip.esi_employee || 0) +
+            Number(slip.professional_tax || 0) +
+            Number(slip.tds || 0) +
+            totalLeaveDeduction;
+
+        // Display total deductions
+        doc.moveDown(0.5);
+        doc.fontSize(12).text('Total Deductions', { underline: true });
+        doc.fontSize(10);
+        doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
+            Number(slip.esi_employee || 0) + 
+            Number(slip.professional_tax || 0) + 
+            Number(slip.tds || 0)).toFixed(2)}`);
+        doc.text(`Leave Deductions: ₹${totalLeaveDeduction.toFixed(2)}`);
+        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+        doc.moveDown(0.5);
+
+        // Summary Section
+        doc.fontSize(12).text('Summary', { underline: true });
+        doc.fontSize(10);
+        doc.text(`Gross Salary: ₹${Number(slip.gross).toFixed(2)}`);
+        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+        doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
+
+        // Footer
+        doc.moveDown();
+        doc.fontSize(8);
+        doc.text('This is a computer generated payslip and does not require signature.', {
+            align: 'center',
+            italics: true
+        });
+
+        // End the document
+        doc.end();
+
+    } catch (err) {
+        console.error('Error generating PDF:', err);
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to generate PDF',
+                error: err.message
+            });
+        }
     }
-  }
-  return out;
-}
+});
 
-// export named generator for server scheduler
-export { generatePayslipsForAll };
-
-// --- end added ---
-
+// POST /generate-payslip/:userId/:year/:month - admin or self: generate payslip for specific user
 router.post('/generate-payslip/:userId/:year/:month', async (req, res) => {
   const requester = req.header('x-user-id') || req.query.requesterId || null;
   try {
@@ -933,7 +878,6 @@ router.get('/payslip-details', async (req, res) => {
                     net_pay: Number(row.net_pay || 0).toFixed(2),
                     pf: Number(row.pf || 0).toFixed(2),
                     esi_employee: Number(row.esi_employee || 0).toFixed(2),
-                    esi_employer: Number(row.esi_employer || 0).toFixed(2),
                     professional_tax: Number(row.professional_tax || 0).toFixed(2),
                     tds: Number(row.tds || 0).toFixed(2),
                     overtime_pay: Number(row.overtime_pay || 0).toFixed(2),
@@ -1000,11 +944,10 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
     `, [dbUserId, Number(year), Number(month)]);
 
     // Use actual record or create default
-    const slip = payrollRecord.rows[0] || {
+    let slip = payrollRecord.rows[0] || {
         basic: 0,
         hra: 0,
         allowances: {},
-        deductions: {},
         overtime_pay: 0,
         pf: 0,
         esi_employee: 0,
@@ -1021,37 +964,41 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
 
     // Generate PDF if requested
     let savedPath = null;
+    let fileName = null;
     if (opts.savePdf) {
         try {
             const uploadsBase = process.env.UPLOADS_DIR
                 ? path.resolve(process.env.UPLOADS_DIR)
                 : path.join(process.cwd(), 'storage', 'uploads');
             const destDir = path.join(uploadsBase, 'payslips', `${year}-${String(month).padStart(2, '0')}`);
-            fs.mkdirSync(destDir, { recursive: true });
-            const fileName = `payslip_${dbUserId}_${year}_${month}.pdf`;
+            await fs.promises.mkdir(destDir, { recursive: true });
+            fileName = `payslip_${dbUserId}_${year}_${month}.pdf`;
             const filePath = path.join(destDir, fileName);
-            
-            const doc = new PDFDocument({ size: 'A4', margin: 40 });
-            const ws = fs.createWriteStream(filePath);
-            doc.pipe(ws);
+            savedPath = filePath;
 
-            // Generate PDF content
-            doc.fontSize(20).text('Company Name', { align: 'center' });
-            doc.moveDown(0.5);
+            const doc = new PDFDocument({ size: 'A4', margin: 40 });
+            const writeStream = fs.createWriteStream(filePath);
+            
+            // Create a promise to handle stream completion
+            const streamFinished = new Promise((resolve, reject) => {
+                writeStream.on('finish', resolve);
+                writeStream.on('error', reject);
+            });
+
+            doc.pipe(writeStream);
+
+            // PDF Header
             doc.fontSize(16).text('Salary Slip', { align: 'center' });
             doc.moveDown();
-
-            // Employee Details
-            doc.fontSize(10);
-            doc.text(`Month: ${month}/${year}`);
+            doc.fontSize(10).text(`Month: ${month}/${year}`);
             doc.text(`Employee ID: ${dbUserId}`);
             doc.text(`Employee Name: ${slip.employee_name}`);
-            doc.moveDown();
+            doc.moveDown(0.5);
 
-            // Leave Details
-            doc.fontSize(12).text('Leave Details', { underline: true });
+            // Attendance & Leave Section
+            doc.fontSize(12).text('Attendance & Leave', { underline: true });
             doc.fontSize(10);
-            doc.text(`Approved Leaves: ${approvedLeaves} days`);
+            doc.text(`Total Approved Leaves: ${approvedLeaves} days`);
             doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
             doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
             doc.moveDown();
@@ -1062,7 +1009,6 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
             doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
             
-            // Display Allowances if present
             if (slip.allowances) {
                 const allowances = typeof slip.allowances === 'string' 
                     ? JSON.parse(slip.allowances) 
@@ -1084,15 +1030,12 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
             doc.moveDown(0.5);
 
-            // Calculate total deductions including leave deductions
             const totalDeductions = Number(slip.pf || 0) +
                 Number(slip.esi_employee || 0) +
                 Number(slip.professional_tax || 0) +
                 Number(slip.tds || 0) +
                 totalLeaveDeduction;
 
-            // Display total deductions
-            doc.moveDown(0.5);
             doc.fontSize(12).text('Total Deductions', { underline: true });
             doc.fontSize(10);
             doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
@@ -1110,7 +1053,6 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
             doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
 
-            // Footer
             doc.moveDown();
             doc.fontSize(8);
             doc.text('This is a computer generated payslip and does not require signature.', {
@@ -1119,34 +1061,125 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             });
 
             doc.end();
-            
-            await new Promise((resolve, reject) => {
-                ws.on('finish', resolve);
-                ws.on('error', reject);
-            });
-            savedPath = filePath;
+            await streamFinished;
 
-            // Update payroll_records with the PDF path
-            await pool.query(`
-                UPDATE payroll_records 
-                SET pdf_path = $1, 
-                    file_name = $2,
-                    leave_days = $3,
-                    leave_deduction = $4
-                WHERE user_id = $5 
-                AND year = $6 
-                AND month = $7
+            const existingRecord = await pool.query(`
+                SELECT *
+                FROM payroll_records
+                WHERE user_id = $1 AND year = $2 AND month = $3
+            `, [dbUserId, Number(year), Number(month)]);
+
+            const lastMonthDate = new Date(year, month - 2, 1);
+            const lastMonthRecord = await pool.query(`
+                SELECT 
+                    basic, hra, allowances,
+                    overtime_pay, pf, esi_employee,
+                    professional_tax, tds, gross, net_pay
+                FROM payroll_records 
+                WHERE user_id = $1 
+                AND year = $2 
+                AND month = $3
             `, [
-                savedPath,
-                fileName,
-                approvedLeaves,
-                totalLeaveDeduction,
                 dbUserId,
-                Number(year),
-                Number(month)
+                lastMonthDate.getFullYear(),
+                lastMonthDate.getMonth() + 1
             ]);
 
-            console.log('Updated payroll record with PDF path:', {
+            const lastMonthData = lastMonthRecord.rows[0] || {
+                basic: 0,
+                hra: 0,
+                allowances: {},
+                overtime_pay: 0,
+                pf: 0,
+                esi_employee: 0,
+                professional_tax: 0,
+                tds: 0,
+                gross: 0,
+                net_pay: 0
+            };
+
+            slip = {
+                ...lastMonthData,
+                leave_days: approvedLeaves,
+                leave_deduction: totalLeaveDeduction,
+                employee_name: slip.employee_name || 'Employee'
+            };
+
+            if (existingRecord.rows.length > 0) {
+                await pool.query(`
+                    UPDATE payroll_records 
+                    SET 
+                        basic = $4,
+                        hra = $5,
+                        allowances = $6,
+                        overtime_pay = $7,
+                        pf = $8,
+                        esi_employee = $9,
+                        professional_tax = $10,
+                        tds = $11,
+                        gross = $12,
+                        net_pay = $13,
+                        leave_days = $14,
+                        leave_deduction = $15,
+                        pdf_path = $16,
+                        file_name = $17,
+                        updated_at = NOW()
+                    WHERE user_id = $1 
+                    AND year = $2 
+                    AND month = $3
+                `, [
+                    dbUserId,
+                    Number(year),
+                    Number(month),
+                    lastMonthData.basic,
+                    lastMonthData.hra,
+                    lastMonthData.allowances,
+                    lastMonthData.overtime_pay,
+                    lastMonthData.pf,
+                    lastMonthData.esi_employee,
+                    lastMonthData.professional_tax,
+                    lastMonthData.tds,
+                    lastMonthData.gross,
+                    lastMonthData.net_pay,
+                    approvedLeaves,
+                    totalLeaveDeduction,
+                    savedPath,
+                    fileName
+                ]);
+            } else {
+                await pool.query(`
+                    INSERT INTO payroll_records (
+                        user_id, year, month,
+                        basic, hra, allowances,
+                        overtime_pay, pf, esi_employee,
+                        professional_tax, tds, gross, net_pay,
+                        leave_days, leave_deduction,
+                        pdf_path, file_name,
+                        created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+                `, [
+                    dbUserId,
+                    Number(year),
+                    Number(month),
+                    lastMonthData.basic,
+                    lastMonthData.hra,
+                    lastMonthData.allowances,
+                    lastMonthData.overtime_pay,
+                    lastMonthData.pf,
+                    lastMonthData.esi_employee,
+                    lastMonthData.professional_tax,
+                    lastMonthData.tds,
+                    lastMonthData.gross,
+                    lastMonthData.net_pay,
+                    approvedLeaves,
+                    totalLeaveDeduction,
+                    savedPath,
+                    fileName
+                ]);
+            }
+
+            console.log('Successfully generated payslip:', {
                 userId: dbUserId,
                 year,
                 month,
@@ -1156,7 +1189,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
 
         } catch (e) {
             console.error('Failed to save PDF:', e);
-            throw e;
+            throw new Error(`Failed to generate PDF: ${e.message}`);
         }
     }
 
@@ -1166,6 +1199,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
         year: Number(year),
         month: Number(month),
         path: savedPath,
+        fileName: fileName,
         slip: {
             ...slip,
             leave_days: approvedLeaves,
@@ -1174,18 +1208,19 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
     };
 }
 
+
 // Create payslips table if not exists
 async function ensurePayslipsTable() {
     let client = null;
     try {
         client = await getConnection();
         await client.query(`
-            CREATE TABLE IF NOT EXISTS payslips (
+            CREATE TABLE IF NOT EXISTS payroll_records (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 user_id UUID REFERENCES users(id),
                 month INTEGER NOT NULL,
                 year INTEGER NOT NULL,
-                basic_salary DECIMAL(10,2),
+                basic DECIMAL(10,2),
                 allowances DECIMAL(10,2),
                 deductions DECIMAL(10,2),
                 net_salary DECIMAL(10,2),
@@ -1215,7 +1250,7 @@ router.get('/payslip-details', async (req, res) => {
                 p.id,
                 p.month,
                 p.year,
-                p.basic_salary,
+                p.basic,
                 p.allowances,
                 p.deductions,
                 p.net_salary,
@@ -1223,7 +1258,7 @@ router.get('/payslip-details', async (req, res) => {
                 p.created_at,
                 u.name as employee_name,
                 u.email as employee_email
-            FROM payslips p
+            FROM payroll_records p
             JOIN users u ON p.user_id = u.id
             ORDER BY p.year DESC, p.month DESC, u.name ASC
         `);
@@ -1238,14 +1273,14 @@ router.get('/payslip-details', async (req, res) => {
 });
 
 // Add this route to serve PDF files
-router.get('/pdf-file/:userId/:year/:month',  async (req, res) => {
+router.get('/pdf-file/:userId/:year/:month', async (req, res) => {
     try {
         const { userId, year, month } = req.params;
         
         // First get the file path
         const query = `
-            SELECT pdf_path
-            FROM payslips 
+            SELECT pdf_path, file_name
+            FROM payroll_records 
             WHERE user_id = $1 
             AND year = $2 
             AND month = $3
@@ -1274,21 +1309,36 @@ router.get('/pdf-file/:userId/:year/:month',  async (req, res) => {
 
         // Set headers for PDF
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'inline; filename=payslip.pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${result.rows[0].file_name || 'payslip.pdf'}"`);
 
         // Stream the file
         const fileStream = fs.createReadStream(pdfPath);
+        fileStream.on('error', (error) => {
+            console.error('Error streaming file:', error);
+            // Only send error if headers haven't been sent
+            if (!res.headersSent) {
+                res.status(500).json({
+                    success: false,
+                    message: 'Error streaming file'
+                });
+            }
+        });
+
+        // Pipe the file stream to response
         fileStream.pipe(res);
 
     } catch (err) {
         console.error('Error serving PDF file:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to serve PDF file'
-        });
+        // Only send error if headers haven't been sent
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to serve PDF file',
+                error: err.message
+            });
+        }
     }
 });
-
 router.get('/download/:filename', (req, res) => {
   try {
     const { filename } = req.params;
@@ -1331,8 +1381,8 @@ router.get('/get-path/:userId/:year/:month', requireAuth, async (req, res) => {
         const { userId, year, month } = req.params;
 
         const query = `
-            SELECT pdf_path
-            FROM payslips
+            SELECT pdf_path, file_name
+            FROM payroll_records
             WHERE user_id = $1 
             AND year = $2 
             AND month = $3

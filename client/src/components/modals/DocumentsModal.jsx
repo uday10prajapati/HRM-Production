@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import ModalWrapper from './ModalWrapper';
 import axios from 'axios';
+import PdfViewerModal from './PdfViewerModal';
 
 const DocumentsModal = ({ userId, onClose }) => {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [newType, setNewType] = useState('');
+  const [isPdfModalOpen, setPdfModalOpen] = useState(false);
+  const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
 
   const fetchDocs = async () => {
     setLoading(true);
     try {
       const res = await axios.get(`/api/documents/user/${userId}`);
+      console.log(res)
       setDocs(res.data.documents || []);
     } catch (err) {
       console.error('Failed to load documents', err);
@@ -42,6 +46,35 @@ const DocumentsModal = ({ userId, onClose }) => {
     } catch (err) {
       console.error('Failed to update document', err);
       alert('Failed to update');
+    }
+  };
+
+  // Update the handleViewPdf function
+  const handleViewPdf = async (path) => {
+    try {
+      // Extract userId and filename from path
+      const match = path.match(/\/users\/([^/]+)\/([^/]+)$/);
+      if (!match) {
+        console.error('Invalid path format:', path);
+        return;
+      }
+
+      const [, pathUserId, filename] = match;
+      const baseUrl = axios.defaults.baseURL || '';
+      const pdfUrl = `${baseUrl}/api/documents/view/documents/uploads/users/${pathUserId}/${filename}`;
+      
+      // Verify PDF exists before opening
+      const response = await axios.head(pdfUrl);
+      if (response.status === 200) {
+        setSelectedPdfUrl(pdfUrl);
+        setPdfModalOpen(true);
+        console.log('Opening PDF:', pdfUrl);
+      } else {
+        throw new Error('PDF not found');
+      }
+    } catch (err) {
+      console.error('Failed to open PDF:', err);
+      alert('Failed to open PDF document');
     }
   };
 
@@ -84,14 +117,12 @@ const DocumentsModal = ({ userId, onClose }) => {
               <div key={d.id} className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <a 
-                      href={`/${d.path}`} 
-                      target="_blank" 
-                      rel="noreferrer" 
+                    <button
+                      onClick={() => handleViewPdf(d.path)}
                       className="text-lg font-medium text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {d.filename}
-                    </a>
+                    </button>
                     <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
                       <span className="px-2 py-1 bg-gray-100 rounded-full">{d.type || 'No type'}</span>
                       <span>•</span>
@@ -144,6 +175,16 @@ const DocumentsModal = ({ userId, onClose }) => {
               </div>
             ))}
           </div>
+        )}
+
+        {isPdfModalOpen && (
+          <PdfViewerModal
+            pdfUrl={selectedPdfUrl}
+            onClose={() => {
+              setPdfModalOpen(false);
+              setSelectedPdfUrl(null);
+            }}
+          />
         )}
       </div>
     </ModalWrapper>

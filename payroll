@@ -1,0 +1,544 @@
+// import React, { useEffect, useState } from 'react';
+// import axios from 'axios';
+// import Sidebar from '../../components/Sidebar';
+// import Navbar from '../../components/Navbar';
+// import jsPDF from 'jspdf';
+// import 'jspdf-autotable';
+
+// export default function Payroll() {
+//     const [users, setUsers] = useState([]);
+//     const [loading, setLoading] = useState(false);
+//     const [selectedUser, setSelectedUser] = useState(null);
+//     const [config, setConfig] = useState({ basic: '', hra: '', allowances: {}, deductions: {} });
+//     const [year, setYear] = useState(new Date().getFullYear());
+//     const [month, setMonth] = useState(new Date().getMonth() + 1);
+//     const [generatingMap, setGeneratingMap] = useState({}); // userId -> bool
+//     const [generatingAll, setGeneratingAll] = useState(false);
+//     const [showPdfModal, setShowPdfModal] = useState(false);
+//     const [pdfUrl, setPdfUrl] = useState('');
+
+//     useEffect(() => { fetchUsers(); }, []);
+
+//     async function fetchUsers() {
+//         setLoading(true);
+//         try {
+//             const res = await axios.get('/api/users');
+//             setUsers(res.data.users || res.data || []);
+//         } catch (err) {
+//             console.error('Failed to fetch users', err);
+//             setUsers([]);
+//         } finally { setLoading(false); }
+//     }
+
+//     function getRequesterHeaders() {
+//         const meRaw = localStorage.getItem('user');
+//         const me = meRaw ? JSON.parse(meRaw) : null;
+//         return me ? { 'X-User-Id': me.email } : {}; // Changed to use email
+//     }
+
+//     async function saveConfig() {
+//         if (!selectedUser) return alert('Select a user');
+//         try {
+//             const payload = { 
+//                 userId: selectedUser.email || selectedUser, // Changed to use email
+//                 basic: Number(config.basic||0), 
+//                 hra: Number(config.hra||0), 
+//                 allowances: config.allowances, 
+//                 deductions: config.deductions 
+//             };
+//             const headers = getRequesterHeaders();
+//             await axios.post('/api/payroll/config', payload, { headers });
+//             alert('Saved');
+//         } catch (err) {
+//             console.error('Failed to save config', err);
+//             alert('Failed to save');
+//         }
+//     }
+
+//     // existing runPayroll kept, improved feedback
+//     async function runPayroll() {
+//         try {
+//             setGeneratingAll(true);
+//             const headers = getRequesterHeaders();
+//             const res = await axios.post('/api/payroll/run', { year: Number(year), month: Number(month) }, { headers });
+//             const summary = res.data.summary || res.data;
+//             alert(`Payroll run completed. Generated: ${summary.generated || 0}, Failed: ${summary.failed || 0}`);
+//         } catch (err) {
+//             console.error('Payroll run failed', err);
+//             alert('Payroll run failed');
+//         } finally {
+//             setGeneratingAll(false);
+//         }
+//     }
+
+//     // NEW: generate & save payslip for a single user (calls backend POST /api/payroll/generate-payslip/:userId/:year/:month)
+//     async function generatePayslipForUser(user) {
+//         const userId = user?.id || user;
+//         if (!userId) return alert('Invalid user');
+//         console.log('Generating payslip for:', userId);
+//         setGeneratingMap(m => ({ ...m, [userId]: true }));
+//         try {
+//             const headers = getRequesterHeaders();
+//             const res = await axios.post(`/api/payroll/generate-payslip/${userId}/${year}/${month}`, {}, { headers });
+//             alert(`Payslip generated for ${user.name || userId}`);
+//         } catch (err) {
+//             console.error('Failed to generate payslip:', err.response?.data || err.message);
+//             alert(`Failed to generate payslip: ${err.response?.data?.error || err.message}`);
+//         } finally {
+//             setGeneratingMap(m => ({ ...m, [userId]: false }));
+//         }
+//     }
+
+//     // modified downloadSlip to use email
+//     async function downloadSlip(user) {
+//         try {
+//             const headers = getRequesterHeaders();
+//             const res = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`, { headers });
+//             const slip = res.data;
+//             const doc = new jsPDF();
+//             doc.setFontSize(12);
+//             doc.text(`Salary Slip - ${month}/${year}`, 14, 20);
+//             doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
+//             doc.text(`Basic: ₹${slip.basic}`, 14, 40);
+//             doc.text(`HRA: ₹${slip.hra}`, 14, 48);
+//             doc.text(`Gross: ₹${slip.gross}`, 14, 56);
+//             doc.text(`Deductions:`, 14, 66);
+//             const deductions = [
+//                 ['PF', slip.pf || 0],
+//                 ['ESI (Employee)', slip.esi_employee || 0],
+//                 ['Professional Tax', slip.professional_tax || 0],
+//                 ['TDS', slip.tds || 0]
+//             ];
+//             // add deductions table
+//             doc.autoTable({ startY: 72, head: [['Deduction', 'Amount']], body: deductions });
+//             doc.text(`Net Pay: ₹${slip.net_pay}`, 14, doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 120);
+//             doc.save(`salary_slip_${user.email}_${year}_${month}.pdf`);
+//         } catch (err) {
+//             console.error('Failed to fetch slip', err);
+//             alert('Slip not available');
+//         }
+//     }
+
+//     // Update the viewSlip function
+//     async function viewSlip(user) {
+//         try {
+//             const headers = getRequesterHeaders();
+//             const checkRes = await axios.get(`/api/payroll/get-path/${user.id}/${year}/${month}`, { headers });
+            
+//             console.log('Received PDF data:', checkRes.data);
+
+//             // Check for both path and pdf_path since we don't know which one backend returns
+//             const pdfPath = checkRes.data?.pdf_path || checkRes.data?.path;
+
+//             if (pdfPath) {
+//                 try {
+//                     // Create a blob from the PDF content
+//                     const pdfResponse = await axios.get(`/api/payroll/pdf-file/${user.id}/${year}/${month}`, {
+//                         headers: {
+//                             ...headers,
+//                             'Accept': 'application/pdf'
+//                         },
+//                         responseType: 'blob'
+//                     });
+
+//                     // Create blob URL
+//                     const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+//                     const blobUrl = window.URL.createObjectURL(blob);
+                    
+//                     // Set the blob URL
+//                     setPdfUrl(blobUrl);
+//                     setShowPdfModal(true);
+//                 } catch (pdfErr) {
+//                     console.error('Failed to fetch PDF:', pdfErr);
+//                     throw new Error('Failed to load PDF file');
+//                 }
+//             } else {
+//                 console.error('No PDF path in response:', checkRes.data);
+//                 throw new Error('PDF path not found in server response');
+//             }
+//         } catch (err) {
+//             console.error('ViewSlip Error:', err);
+//             // Only show generate confirmation if PDF really doesn't exist
+//             if (err.message.includes('not found')) {
+//                 const generateConfirm = window.confirm('Payslip not found. Would you like to generate it?');
+//                 if (generateConfirm) {
+//                     await generatePayslipForUser(user);
+//                     // Try viewing again after a short delay to allow for generation
+//                     setTimeout(() => viewSlip(user), 1000);
+//                 }
+//             } else {
+//                 alert('Error viewing PDF: ' + err.message);
+//             }
+//         }
+//     }
+
+//     // Add email validation
+//     function isValidEmail(email) {
+//         return email && typeof email === 'string' && email.includes('@');
+//     }
+
+//     // Update the PdfModal component
+//     function PdfModal({ url, onClose }) {
+//         const [loading, setLoading] = useState(true);
+
+//         useEffect(() => {
+//             return () => {
+//                 // Cleanup blob URL when modal closes
+//                 if (url.startsWith('blob:')) {
+//                     window.URL.revokeObjectURL(url);
+//                 }
+//             };
+//         }, [url]);
+
+//         if (!showPdfModal) return null;
+
+//         return (
+//             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+//                 <div className="bg-white p-4 rounded-lg w-11/12 h-5/6 flex flex-col">
+//                     <div className="flex justify-between items-center mb-4">
+//                         <h2 className="text-xl font-semibold">Payslip PDF</h2>
+//                         <button 
+//                             onClick={onClose}
+//                             className="text-gray-500 hover:text-gray-700"
+//                         >
+//                             ✕
+//                         </button>
+//                     </div>
+//                     <div className="flex-1 bg-gray-100 relative">
+//                         {loading && (
+//                             <div className="absolute inset-0 flex items-center justify-center">
+//                                 Loading PDF...
+//                             </div>
+//                         )}
+//                         <iframe
+//                             src={url}
+//                             type="application/pdf"
+//                             className="w-full h-full"
+//                             onLoad={() => setLoading(false)}
+//                         />
+//                     </div>
+//                 </div>
+//             </div>
+//         );
+//     }
+
+//     return (
+//         <div className="flex min-h-screen flex-col">
+//             <Navbar />
+//             <div className="flex flex-1 bg-gray-50 min-h-screen">
+//                 <Sidebar />
+//                 <main className="flex-1 p-6">
+//                     <h1 className="text-2xl font-semibold mb-4">Payroll</h1>
+//                     <div className="bg-white rounded shadow p-4">
+//                         <div className="mb-3">
+//                             <label className="block text-sm">Select User</label>
+//                             <select 
+//                                 className="border p-2 w-full" 
+//                                 value={selectedUser?.id || selectedUser || ''} 
+//                                 onChange={e => setSelectedUser(users.find(u => u.id === e.target.value) || e.target.value)}
+//                             >
+//                                 <option value="">-- select --</option>
+//                                 {users.map(u => (
+//                                     <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+//                                 ))}
+//                             </select>
+//                         </div>
+
+//                         <div className="grid grid-cols-2 gap-3 mb-3">
+//                             <div>
+//                                 <label className="block text-sm">Basic</label>
+//                                 <input className="border p-2 w-full" value={config.basic} onChange={e => setConfig(c => ({...c, basic: e.target.value}))} />
+//                             </div>
+//                             <div>
+//                                 <label className="block text-sm">HRA</label>
+//                                 <input className="border p-2 w-full" value={config.hra} onChange={e => setConfig(c => ({...c, hra: e.target.value}))} />
+//                             </div>
+//                         </div>
+
+//                         <div className="flex gap-2 mb-3">
+//                             <button onClick={saveConfig} className="px-3 py-1 bg-blue-600 text-white rounded">Save Config</button>
+//                             <button onClick={runPayroll} className="px-3 py-1 bg-green-600 text-white rounded" disabled={generatingAll}>
+//                                 {generatingAll ? 'Running...' : 'Run Payroll (All)'}
+//                             </button>
+//                             {/* NEW: generate for selected user */}
+//                             <button 
+//                                 onClick={() => {
+//                                     if (!selectedUser?.email || !isValidEmail(selectedUser.email)) {
+//                                         return alert('Please select a valid user with email');
+//                                     }
+//                                     generatePayslipForUser(selectedUser);
+//                                 }} 
+//                                 className="px-3 py-1 bg-yellow-600 text-white rounded"
+//                                 disabled={!selectedUser?.email}
+//                             >
+//                                 Generate Payslip (Selected)
+//                             </button>
+//                         </div>
+
+//                         <div className="mt-4">
+//                             <h3 className="font-semibold">Users</h3>
+//                             {loading ? <div>Loading...</div> : (
+//                                 <table className="min-w-full text-sm">
+//                                     <thead><tr><th className="px-2 py-1">Name</th><th className="px-2 py-1">Email</th><th className="px-2 py-1">Actions</th></tr></thead>
+//                                     <tbody>
+//                                         {users.map(u => (
+//                                             <tr key={u.id} className="border-t">
+//                                                 <td className="px-2 py-1">{u.name}</td>
+//                                                 <td className="px-2 py-1">{u.email}</td>
+//                                                 <td className="px-2 py-1 space-x-2">
+//                                                     <button 
+//                                                         onClick={() => viewSlip(u)} 
+//                                                         className="px-2 py-1 bg-blue-600 text-white rounded"
+//                                                     >
+//                                                         View PDF
+//                                                     </button>
+//                                                     <button 
+//                                                         onClick={() => downloadSlip(u)} 
+//                                                         className="px-2 py-1 bg-indigo-600 text-white rounded"
+//                                                     >
+//                                                         Download
+//                                                     </button>
+//                                                     <button 
+//                                                         onClick={() => generatePayslipForUser(u)} 
+//                                                         className="px-2 py-1 bg-orange-600 text-white rounded" 
+//                                                         disabled={!!generatingMap[u.id]}
+//                                                     >
+//                                                         {generatingMap[u.id] ? 'Generating...' : 'Generate'}
+//                                                     </button>
+//                                                 </td>
+//                                             </tr>
+//                                         ))}
+//                                     </tbody>
+//                                 </table>
+//                             )}
+//                         </div>
+//                     </div>
+//                 </main>
+//             </div>
+//             <PdfModal 
+//                 url={pdfUrl} 
+//                 onClose={() => {
+//                     setShowPdfModal(false);
+//                     setPdfUrl('');
+//                 }} 
+//             />
+//         </div>
+//     );
+// }
+
+
+// ???????????????????????????????????????????????????????????????????????????????????????
+
+// async function generatePayslipForUser(identifier, year, month, opts = { savePdf: true }) {
+//     if (!identifier) {
+//         throw new Error('Identifier (email or UUID) is required');
+//     }
+
+//     const dbUserId = await resolveDbUserId(identifier);
+//     if (!dbUserId) {
+//         throw new Error(`User not found with identifier: ${identifier}`);
+//     }
+
+//     // Get approved leaves count with proper date filtering
+//     const leaveQuery = `
+//         SELECT COUNT(*) as approved_leaves 
+//         FROM leaves 
+//         WHERE user_id = $1 
+//         AND status = 'approved'  
+//         AND EXTRACT(MONTH FROM start_date) = $2
+//         AND EXTRACT(YEAR FROM start_date) = $3`;
+
+//     const leaveResult = await pool.query(leaveQuery, [
+//         dbUserId, 
+//         Number(month),
+//         Number(year)
+//     ]);
+
+//     const approvedLeaves = parseInt(leaveResult.rows[0]?.approved_leaves || 0);
+//     const totalLeaveDeduction = approvedLeaves * LEAVE_DEDUCTION_AMOUNT;
+
+//     // Get payroll record
+//     const payrollRecord = await pool.query(`
+//         SELECT 
+//             pr.*,
+//             u.name as employee_name,
+//             u.email as employee_email
+//         FROM payroll_records pr
+//         JOIN users u ON u.id = pr.user_id
+//         WHERE pr.user_id = $1 AND pr.year = $2 AND pr.month = $3
+//     `, [dbUserId, Number(year), Number(month)]);
+
+//     // Use actual record or create default
+//     const slip = payrollRecord.rows[0] || {
+//         basic: 0,
+//         hra: 0,
+//         allowances: {},
+//         deductions: {},
+//         overtime_pay: 0,
+//         pf: 0,
+//         esi_employee: 0,
+//         professional_tax: 0,
+//         tds: 0,
+//         leave_days: approvedLeaves,
+//         leave_deduction: totalLeaveDeduction,
+//         gross: 0,
+//         net_pay: 0
+//     };
+
+//     // Adjust net pay for leave deductions
+//     slip.net_pay = Number(slip.net_pay || 0) - totalLeaveDeduction;
+
+//     // Generate PDF if requested
+//     let savedPath = null;
+//     if (opts.savePdf) {
+//         try {
+//             const uploadsBase = process.env.UPLOADS_DIR
+//                 ? path.resolve(process.env.UPLOADS_DIR)
+//                 : path.join(process.cwd(), 'storage', 'uploads');
+//             const destDir = path.join(uploadsBase, 'payslips', `${year}-${String(month).padStart(2, '0')}`);
+//             fs.mkdirSync(destDir, { recursive: true });
+//             const fileName = `payslip_${dbUserId}_${year}_${month}.pdf`;
+//             const filePath = path.join(destDir, fileName);
+            
+//             const doc = new PDFDocument({ size: 'A4', margin: 40 });
+//             const ws = fs.createWriteStream(filePath);
+//             doc.pipe(ws);
+
+//             // Generate PDF content
+//             doc.fontSize(20).text('Company Name', { align: 'center' });
+//             doc.moveDown(0.5);
+//             doc.fontSize(16).text('Salary Slip', { align: 'center' });
+//             doc.moveDown();
+
+//             // Employee Details
+//             doc.fontSize(10);
+//             doc.text(`Month: ${month}/${year}`);
+//             doc.text(`Employee ID: ${dbUserId}`);
+//             doc.text(`Employee Name: ${slip.employee_name}`);
+//             doc.moveDown();
+
+//             // Leave Details
+//             doc.fontSize(12).text('Leave Details', { underline: true });
+//             doc.fontSize(10);
+//             doc.text(`Approved Leaves: ${approvedLeaves} days`);
+//             doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
+//             doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+//             doc.moveDown();
+
+//             // Earnings Section
+//             doc.fontSize(12).text('Earnings', { underline: true });
+//             doc.fontSize(10);
+//             doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
+//             doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
+            
+//             // Display Allowances if present
+//             if (slip.allowances) {
+//                 const allowances = typeof slip.allowances === 'string' 
+//                     ? JSON.parse(slip.allowances) 
+//                     : slip.allowances;
+//                 Object.entries(allowances).forEach(([key, value]) => {
+//                     doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
+//                 });
+//             }
+//             doc.text(`Overtime Pay: ₹${Number(slip.overtime_pay || 0).toFixed(2)}`);
+//             doc.moveDown(0.5);
+
+//             // Deductions Section
+//             doc.fontSize(12).text('Deductions', { underline: true });
+//             doc.fontSize(10);
+//             doc.text(`PF: ₹${Number(slip.pf).toFixed(2)}`);
+//             doc.text(`ESI (Employee): ₹${Number(slip.esi_employee).toFixed(2)}`);
+//             doc.text(`Professional Tax: ₹${Number(slip.professional_tax).toFixed(2)}`);
+//             doc.text(`TDS: ₹${Number(slip.tds).toFixed(2)}`);
+//             doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+//             doc.moveDown(0.5);
+
+//             // Calculate total deductions including leave deductions
+//             const totalDeductions = Number(slip.pf || 0) +
+//                 Number(slip.esi_employee || 0) +
+//                 Number(slip.professional_tax || 0) +
+//                 Number(slip.tds || 0) +
+//                 totalLeaveDeduction;
+
+//             // Display total deductions
+//             doc.moveDown(0.5);
+//             doc.fontSize(12).text('Total Deductions', { underline: true });
+//             doc.fontSize(10);
+//             doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
+//                 Number(slip.esi_employee || 0) + 
+//                 Number(slip.professional_tax || 0) + 
+//                 Number(slip.tds || 0)).toFixed(2)}`);
+//             doc.text(`Leave Deductions: ₹${totalLeaveDeduction.toFixed(2)}`);
+//             doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+//             doc.moveDown(0.5);
+
+//             // Summary Section
+//             doc.fontSize(12).text('Summary', { underline: true });
+//             doc.fontSize(10);
+//             doc.text(`Gross Salary: ₹${Number(slip.gross).toFixed(2)}`);
+//             doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+//             doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
+
+//             // Footer
+//             doc.moveDown();
+//             doc.fontSize(8);
+//             doc.text('This is a computer generated payslip and does not require signature.', {
+//                 align: 'center',
+//                 italics: true
+//             });
+
+//             doc.end();
+            
+//             await new Promise((resolve, reject) => {
+//                 ws.on('finish', resolve);
+//                 ws.on('error', reject);
+//             });
+//             savedPath = filePath;
+
+//             // Update payroll_records with the PDF path
+//             await pool.query(`
+//                 UPDATE payroll_records 
+//                 SET pdf_path = $1, 
+//                     file_name = $2,
+//                     leave_days = $3,
+//                     leave_deduction = $4
+//                 WHERE user_id = $5 
+//                 AND year = $6 
+//                 AND month = $7
+//             `, [
+//                 savedPath,
+//                 fileName,
+//                 approvedLeaves,
+//                 totalLeaveDeduction,
+//                 dbUserId,
+//                 Number(year),
+//                 Number(month)
+//             ]);
+
+//             console.log('Updated payroll record with PDF path:', {
+//                 userId: dbUserId,
+//                 year,
+//                 month,
+//                 path: savedPath,
+//                 fileName
+//             });
+
+//         } catch (e) {
+//             console.error('Failed to save PDF:', e);
+//             throw e;
+//         }
+//     }
+
+//     return {
+//         ok: true,
+//         user_id: dbUserId,
+//         year: Number(year),
+//         month: Number(month),
+//         path: savedPath,
+//         slip: {
+//             ...slip,
+//             leave_days: approvedLeaves,
+//             leave_deduction: totalLeaveDeduction
+//         }
+//     };
+// }

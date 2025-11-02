@@ -12,9 +12,16 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 // Base uploads directory (configurable via UPLOADS_DIR env var). If UPLOADS_DIR is
 // absolute it will be used as-is; otherwise it defaults to <repo>/storage/uploads
-const UPLOADS_BASE = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(REPO_ROOT, 'storage', 'uploads');
-// ensure base directory exists
-try { fs.mkdirSync(UPLOADS_BASE, { recursive: true }); } catch (e) { /* ignore */ }
+const UPLOADS_BASE = process.env.UPLOADS_DIR 
+    ? path.resolve(process.env.UPLOADS_DIR) 
+    : path.join(__dirname, 'documents', 'uploads');
+
+// Create base directory if it doesn't exist
+try {
+    fs.mkdirSync(path.join(__dirname, 'documents', 'uploads', 'users'), { recursive: true });
+} catch (e) {
+    console.error('Failed to create base uploads directory:', e);
+}
 
 const router = express.Router();
 
@@ -43,18 +50,18 @@ ensureDocumentsTable().catch(err => console.error('ensureDocumentsTable failed:'
 
 // storage configuration: files saved under UPLOADS_BASE/users/:id/ (public URL path exposed at /uploads/users/:id/:filename)
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const userId = req.params.id;
-    const base = path.join(UPLOADS_BASE, 'users', String(userId));
-    fs.mkdirSync(base, { recursive: true });
-    cb(null, base);
-  },
-  filename: function (req, file, cb) {
-    // keep original name prefixed with timestamp
-    const ts = Date.now();
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, `${ts}_${safe}`);
-  }
+    destination: function (req, file, cb) {
+        const userId = req.params.id;
+        // Use the new path structure
+        const userDir = path.join(__dirname, 'documents', 'uploads', 'users', String(userId));
+        fs.mkdirSync(userDir, { recursive: true });
+        cb(null, userDir);
+    },
+    filename: function (req, file, cb) {
+        const ts = Date.now();
+        const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `${ts}_${safe}`);
+    }
 });
 
 const upload = multer({
@@ -69,70 +76,70 @@ const upload = multer({
 
 // Accept up to 3 files named contract, idProof, certificate
 router.post('/:id/documents', upload.fields([
-  { name: 'contract', maxCount: 1 },
-  { name: 'idProof', maxCount: 1 },
-  { name: 'certificate', maxCount: 1 }
+    { name: 'contract', maxCount: 1 },
+    { name: 'idProof', maxCount: 1 },
+    { name: 'certificate', maxCount: 1 }
 ]), async (req, res) => {
-  const { id } = req.params;
-  try {
-    const files = req.files || {};
-    const entries = [];
-
-    const pushIfExists = (fieldName, typeName) => {
-      const arr = files[fieldName];
-      if (Array.isArray(arr) && arr.length > 0) {
-        const f = arr[0];
-  // store public URL path for serving: /uploads/users/:id/:filename
-  const relPath = `/uploads/users/${String(id)}/${f.filename}`;
-        entries.push({ type: typeName, filename: f.filename, path: relPath });
-      }
-    };
-
-    pushIfExists('contract', 'contract');
-    pushIfExists('idProof', 'id_proof');
-    pushIfExists('certificate', 'certificate');
-
-    // Insert metadata rows
-    const client = await pool.connect();
+    const { id } = req.params;
     try {
-      // Defensive: ensure documents.user_id column accepts UUID/text values.
-      // Some older schemas may have user_id as integer; try to convert to TEXT so UUIDs work.
-      try {
-        const colQ = await client.query("SELECT data_type FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id' LIMIT 1");
-        const dtype = colQ.rows && colQ.rows[0] ? (colQ.rows[0].data_type || '').toString().toLowerCase() : null;
-        if (dtype && (dtype.includes('int') || dtype === 'integer')) {
-          try {
-            await client.query('ALTER TABLE documents ALTER COLUMN user_id TYPE TEXT USING user_id::text');
-            console.log('documentsRoute: converted documents.user_id to TEXT to accept UUIDs');
-          } catch (convertErr) {
-            console.warn('documentsRoute: failed to convert documents.user_id to TEXT:', convertErr?.message || convertErr);
-          }
+        const files = req.files || {};
+        const entries = [];
+
+        const pushIfExists = (fieldName, typeName) => {
+            const arr = files[fieldName];
+            if (Array.isArray(arr) && arr.length > 0) {
+                const f = arr[0];
+                // Update the path to match new structure
+                const relPath = `/documents/uploads/users/${String(id)}/${f.filename}`;
+                entries.push({ type: typeName, filename: f.filename, path: relPath });
+            }
+        };
+
+        pushIfExists('contract', 'contract');
+        pushIfExists('idProof', 'id_proof');
+        pushIfExists('certificate', 'certificate');
+
+        // Insert metadata rows
+        const client = await pool.connect();
+        try {
+            // Defensive: ensure documents.user_id column accepts UUID/text values.
+            // Some older schemas may have user_id as integer; try to convert to TEXT so UUIDs work.
+            try {
+                const colQ = await client.query("SELECT data_type FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id' LIMIT 1");
+                const dtype = colQ.rows && colQ.rows[0] ? (colQ.rows[0].data_type || '').toString().toLowerCase() : null;
+                if (dtype && (dtype.includes('int') || dtype === 'integer')) {
+                    try {
+                        await client.query('ALTER TABLE documents ALTER COLUMN user_id TYPE TEXT USING user_id::text');
+                        console.log('documentsRoute: converted documents.user_id to TEXT to accept UUIDs');
+                    } catch (convertErr) {
+                        console.warn('documentsRoute: failed to convert documents.user_id to TEXT:', convertErr?.message || convertErr);
+                    }
+                }
+            } catch (checkErr) {
+                console.warn('documentsRoute: could not verify/convert documents.user_id column type:', checkErr?.message || checkErr);
+            }
+
+            await client.query('BEGIN');
+            for (const e of entries) {
+                await client.query(
+                    'INSERT INTO documents (user_id, type, filename, path) VALUES ($1, $2, $3, $4)',
+                    [id, e.type, e.filename, e.path]
+                );
+            }
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error inserting document rows', err);
+            return res.status(500).json({ success: false, message: 'Error saving document metadata', error: err.message });
+        } finally {
+            client.release();
         }
-      } catch (checkErr) {
-        console.warn('documentsRoute: could not verify/convert documents.user_id column type:', checkErr?.message || checkErr);
-      }
 
-      await client.query('BEGIN');
-      for (const e of entries) {
-        await client.query(
-          'INSERT INTO documents (user_id, type, filename, path) VALUES ($1, $2, $3, $4)',
-          [id, e.type, e.filename, e.path]
-        );
-      }
-      await client.query('COMMIT');
+        res.json({ success: true, message: 'Files uploaded', uploaded: entries });
     } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('Error inserting document rows', err);
-      return res.status(500).json({ success: false, message: 'Error saving document metadata', error: err.message });
-    } finally {
-      client.release();
+        console.error('Upload error', err);
+        res.status(500).json({ success: false, message: 'Upload failed', error: err.message });
     }
-
-    res.json({ success: true, message: 'Files uploaded', uploaded: entries });
-  } catch (err) {
-    console.error('Upload error', err);
-    res.status(500).json({ success: false, message: 'Upload failed', error: err.message });
-  }
 });
 
 // GET documents for a user
@@ -186,39 +193,93 @@ router.put('/:docId', async (req, res) => {
 
 // Delete a document (remove file and DB row)
 router.delete('/:docId', async (req, res) => {
-  const { docId } = req.params;
-  try {
-    const result = await pool.query('SELECT * FROM documents WHERE id=$1', [docId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Document not found' });
-    const doc = result.rows[0];
-    // remove file from disk
-    // Stored paths are relative like 'uploads/users/:id/:filename' (public URL path)
-    // Map them to actual filesystem path under UPLOADS_BASE (which is <repo>/storage/uploads)
-    let absPath;
-    if (path.isAbsolute(doc.path)) {
-      absPath = doc.path;
-    } else {
-      // strip leading '/uploads/' or 'uploads/' then join with UPLOADS_BASE
-      const p = doc.path.replace(/^\/|^\//, ''); // remove leading slash if any
-      if (p.toLowerCase().startsWith('uploads' + path.posix.sep) || p.toLowerCase().startsWith('uploads/')) {
-        const relativeInsideUploads = p.replace(/^uploads[\\/]/i, '');
-        absPath = path.join(UPLOADS_BASE, relativeInsideUploads);
-      } else {
-        // fallback: resolve against repo root
-        absPath = path.join(REPO_ROOT, doc.path);
-      }
-    }
+    const { docId } = req.params;
     try {
-      if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-    } catch (fsErr) {
-      console.warn('Failed to remove file from disk', absPath, fsErr.message || fsErr);
+        const result = await pool.query('SELECT * FROM documents WHERE id=$1', [docId]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Document not found' });
+        }
+
+        const doc = result.rows[0];
+        // Update path resolution for new structure
+        const absPath = path.join(__dirname, doc.path);
+
+        try {
+            if (fs.existsSync(absPath)) {
+                fs.unlinkSync(absPath);
+            }
+        } catch (fsErr) {
+            console.warn('Failed to remove file from disk:', fsErr);
+        }
+
+        await pool.query('DELETE FROM documents WHERE id=$1', [docId]);
+        res.json({ success: true, message: 'Document deleted' });
+
+    } catch (err) {
+        console.error('Error deleting document:', err);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error deleting document', 
+            error: err.message 
+        });
     }
-    // delete DB row
-    await pool.query('DELETE FROM documents WHERE id=$1', [docId]);
-    res.json({ success: true, message: 'Document deleted' });
+});
+
+// Add this route after your existing routes
+router.get('/view/documents/uploads/users/:userId/:filename', async (req, res) => {
+  try {
+    const { userId, filename } = req.params;
+    
+    // Construct the absolute file path
+    const filePath = path.join(__dirname, 'documents', 'uploads', 'users', userId, filename);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error('PDF not found:', filePath);
+      return res.status(404).json({
+        success: false,
+        message: 'PDF file not found'
+      });
+    }
+
+    // Verify file is actually a PDF
+    if (!filename.toLowerCase().endsWith('.pdf')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type'
+      });
+    }
+
+    // Set proper headers for PDF display
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    
+    // Handle streaming errors
+    fileStream.on('error', (error) => {
+      console.error('Error streaming file:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error streaming file'
+        });
+      }
+    });
+
+    // Pipe the file to response
+    fileStream.pipe(res);
+
   } catch (err) {
-    console.error('Error deleting document', err);
-    res.status(500).json({ success: false, message: 'Error deleting document', error: err.message });
+    console.error('Error serving PDF:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Error loading PDF file',
+        error: err.message
+      });
+    }
   }
 });
 

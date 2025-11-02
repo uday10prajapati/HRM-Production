@@ -24,7 +24,7 @@ function PdfModal({ url, onClose }) {
     if (!url) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-4 rounded-lg w-11/12 h-5/6 flex flex-col">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-semibold">Payslip PDF</h2>
@@ -80,11 +80,14 @@ export default function Payroll() {
     const getRequesterHeaders = useCallback(() => {
         const meRaw = localStorage.getItem('user');
         const me = meRaw ? JSON.parse(meRaw) : null;
-        // Use X-User-Id for authorization as seen in the working `saveConfig`
-        return me ? { 'X-User-Id': me.email } : {};
+        const token = localStorage.getItem('token');
+        // Support both token-based & userId-based auth
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (me?.email) headers['X-User-Id'] = me.email;
+        headers['Content-Type'] = 'application/json';
+        return headers;
     }, []);
-
-    // I've removed the redundant getAuthHeaders which was causing the 401.
 
     async function fetchUsers() {
         setLoading(true);
@@ -104,11 +107,11 @@ export default function Payroll() {
         if (!selectedUser) return toast.warn('Select an employee first.');
         try {
             const payload = { 
-                userId: selectedUser.email || selectedUser, // Changed to use email or ID
-                basic: Number(config.basic||0), 
-                hra: Number(config.hra||0), 
-                allowances: config.allowances, 
-                deductions: config.deductions 
+                userId: selectedUser.email || selectedUser,
+                basic: Number(config.basic || 0),
+                hra: Number(config.hra || 0),
+                allowances: config.allowances,
+                deductions: config.deductions
             };
             const headers = getRequesterHeaders();
             await axios.post('/api/payroll/config', payload, { headers });
@@ -156,6 +159,12 @@ export default function Payroll() {
             const headers = getRequesterHeaders();
             const res = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`, { headers });
             const slip = res.data;
+
+            if (!slip) {
+                toast.error('No payslip data found for this user.');
+                return;
+            }
+
             const doc = new jsPDF();
             doc.setFontSize(12);
             doc.text(`Salary Slip - ${month}/${year}`, 14, 20);
@@ -165,7 +174,6 @@ export default function Payroll() {
             const earningData = [
                 ['Basic', `₹${slip.basic}`],
                 ['HRA', `₹${slip.hra}`],
-                // Add more earnings if available in slip object
             ];
             doc.text('Earnings:', 14, y);
             doc.autoTable({ 
@@ -186,7 +194,6 @@ export default function Payroll() {
                 ['ESI (Employee)', `₹${slip.esi_employee || 0}`],
                 ['Professional Tax', `₹${slip.professional_tax || 0}`],
                 ['TDS', `₹${slip.tds || 0}`],
-                // Add more deductions
             ];
 
             doc.text(`Deductions:`, 14, y + 2);
@@ -209,58 +216,64 @@ export default function Payroll() {
         }
     }
 
+
     // Fix applied here: Use getRequesterHeaders() instead of getAuthHeaders()
     async function viewSlip(user) {
+    try {
+        const headers = getRequesterHeaders();
+        const yearMonthPath = `${year}/${month}`;
+
+        // Step 1: Check if payslip exists
+        let checkRes;
         try {
-            const headers = getRequesterHeaders();
-            const checkRes = await axios.get(`/api/payroll/get-path/${user.id}/${year}/${month}`, { headers });
-            
-            console.log('Received PDF data:', checkRes.data);
-
-            // Check for both path and pdf_path since we don't know which one backend returns
-            const pdfPath = checkRes.data?.pdf_path || checkRes.data?.path;
-
-            if (pdfPath) {
-                try {
-                    // Create a blob from the PDF content
-                    const pdfResponse = await axios.get(`/api/payroll/pdf-file/${user.id}/${year}/${month}`, {
-                        headers: {
-                            ...headers,
-                            'Accept': 'application/pdf'
-                        },
-                        responseType: 'blob'
-                    });
-
-                    // Create blob URL
-                    const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    
-                    // Set the blob URL
-                    setPdfUrl(blobUrl);
-                    setShowPdfModal(true);
-                } catch (pdfErr) {
-                    console.error('Failed to fetch PDF:', pdfErr);
-                    throw new Error('Failed to load PDF file');
-                }
-            } else {
-                console.error('No PDF path in response:', checkRes.data);
-                throw new Error('PDF path not found in server response');
-            }
-        } catch (err) {
-            console.error('ViewSlip Error:', err);
-            // Only show generate confirmation if PDF really doesn't exist
-            if (err.message.includes('not found')) {
-                const generateConfirm = window.confirm('Payslip not found. Would you like to generate it?');
-                if (generateConfirm) {
+            checkRes = await axios.get(`/api/payroll/pdf-file/${user.id}/${yearMonthPath}`, { headers });
+            console.log("Payslip metadata:", checkRes.data);
+        } catch (checkErr) {
+            const status = checkErr.response?.status;
+            if (status === 404) {
+                const confirmGenerate = window.confirm("Payslip not found. Would you like to generate it?");
+                if (confirmGenerate) {
                     await generatePayslipForUser(user);
-                    // Try viewing again after a short delay to allow for generation
-                    setTimeout(() => viewSlip(user), 1000);
+                    // Wait a bit longer for file creation
+                    setTimeout(() => viewSlip(user), 3000);
                 }
-            } else {
-                alert('Error viewing PDF: ' + err.message);
+                return;
             }
+            if (status === 401) {
+                toast.error("Unauthorized — please log in again.");
+                return;
+            }
+            throw checkErr;
+        }
+
+        // Step 2: Fetch PDF
+        const pdfResponse = await axios.get(`/api/payroll/pdf/${user.id}/${yearMonthPath}`, {
+            headers: { ...headers, Accept: 'application/pdf' },
+            responseType: 'blob'
+        });
+
+        // Step 3: Display PDF
+        const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+        const blobUrl = window.URL.createObjectURL(blob);
+        setPdfUrl(blobUrl);
+        setShowPdfModal(true);
+        toast.success(`Opened payslip for ${user.name}`);
+
+    } catch (err) {
+        console.error("ViewSlip Error:", err);
+        const status = err.response?.status;
+
+        if (status === 401) {
+            toast.error("Session expired or invalid token. Please log in again.");
+        } else if (status === 404) {
+            toast.warn("Payslip not found. Generate it first.");
+        } else {
+            toast.error("Error viewing payslip: " + (err.message || "Unknown error"));
         }
     }
+}
+
+
 
     // Add email validation - still useful
     function isValidEmail(email) {
