@@ -11,69 +11,102 @@ const DocumentsModal = ({ userId, onClose }) => {
   const [isPdfModalOpen, setPdfModalOpen] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
 
+  // ✅ Added logs and defensive check
   const fetchDocs = async () => {
+    if (!userId) {
+      console.warn("⚠️ No userId provided to DocumentsModal.");
+      setLoading(false);
+      return;
+    }
+
+    console.log("📥 Fetching documents for user:", userId);
     setLoading(true);
     try {
       const res = await axios.get(`/api/documents/user/${userId}`);
-      console.log(res)
-      setDocs(res.data.documents || []);
+      console.log("✅ Documents API response:", res.data);
+      
+      // Handle both array or wrapped object response
+      if (Array.isArray(res.data)) {
+        setDocs(res.data);
+      } else if (res.data.documents) {
+        setDocs(res.data.documents);
+      } else {
+        console.warn("⚠️ Unexpected response format:", res.data);
+        setDocs([]);
+      }
     } catch (err) {
-      console.error('Failed to load documents', err);
+      console.error('❌ Failed to load documents:', err);
+      setDocs([]); // Prevent stuck loading state
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { if (userId) fetchDocs(); }, [userId]);
+  useEffect(() => {
+    console.log("📂 DocumentsModal mounted. userId =", userId);
+    if (userId) fetchDocs();
+  }, [userId]);
 
   const handleDelete = async (docId) => {
     if (!confirm('Delete this document?')) return;
     try {
       await axios.delete(`/api/documents/${docId}`);
+      console.log("🗑️ Document deleted:", docId);
       fetchDocs();
     } catch (err) {
-      console.error('Failed to delete document', err);
+      console.error('❌ Failed to delete document', err);
       alert('Failed to delete document');
     }
   };
 
-  const startEdit = (doc) => { setEditing(doc.id); setNewType(doc.type || ''); };
+  const startEdit = (doc) => {
+    setEditing(doc.id);
+    setNewType(doc.type || '');
+  };
+
   const saveEdit = async () => {
     try {
       await axios.put(`/api/documents/${editing}`, { type: newType });
+      console.log("✏️ Updated document type for:", editing);
       setEditing(null);
       fetchDocs();
     } catch (err) {
-      console.error('Failed to update document', err);
+      console.error('❌ Failed to update document', err);
       alert('Failed to update');
     }
   };
 
-  // Update the handleViewPdf function
   const handleViewPdf = async (path) => {
     try {
+      if (!path) {
+        console.error('❌ Invalid PDF path:', path);
+        alert('Invalid file path');
+        return;
+      }
+
       // Extract userId and filename from path
       const match = path.match(/\/users\/([^/]+)\/([^/]+)$/);
       if (!match) {
-        console.error('Invalid path format:', path);
+        console.error('❌ Invalid path format:', path);
+        alert('Invalid file path format');
         return;
       }
 
       const [, pathUserId, filename] = match;
       const baseUrl = axios.defaults.baseURL || '';
       const pdfUrl = `${baseUrl}/api/documents/view/documents/uploads/users/${pathUserId}/${filename}`;
-      
-      // Verify PDF exists before opening
+
+      console.log("🔗 Checking PDF URL:", pdfUrl);
       const response = await axios.head(pdfUrl);
       if (response.status === 200) {
+        console.log('✅ Opening PDF:', pdfUrl);
         setSelectedPdfUrl(pdfUrl);
         setPdfModalOpen(true);
-        console.log('Opening PDF:', pdfUrl);
       } else {
         throw new Error('PDF not found');
       }
     } catch (err) {
-      console.error('Failed to open PDF:', err);
+      console.error('❌ Failed to open PDF:', err);
       alert('Failed to open PDF document');
     }
   };
@@ -96,12 +129,14 @@ const DocumentsModal = ({ userId, onClose }) => {
           </button>
         </div>
 
+        {/* ✅ Improved loading behavior */}
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <svg className="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+          <div className="flex flex-col items-center justify-center py-12 text-center text-gray-500">
+            <svg className="animate-spin h-8 w-8 text-blue-600 mb-3" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
             </svg>
+            <p>Loading documents...</p>
           </div>
         ) : docs.length === 0 ? (
           <div className="text-center py-12">

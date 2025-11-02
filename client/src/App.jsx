@@ -18,6 +18,7 @@ import MapView from "./pages/MapView";
 import AssignCalls from "./pages/AssignCalls";
 import EngineerTasks from "./pages/EngineerTasks";
 import AssignedCalls from './pages/AssignCalls';
+import PendingTasks from './pages/PendingTasks';
 import 'leaflet/dist/leaflet.css';
 
 function App() {
@@ -50,6 +51,7 @@ function App() {
   <Route path="/map" element={<MapView />} />
   <Route path="/assign-call" element={<AssignCalls />} />
   <Route path="/assigned-calls" element={<AssignedCalls />} />
+  <Route path="/tasks/pending" element={<PendingTasks />} />
       </Routes>
     </Router>
   );

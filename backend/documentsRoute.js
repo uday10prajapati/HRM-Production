@@ -283,4 +283,60 @@ router.get('/view/documents/uploads/users/:userId/:filename', async (req, res) =
   }
 });
 
+// Get all documents
+router.get('/', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        id,
+        name,
+        type,
+        filename,
+        file_url
+      FROM documents
+      ORDER BY name ASC
+    `;
+    
+    const { rows } = await pool.query(query);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching documents:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+// Delete document
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM documents WHERE id::text = $1::text', [id]);
+    res.json({ message: 'Document deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+});
+
+// Update document
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { file_url } = req.body;
+    
+    const query = `
+      UPDATE documents 
+      SET file_url = $1, 
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id::text = $2::text
+      RETURNING *
+    `;
+    
+    const { rows } = await pool.query(query, [file_url, id]);
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Error updating document:', error);
+    res.status(500).json({ error: 'Failed to update document' });
+  }
+});
+
 export default router;

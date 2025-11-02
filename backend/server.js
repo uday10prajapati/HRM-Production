@@ -21,7 +21,7 @@ import { ensureDbConnection } from './db.js';
 
 // We'll dynamically import route modules after DB is confirmed to avoid many
 // parallel startup queries that can exhaust the DB connection pool.
-let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute;
+let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute, taskRoute;
 
 
 dotenv.config();
@@ -85,6 +85,10 @@ async function startServer() {
     payrollRoute = (await import('./payrollRoute.js')).default;
     liveLocationsRoute = (await import('./liveLocationsRoute.js')).default;
     serviceCallsRoute = (await import('./serviceCallsRoute.js')).default;
+    taskRoute = (await import('./taskRoute.js')).default;
+
+    // mount task routes
+    
         // start assignment listener which listens to Postgres NOTIFY events
         // The listener sends SMS/FCM notifications when a service_call is assigned
         try {
@@ -106,6 +110,7 @@ async function startServer() {
     app.use('/api/payroll', payrollRoute);
     app.use('/api/live_locations', liveLocationsRoute);
     app.use('/api/service-calls', serviceCallsRoute);
+    app.use('/api/tasks', taskRoute);
 
     // --- Payroll scheduler: daily check, run on configured day of month ---
     const PAYROLL_RUN_DAY = Number(process.env.PAYROLL_RUN_DAY || 1); // day of month to run (1-28/29/30/31)
