@@ -3,70 +3,50 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import axios from 'axios';
 
+axios.defaults.baseURL = 'http://localhost:5000';
+
 export default function Documents() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadingId, setUploadingId] = useState(null);
 
   useEffect(() => {
-    fetchDocuments();
+    fetchAllDocuments();
   }, []);
 
-  const fetchDocuments = async () => {
+  const fetchAllDocuments = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/documents');
-      setDocuments(response.data || []);
+      const response = await axios.get('/api/documents/all-documents', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      console.log('📄 Documents API Response:', response.data); // 👈 Debugging line
+
+      if (response.data.success) {
+        setDocuments(response.data.documents);
+      } else {
+        setError('Failed to fetch documents');
+      }
     } catch (error) {
-      console.error('Failed to fetch documents:', error);
+      console.error('Error fetching documents:', error);
+      setError(error.response?.data?.message || 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (documentId) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      try {
-        await axios.delete(`/api/documents/${documentId}`);
-        fetchDocuments(); // Refresh list after deletion
-      } catch (error) {
-        console.error('Failed to delete document:', error);
-        alert('Failed to delete document');
-      }
-    }
-  };
-
-  const handleReUpload = async (documentId) => {
-    if (!selectedFile) return;
-
-    try {
-      setUploadingId(documentId);
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      await axios.put(`/api/documents/${documentId}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      setSelectedFile(null);
-      fetchDocuments();
-    } catch (error) {
-      console.error('Failed to re-upload document:', error);
-      alert('Failed to re-upload document');
-    } finally {
-      setUploadingId(null);
-    }
-  };
-
-  const handleView = (doc) => {
-    window.open(doc.file_url, '_blank');
+  const handleViewDocument = (doc) => {
+    window.open(`/api/documents/view/documents/uploads/users/${doc.user_id}/${doc.filename}`, '_blank');
   };
 
   const filteredDocuments = documents.filter(doc => 
-    doc.user_id?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-    doc.title?.toLowerCase().includes(searchTerm.toLowerCase())
+    doc.user_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    doc.filename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    doc.type?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -79,18 +59,26 @@ export default function Documents() {
             {/* Header */}
             <div className="flex justify-between items-center mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Documents</h1>
+                <h1 className="text-3xl font-bold text-gray-900">All Documents</h1>
                 <p className="mt-1 text-sm text-gray-500">
-                  View and manage documents
+                  View all uploaded documents
                 </p>
               </div>
-              <input
-                type="text"
-                placeholder="Search by name or type..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg"
-              />
+              <div className="flex items-center gap-4">
+                <input
+                  type="text"
+                  placeholder="Search documents..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                />
+                <button
+                  onClick={fetchAllDocuments}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
 
             {/* Content */}
@@ -98,73 +86,43 @@ export default function Documents() {
               <div className="flex justify-center items-center h-64">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
               </div>
+            ) : error ? (
+              <div className="text-center py-12 bg-white rounded-lg shadow">
+                <h3 className="text-lg font-medium text-gray-900">Error</h3>
+                <p className="mt-1 text-sm text-red-500">{error}</p>
+              </div>
             ) : documents.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg shadow">
-                <h3 className="text-lg font-medium text-gray-900">No documents found</h3>
-                <p className="mt-1 text-sm text-gray-500">Upload documents to get started.</p>
+                <h3 className="text-lg font-medium text-gray-900">No Documents Found</h3>
+                <p className="mt-1 text-sm text-gray-500">No documents have been uploaded yet.</p>
               </div>
             ) : (
               <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Filename</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredDocuments.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50">
+                      <tr key={doc.document_id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-900">{doc.user_id}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{doc.filename}</td>
                         <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-gray-900">{doc.name}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-1 text-xs rounded-full 
-                            ${doc.type === 'pdf' ? 'bg-red-100 text-red-800' : 
-                              doc.type === 'docx' ? 'bg-blue-100 text-blue-800' : 
-                              'bg-gray-100 text-gray-800'}`}>
-                            {doc.type.toUpperCase()}
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                            {doc.type}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
-                          {doc.filename}
-                        </td>
-                        <td className="px-6 py-4 text-sm font-medium space-x-3">
+                        <td className="px-6 py-4 text-sm font-medium">
                           <button
-                            onClick={() => handleView(doc)}
+                            onClick={() => handleViewDocument(doc)}
                             className="text-blue-600 hover:text-blue-900"
                           >
                             View
-                          </button>
-                          <div className="inline-block">
-                            <input
-                              type="file"
-                              onChange={(e) => setSelectedFile(e.target.files[0])}
-                              className="hidden"
-                              id={`file-${doc.id}`}
-                            />
-                            <label
-                              htmlFor={`file-${doc.id}`}
-                              className="text-green-600 hover:text-green-900 cursor-pointer"
-                            >
-                              Replace
-                            </label>
-                            {selectedFile && uploadingId === doc.id && (
-                              <button
-                                onClick={() => handleReUpload(doc.id)}
-                                className="ml-2 text-blue-600 hover:text-blue-900"
-                              >
-                                Save
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleDelete(doc.id)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Delete
                           </button>
                         </td>
                       </tr>

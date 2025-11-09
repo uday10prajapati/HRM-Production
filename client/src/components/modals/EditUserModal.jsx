@@ -260,9 +260,9 @@ const EditUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
       </div>
 
       {/* ✅ Documents Modal */}
-      {isDocsModalOpen && (
+      {isDocsModalOpen && formData?.id && (
         <DocumentsModal
-          userId={formData.id} // pass user id from edit form
+          userId={formData.id}
           onClose={() => setDocsModalOpen(false)}
         />
       )}

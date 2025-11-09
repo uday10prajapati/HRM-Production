@@ -103,6 +103,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   const openEditModal = (user) => {
     setSelectedUser(user);
     setFormData({
+      id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
@@ -231,9 +232,12 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
               onClose={() => setAddModalOpen(false)}
             />
           )}
-          {isDocumentsModalOpen && selectedUser && (
-            <DocumentsModal userId={selectedUser.id} onClose={() => setDocumentsModalOpen(false)} />
-          )}
+{isDocumentsModalOpen && selectedUser && (
+  <DocumentsModal 
+    userId={selectedUser.id} // Changed from currentUserId to selectedUser.id
+    onClose={() => setDocumentsModalOpen(false)} 
+  />
+)}
           {isEditModalOpen && (
             <EditUserModal
               formData={formData}

@@ -292,7 +292,7 @@ router.get('/', async (req, res) => {
         name,
         type,
         filename,
-        file_url
+        path
       FROM documents
       ORDER BY name ASC
     `;
@@ -321,22 +321,71 @@ router.delete('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { file_url } = req.body;
+    const { path } = req.body;
     
     const query = `
       UPDATE documents 
-      SET file_url = $1, 
+      SET path = $1, 
           updated_at = CURRENT_TIMESTAMP
       WHERE id::text = $2::text
       RETURNING *
     `;
     
-    const { rows } = await pool.query(query, [file_url, id]);
+    const { rows } = await pool.query(query, [path, id]);
     res.json(rows[0]);
   } catch (error) {
     console.error('Error updating document:', error);
     res.status(500).json({ error: 'Failed to update document' });
   }
 });
+
+router.get('/all-documents', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        d.id::int4 AS document_id,
+        d.type::varchar AS type,
+        d.filename::text AS filename,
+        d.path::text AS path,
+        d.user_id::text AS user_id
+      FROM documents d
+      WHERE d.filename IS NOT NULL
+      ORDER BY d.id DESC;
+    `;
+
+    const { rows } = await pool.query(query);
+
+    const documents = rows.map(doc => {
+      try {
+        return {
+          ...doc,
+          fileExists: true,
+          downloadUrl: doc.user_id && doc.filename
+            ? `/api/documents/view/documents/uploads/users/${doc.user_id}/${doc.filename}`
+            : null,
+          type: doc.type || 'Unknown'
+        };
+      } catch (err) {
+        console.warn(`Warning: Could not process document ${doc.document_id}:`, err);
+        return null;
+      }
+    }).filter(Boolean);
+
+    res.json({
+      success: true,
+      totalDocuments: documents.length,
+      documents: documents
+    });
+
+  } catch (error) {
+    console.error('Error fetching all documents:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch documents',
+      error: error.message
+    });
+  }
+});
+
 
 export default router;

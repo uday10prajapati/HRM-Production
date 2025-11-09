@@ -10,37 +10,45 @@ const DocumentsModal = ({ userId, onClose }) => {
   const [newType, setNewType] = useState('');
   const [isPdfModalOpen, setPdfModalOpen] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
+  const [formData, setFormData] = useState({
+    contractFile: null,
+    idProofFile: null,
+    certificateFile: null
+  });
 
   // ✅ Added logs and defensive check
-  const fetchDocs = async () => {
-    if (!userId) {
-      console.warn("⚠️ No userId provided to DocumentsModal.");
-      setLoading(false);
-      return;
-    }
+// Update the fetchDocs function:
 
-    console.log("📥 Fetching documents for user:", userId);
-    setLoading(true);
-    try {
-      const res = await axios.get(`/api/documents/user/${userId}`);
-      console.log("✅ Documents API response:", res.data);
-      
-      // Handle both array or wrapped object response
-      if (Array.isArray(res.data)) {
-        setDocs(res.data);
-      } else if (res.data.documents) {
-        setDocs(res.data.documents);
-      } else {
-        console.warn("⚠️ Unexpected response format:", res.data);
-        setDocs([]);
-      }
-    } catch (err) {
-      console.error('❌ Failed to load documents:', err);
-      setDocs([]); // Prevent stuck loading state
-    } finally {
-      setLoading(false);
+const fetchDocs = async () => {
+  if (!userId) {
+    console.warn("⚠️ No userId provided to DocumentsModal.");
+    setLoading(false);
+    return;
+  }
+
+  console.log("📥 Fetching documents for user:", userId);
+  setLoading(true);
+  try {
+    const res = await axios.get(`/api/documents/user/${userId}`);
+    console.log("✅ Documents API response:", res.data);
+    
+    // Handle both array or wrapped object response
+    if (Array.isArray(res.data)) {
+      setDocs(res.data);
+    } else if (res.data.documents) {
+      setDocs(res.data.documents);
+    } else {
+      console.warn("⚠️ Unexpected response format:", res.data);
+      setDocs([]);
     }
-  };
+  } catch (err) {
+    console.error('❌ Failed to load documents:', err);
+    setDocs([]); 
+    alert('Failed to load documents. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     console.log("📂 DocumentsModal mounted. userId =", userId);
@@ -111,6 +119,17 @@ const DocumentsModal = ({ userId, onClose }) => {
     }
   };
 
+  const onFileChange = (fieldName, file) => {
+    if (file && file.size > 10 * 1024 * 1024) {
+      alert('File size should not exceed 10MB');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      [fieldName]: file
+    }));
+  };
+
   return (
     <ModalWrapper>
       <div className="space-y-6">
@@ -127,6 +146,61 @@ const DocumentsModal = ({ userId, onClose }) => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+
+        <div className="mt-2">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Supporting documents (optional)</h4>
+          <p className="text-xs text-gray-400 mb-3">PDF only. Max 10MB per file.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Contract */}
+            <label className="flex flex-col bg-white border-dashed border-2 border-gray-200 rounded p-3 items-start cursor-pointer hover:border-indigo-300">
+              <span className="text-sm font-medium text-gray-700">Contract</span>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => onFileChange('contractFile', e.target.files[0])}
+                className="mt-2 w-full"
+              />
+              {formData.contractFile && (
+                <span className="mt-2 inline-flex items-center px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-sm">
+                  {formData.contractFile.name}
+                </span>
+              )}
+            </label>
+
+            {/* ID Proof */}
+            <label className="flex flex-col bg-white border-dashed border-2 border-gray-200 rounded p-3 items-start cursor-pointer hover:border-indigo-300">
+              <span className="text-sm font-medium text-gray-700">ID Proof</span>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => onFileChange('idProofFile', e.target.files[0])}
+                className="mt-2 w-full"
+              />
+              {formData.idProofFile && (
+                <span className="mt-2 inline-flex items-center px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-sm">
+                  {formData.idProofFile.name}
+                </span>
+              )}
+            </label>
+
+            {/* Certificate */}
+            <label className="flex flex-col bg-white border-dashed border-2 border-gray-200 rounded p-3 items-start cursor-pointer hover:border-indigo-300">
+              <span className="text-sm font-medium text-gray-700">Certificate</span>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => onFileChange('certificateFile', e.target.files[0])}
+                className="mt-2 w-full"
+              />
+              {formData.certificateFile && (
+                <span className="mt-2 inline-flex items-center px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-sm">
+                  {formData.certificateFile.name}
+                </span>
+              )}
+            </label>
+          </div>
         </div>
 
         {/* ✅ Improved loading behavior */}
