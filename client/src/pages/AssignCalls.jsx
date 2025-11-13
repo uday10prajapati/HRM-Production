@@ -20,6 +20,14 @@ const AssignCalls = () => {
     const [assignedCalls, setAssignedCalls] = useState([]);
     const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
     const [userRole, setUserRole] = useState(''); // Add this line
+    const [societySuggestions, setSocietySuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [dairySuggestions, setDairySuggestions] = useState([]);
+    const [showDairySuggestions, setShowDairySuggestions] = useState(false);
+    const [foundSocieties, setFoundSocieties] = useState([]);
+
+
+
 
     // Add this helper function at the top of your component
     const isHrOrAdmin = (userRole) => {
@@ -27,6 +35,9 @@ const AssignCalls = () => {
         const role = userRole.toLowerCase();
         return role === 'admin' || role === 'hr';
     };
+
+    
+
 
     useEffect(() => {
         // Fetch engineers on mount so they always show
@@ -44,7 +55,7 @@ const AssignCalls = () => {
             const res = await axios.post('http://localhost:5000/api/service-calls/search', {}, {
                 timeout: 5000 // Add timeout
             });
-            
+
             if (res.data?.success) {
                 setEngineers(res.data.data.engineers || []);
             }
@@ -78,13 +89,11 @@ const AssignCalls = () => {
             });
 
             if (response.data.success) {
-                setSocieties(response.data.data.societies || []);
-                // update engineers if backend returns them as well
+                const result = response.data.data.societies || [];
+                setSocieties(result);
+                setFoundSocieties(result); // ✅ Add this line
                 if (response.data.data.engineers) setEngineers(response.data.data.engineers);
-                // If no societies returned, keep societies as empty array and
-                // show the friendly message in the societies area rather than
-                // setting a red error banner.
-            } else {
+            }else {
                 throw new Error(response.data.message || 'Search failed');
             }
         } catch (err) {
@@ -149,7 +158,7 @@ const AssignCalls = () => {
             const response = await axios.get('http://localhost:5000/api/service-calls/assigned-calls', {
                 timeout: 5000 // Add timeout
             });
-            
+
             if (response.data?.success) {
                 setAssignedCalls(response.data.calls);
             }
@@ -213,22 +222,87 @@ const AssignCalls = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Society Name</label>
-                                    <input
-                                        type="text"
-                                        value={society}
-                                        onChange={(e) => setSociety(e.target.value)}
-                                        placeholder="Enter Society Name"
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                    />
+                                    <div className="relative">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Society Name
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={society}
+                                            onChange={async (e) => {
+                                                const value = e.target.value;
+                                                setSociety(value);
+
+                                                // If user typed at least 1 character and soccd is filled, fetch suggestions
+                                                if (value.length > 0 && soccd) {
+                                                    try {
+                                                        const res = await axios.post(`${API_URL}/api/service-calls/search`, {
+                                                            soccd: soccd,
+                                                            society: value,
+                                                        });
+
+                                                        if (res.data.success) {
+                                                            setSocietySuggestions(res.data.data.societies || []);
+                                                            setShowSuggestions(true);
+                                                        } else {
+                                                            setSocietySuggestions([]);
+                                                        }
+                                                    } catch (err) {
+                                                        console.error("Suggestion fetch error:", err);
+                                                        setSocietySuggestions([]);
+                                                    }
+                                                } else {
+                                                    setSocietySuggestions([]);
+                                                }
+                                            }}
+                                            onFocus={async () => {
+                                                if (soccd) {
+                                                    try {
+                                                        const res = await axios.post(`${API_URL}/api/service-calls/search`, {
+                                                            soccd: soccd,
+                                                        });
+                                                        if (res.data.success) {
+                                                            setSocietySuggestions(res.data.data.societies || []);
+                                                            setShowSuggestions(true);
+                                                        }
+                                                    } catch (err) {
+                                                        console.error("Error fetching suggestions on focus:", err);
+                                                    }
+                                                }
+                                            }}
+                                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                            placeholder="Enter Society Name"
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        />
+
+                                        {/* Suggestion dropdown */}
+                                        {showSuggestions && societySuggestions.length > 0 && (
+                                            <ul className="absolute z-10 bg-white border border-gray-200 rounded-lg shadow-md mt-1 w-full max-h-48 overflow-y-auto">
+                                                {societySuggestions.map((item, idx) => (
+                                                    <li
+                                                        key={idx}
+                                                        className="p-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700"
+                                                        onClick={() => {
+                                                            setSociety(item.society);
+                                                            setShowSuggestions(false);
+                                                        }}
+                                                    >
+                                                        {item.society}{" "}
+                                                        <span className="text-gray-400 text-xs">({item.taluka})</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
                                 <button
                                     onClick={handleApply}
                                     disabled={loading}
-                                    className={`px-6 py-3 rounded-lg ${loading 
-                                        ? 'bg-gray-400 cursor-not-allowed' 
+                                    className={`px-6 py-3 rounded-lg ${loading
+                                        ? 'bg-gray-400 cursor-not-allowed'
                                         : 'bg-blue-600 hover:bg-blue-700'} text-white font-medium transition-colors flex items-center gap-2`}
                                 >
                                     {loading ? (
@@ -311,8 +385,8 @@ const AssignCalls = () => {
                                             </div>
                                         ) : (
                                             engineers.map((engineer) => (
-                                                <div key={engineer.id} 
-                                                     className="p-4 rounded-lg border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all">
+                                                <div key={engineer.id}
+                                                    className="p-4 rounded-lg border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all">
                                                     <div className="flex items-start justify-between">
                                                         <div>
                                                             <h3 className="font-medium text-gray-900">{engineer.name}</h3>
@@ -371,8 +445,8 @@ const AssignCalls = () => {
                                             </div>
                                         ) : (
                                             assignedCalls.map(call => (
-                                                <div key={call.id} 
-                                                     className="bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-all p-6">
+                                                <div key={call.id}
+                                                    className="bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-all p-6">
                                                     <div className="flex justify-between items-start">
                                                         <div>
                                                             <h3 className="text-lg font-medium text-gray-900">{call.dairy_name}</h3>
@@ -389,15 +463,14 @@ const AssignCalls = () => {
                                                             </div>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-2">
-                                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                                                call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                                                 call.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                                'bg-blue-100 text-blue-800'
-                                                            }`}>
+                                                                    'bg-blue-100 text-blue-800'
+                                                                }`}>
                                                                 {call.status}
                                                             </span>
                                                             {!isHrOrAdmin(userRole) && (
-                                                                <select 
+                                                                <select
                                                                     className="mt-2 border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                                     value={call.status}
                                                                     onChange={(e) => updateCallStatus(call.id, e.target.value)}
@@ -426,7 +499,7 @@ const AssignCalls = () => {
                     <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md m-4">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-semibold text-gray-900">Assign Service Call</h3>
-                            <button 
+                            <button
                                 onClick={() => setShowPopup(false)}
                                 className="text-gray-400 hover:text-gray-500 transition-colors"
                             >
@@ -435,7 +508,7 @@ const AssignCalls = () => {
                                 </svg>
                             </button>
                         </div>
-                        
+
                         <div className="mb-6">
                             <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg">
                                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -452,16 +525,50 @@ const AssignCalls = () => {
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Dairy Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={dairyName}
-                                    onChange={(e) => setDairyName(e.target.value)}
-                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="Enter dairy name"
-                                />
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Dairy Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={dairyName}
+                                        onChange={(e) => {
+                                            setDairyName(e.target.value);
+                                            setShowDairySuggestions(true);
+                                        }}
+                                        onFocus={() => setShowDairySuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowDairySuggestions(false), 200)}
+                                        placeholder="Select Dairy (from found societies)"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    />
+
+                                    {showDairySuggestions && foundSocieties && foundSocieties.length > 0 && (
+                                        <ul className="absolute z-10 bg-white border border-gray-200 rounded-lg shadow-md mt-1 w-full max-h-48 overflow-y-auto">
+                                            {foundSocieties
+                                                .filter((item) =>
+                                                    item.society
+                                                        ?.toLowerCase()
+                                                        .includes(dairyName.toLowerCase())
+                                                )
+                                                .map((item, idx) => (
+                                                    <li
+                                                        key={idx}
+                                                        className="p-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700"
+                                                        onClick={() => {
+                                                            setDairyName(item.society);
+                                                            setShowDairySuggestions(false);
+                                                        }}
+                                                    >
+                                                        {item.society}{" "}
+                                                        <span className="text-gray-400 text-xs">({item.taluka})</span>
+                                                    </li>
+                                                ))}
+                                        </ul>
+                                    )}
+                                </div>
+
+
+
                             </div>
 
                             <div>
