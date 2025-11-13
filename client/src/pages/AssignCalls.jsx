@@ -25,9 +25,7 @@ const AssignCalls = () => {
     const [dairySuggestions, setDairySuggestions] = useState([]);
     const [showDairySuggestions, setShowDairySuggestions] = useState(false);
     const [foundSocieties, setFoundSocieties] = useState([]);
-
-
-
+    const [showSocietySuggestions, setShowSocietySuggestions] = useState(false);
 
     // Add this helper function at the top of your component
     const isHrOrAdmin = (userRole) => {
@@ -35,9 +33,6 @@ const AssignCalls = () => {
         const role = userRole.toLowerCase();
         return role === 'admin' || role === 'hr';
     };
-
-    
-
 
     useEffect(() => {
         // Fetch engineers on mount so they always show
@@ -93,7 +88,7 @@ const AssignCalls = () => {
                 setSocieties(result);
                 setFoundSocieties(result); // ✅ Add this line
                 if (response.data.data.engineers) setEngineers(response.data.data.engineers);
-            }else {
+            } else {
                 throw new Error(response.data.message || 'Search failed');
             }
         } catch (err) {
@@ -233,28 +228,33 @@ const AssignCalls = () => {
                                                 const value = e.target.value;
                                                 setSociety(value);
 
-                                                // If user typed at least 1 character and soccd is filled, fetch suggestions
-                                                if (value.length > 0 && soccd) {
-                                                    try {
-                                                        const res = await axios.post(`${API_URL}/api/service-calls/search`, {
-                                                            soccd: soccd,
-                                                            society: value,
-                                                        });
+                                                if (value.length < 1) {
+                                                    setSocietySuggestions([]);
+                                                    return;
+                                                }
 
-                                                        if (res.data.success) {
-                                                            setSocietySuggestions(res.data.data.societies || []);
-                                                            setShowSuggestions(true);
-                                                        } else {
-                                                            setSocietySuggestions([]);
-                                                        }
-                                                    } catch (err) {
-                                                        console.error("Suggestion fetch error:", err);
+                                                try {
+                                                    // 👇 NEW LOGIC
+                                                    // If user enters code + name → search using both
+                                                    // If only enters name → search using name only
+                                                    const searchPayload = soccd
+                                                        ? { soccd: soccd, society: value }
+                                                        : { society: value };
+
+                                                    const res = await axios.post(`${API_URL}/api/service-calls/search`, searchPayload);
+
+                                                    if (res.data.success) {
+                                                        setSocietySuggestions(res.data.data.societies || []);
+                                                        setShowSuggestions(true);
+                                                    } else {
                                                         setSocietySuggestions([]);
                                                     }
-                                                } else {
+                                                } catch (err) {
+                                                    console.error("Suggestion fetch error:", err);
                                                     setSocietySuggestions([]);
                                                 }
                                             }}
+
                                             onFocus={async () => {
                                                 if (soccd) {
                                                     try {
