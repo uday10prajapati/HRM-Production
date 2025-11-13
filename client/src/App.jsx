@@ -19,6 +19,7 @@ import AssignCalls from "./pages/AssignCalls";
 import EngineerTasks from "./pages/EngineerTasks";
 import AssignedCalls from './pages/AssignCalls';
 import PendingTasks from './pages/PendingTasks';
+import AttendanceCorrectionPage from "./pages/AttReport";
 import 'leaflet/dist/leaflet.css';
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
   <Route path="/assign-call" element={<AssignCalls />} />
   <Route path="/assigned-calls" element={<AssignedCalls />} />
   <Route path="/tasks/pending" element={<PendingTasks />} />
+  <Route path="/corrections" element={<AttendanceCorrectionPage />} />
       </Routes>
     </Router>
   );

@@ -21,7 +21,7 @@ import { ensureDbConnection } from './db.js';
 
 // We'll dynamically import route modules after DB is confirmed to avoid many
 // parallel startup queries that can exhaust the DB connection pool.
-let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute, taskRoute;
+let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute, taskRoute, attendanceCorrectionRoute;
 
 
 dotenv.config();
@@ -86,6 +86,8 @@ async function startServer() {
     liveLocationsRoute = (await import('./liveLocationsRoute.js')).default;
     serviceCallsRoute = (await import('./serviceCallsRoute.js')).default;
     taskRoute = (await import('./taskRoute.js')).default;
+    attendanceCorrectionRoute = (await import('./attendanceCorrectionRoute.js')).default;
+
 
     // mount task routes
     
@@ -111,6 +113,8 @@ async function startServer() {
     app.use('/api/live_locations', liveLocationsRoute);
     app.use('/api/service-calls', serviceCallsRoute);
     app.use('/api/tasks', taskRoute);
+    app.use('/api/corrections', attendanceCorrectionRoute);
+
 
     // --- Payroll scheduler: daily check, run on configured day of month ---
     const PAYROLL_RUN_DAY = Number(process.env.PAYROLL_RUN_DAY || 1); // day of month to run (1-28/29/30/31)

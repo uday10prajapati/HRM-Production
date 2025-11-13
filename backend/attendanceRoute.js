@@ -41,70 +41,117 @@ const router = express.Router();
 // stores timestamp in created_at
 // Use pool for simple queries
 router.get("/", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM attendance ORDER BY date DESC");
-        res.json(result.rows);
-    } catch (err) {
-        console.error("Error fetching attendance:", err);
-        res.status(500).json({ error: "Failed to fetch attendance" });
-    }
+  try {
+    const result = await pool.query("SELECT * FROM attendance ORDER BY date DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching attendance:", err);
+    res.status(500).json({ error: "Failed to fetch attendance" });
+  }
 });
 
 // Use getConnection for transactions or multiple queries
 router.post("/", async (req, res) => {
-    let client = null;
-    try {
-        client = await getConnection();
-        await client.query('BEGIN');
-        
-        // Your transaction queries here
-        
-        await client.query('COMMIT');
-        res.json({ success: true });
-    } catch (err) {
-        if (client) await client.query('ROLLBACK');
-        console.error("Error creating attendance:", err);
-        res.status(500).json({ error: "Failed to create attendance" });
-    } finally {
-        if (client) client.release();
-    }
-});
-router.post("/punch", requireAuth, async (req, res) => {
+  let client = null;
   try {
-    const { userId, punchType, latitude, longitude, notes } = req.body;
-    
-    // Insert attendance record
-    const attendanceQuery = `
-      INSERT INTO attendance 
-      (user_id, punch_type, latitude, longitude, notes)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, created_at
-    `;
-    
-    const attendanceResult = await pool.query(attendanceQuery, 
-      [userId, punchType, latitude, longitude, notes]
-    );
+    client = await getConnection();
+    await client.query('BEGIN');
 
-    // Also record location in live_locations table
-    const locationQuery = `
-      INSERT INTO live_locations 
-      (user_id, latitude, longitude)
-      VALUES ($1, $2, $3)
-    `;
-    
-    await pool.query(locationQuery, [userId, latitude, longitude]);
+    // Your transaction queries here
 
-    res.json({
-      success: true,
-      data: attendanceResult.rows[0]
-    });
-
+    await client.query('COMMIT');
+    res.json({ success: true });
   } catch (err) {
+    if (client) await client.query('ROLLBACK');
+    console.error("Error creating attendance:", err);
+    res.status(500).json({ error: "Failed to create attendance" });
+  } finally {
+    if (client) client.release();
+  }
+});
+// Replace or add this improved /punch handler (skips live_locations insert when coords are null or user is hr/admin)
+router.post('/punch', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const {
+      userId,
+      punch_type,       // preferred name
+      type,             // legacy name
+      latitude,
+      longitude,
+      notes
+    } = req.body;
+
+    const finalType = (punch_type ?? type) || 'in';
+    const requesterRole = (req.user?.role || '').toString().toLowerCase();
+    const hasCoords = latitude != null && longitude != null;
+    const isPrivileged = requesterRole === 'hr' || requesterRole === 'admin';
+
+    await client.query('BEGIN');
+
+    // Insert attendance row (uses created_at)
+    const insertAttendance = `
+      INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, created_at, punch_type
+    `;
+    const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes]);
+    const attendance = rows[0];
+
+    // Only insert live_locations if coords are present AND requester is NOT hr/admin
+    if (hasCoords && !isPrivileged) {
+      const insertLocation = `
+        INSERT INTO live_locations (user_id, latitude, longitude)
+        VALUES ($1, $2, $3)
+      `;
+      await client.query(insertLocation, [userId, latitude, longitude]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, attendance });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
     console.error('Attendance recording error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to record attendance'
-    });
+    res.status(500).json({ success: false, message: 'Failed to record attendance', error: err?.message ?? String(err) });
+  } finally {
+    client.release();
+  }
+});
+
+// Add /report route that returns per-day punch_in and punch_out times (uses created_at and punch_type)
+router.get('/report', requireAuth, async (req, res) => {
+  try {
+    const { userId, start, end } = req.query;
+    if (!userId || !start || !end) {
+      return res.status(400).json({ success: false, message: 'userId, start and end are required' });
+    }
+
+    // Aggregates per date: earliest 'in' and latest 'out' using created_at
+    const q = `
+      SELECT
+        DATE(created_at) AS date,
+        (MIN(created_at) FILTER (WHERE punch_type = 'in')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS punch_in,
+(MAX(created_at) FILTER (WHERE punch_type = 'out')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS punch_out
+
+      FROM attendance
+      WHERE user_id = $1
+        AND DATE(created_at) BETWEEN $2 AND $3
+      GROUP BY DATE(created_at)
+      ORDER BY DATE(created_at) DESC;
+    `;
+
+    const { rows } = await pool.query(q, [userId, start, end]);
+    // convert timestamps to ISO strings (optional) to keep client parsing consistent
+    const result = rows.map(r => ({
+      date: r.date,
+      punch_in: r.punch_in ? r.punch_in.toISOString() : null,
+      punch_out: r.punch_out ? r.punch_out.toISOString() : null
+    }));
+
+    res.json({ success: true, rows: result });
+  } catch (err) {
+    console.error('Error fetching attendance report:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch report', error: err?.message ?? String(err) });
   }
 });
 
@@ -114,8 +161,8 @@ router.get("/report", async (req, res) => {
   try {
     const userIdRaw = req.query.userId ?? null;
     const now = new Date();
-    const defaultStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const defaultEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
+    const defaultStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
     const start = req.query.start ?? defaultStart;
     const end = req.query.end ?? defaultEnd;
 
@@ -145,8 +192,9 @@ router.get("/report", async (req, res) => {
     const q = `
       SELECT per.user_id, u.name AS user_name, u.role AS user_role,
              to_char(per.day, 'YYYY-MM-DD') AS day,
-             to_char(per.punch_in, 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
-             to_char(per.punch_out, 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+             to_char((per.punch_in) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
+             to_char((per.punch_out) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+
       FROM (
         SELECT user_id,
                created_at::date AS day,
@@ -180,12 +228,12 @@ router.get("/summary", async (req, res) => {
 
     const month = req.query.month ?? (() => {
       const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     })();
 
     const [year, mon] = month.split("-").map(Number);
-    const start = `${year}-${String(mon).padStart(2,"0")}-01`;
-    const end = new Date(year, mon, 0).toISOString().slice(0,10); // last day of month
+    const start = `${year}-${String(mon).padStart(2, "0")}-01`;
+    const end = new Date(year, mon, 0).toISOString().slice(0, 10); // last day of month
 
     // worked days: count distinct date with at least one 'in'
     const workedQ = `
@@ -193,8 +241,8 @@ router.get("/summary", async (req, res) => {
   FROM attendance
   WHERE user_id::text=$1 AND type='in' AND created_at::date BETWEEN $2 AND $3
     `;
-  const workedRes = await pool.query(workedQ, [userId, start, end]);
-  const workedDays = Number(workedRes.rows[0]?.worked_days ?? 0);
+    const workedRes = await pool.query(workedQ, [userId, start, end]);
+    const workedDays = Number(workedRes.rows[0]?.worked_days ?? 0);
 
     // leave days: sum of overlapping days in leaves table
     const leaveQ = `
@@ -206,10 +254,10 @@ router.get("/summary", async (req, res) => {
       FROM leaves
       WHERE user_id::text=$1 AND NOT (end_date::date < $2::date OR start_date::date > $3::date)
     `;
-  const leaveRes = await pool.query(leaveQ, [userId, start, end]);
-  const leaveDays = Number(leaveRes.rows[0]?.leave_days ?? 0);
+    const leaveRes = await pool.query(leaveQ, [userId, start, end]);
+    const leaveDays = Number(leaveRes.rows[0]?.leave_days ?? 0);
 
-  return res.json({ success: true, userId: userId, month, start, end, workedDays, leaveDays });
+    return res.json({ success: true, userId: userId, month, start, end, workedDays, leaveDays });
   } catch (err) {
     console.error("attendanceRoute /summary error:", err?.message ?? err);
     return res.status(500).json({ success: false, message: "Error generating summary", error: err?.message ?? String(err) });
@@ -221,8 +269,8 @@ router.get("/summary", async (req, res) => {
 router.get('/summary/all', requireAuth, async (req, res) => {
   try {
     const now = new Date();
-    const defaultStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const defaultEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
+    const defaultStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
     const start = req.query.start ?? defaultStart;
     const end = req.query.end ?? defaultEnd;
 
@@ -231,7 +279,7 @@ router.get('/summary/all', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid start or end date format' });
     }
 
-    // For each user, compute workedDays and leaveDays in the range
+    // Use punch_type and created_at to compute punch in/out times (formatted)
     const q = `
       SELECT u.id AS user_id, u.name, u.role,
         COALESCE(att.worked_days, 0) AS worked_days,
@@ -241,36 +289,40 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         (td.punch_in IS NOT NULL) AS present_today
       FROM users u
       LEFT JOIN (
-        SELECT user_id, COUNT(DISTINCT (created_at::date)) AS worked_days
-  FROM attendance
-        WHERE type='in' AND created_at::date BETWEEN $1 AND $2
+        SELECT user_id::text AS user_id, COUNT(DISTINCT (created_at::date)) AS worked_days
+        FROM attendance
+        WHERE punch_type = 'in' AND created_at::date BETWEEN $1 AND $2
         GROUP BY user_id
-      ) att ON att.user_id::text = u.id::text
+      ) att ON att.user_id = u.id::text
       LEFT JOIN (
-        SELECT user_id, COALESCE(SUM(GREATEST(0, (LEAST(end_date::date, $2::date) - GREATEST(start_date::date, $1::date)) + 1)),0) AS leave_days
+        SELECT user_id::text AS user_id,
+          COALESCE(SUM(GREATEST(0, (LEAST(end_date::date, $2::date) - GREATEST(start_date::date, $1::date)) + 1)),0) AS leave_days
         FROM leaves
         WHERE NOT (end_date::date < $1::date OR start_date::date > $2::date)
         GROUP BY user_id
-      ) l ON l.user_id::text = u.id::text
+      ) l ON l.user_id = u.id::text
       LEFT JOIN (
-        SELECT user_id,
-          to_char(MIN(created_at) FILTER (WHERE type='in'), 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
-          to_char(MAX(created_at) FILTER (WHERE type='out'), 'YYYY-MM-DD HH24:MI:SS') AS punch_out
-  FROM attendance
+        SELECT user_id::text AS user_id,
+          to_char((MIN(created_at) FILTER (WHERE punch_type = 'punch_in')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
+          to_char((MAX(created_at) FILTER (WHERE punch_type = 'punch_out')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+        FROM attendance
         WHERE created_at::date = $3
         GROUP BY user_id
-      ) td ON td.user_id::text = u.id::text
+      ) td ON td.user_id = u.id::text
       ORDER BY u.name ASC;
     `;
 
-    const today = new Date().toISOString().slice(0,10);
+    const today = new Date().toISOString().slice(0, 10);
     const result = await pool.query(q, [start, end, today]);
     let rows = result.rows || [];
-    const requesterRole = req.user?.role ?? null;
+    const requesterRole = (req.user?.role || '').toString().toLowerCase();
     const requesterId = req.user?.id ?? null;
 
     if (requesterRole === 'hr') {
-      rows = rows.filter(r => ((r.role||'').toString().toLowerCase() === 'engineer' || (r.role||'').toString().toLowerCase() === 'employee'));
+      rows = rows.filter(r => {
+        const role = (r.role || '').toString().toLowerCase();
+        return role === 'engineer' || role === 'employee';
+      });
     } else if (requesterRole === 'admin') {
       // admin sees everything
     } else {
@@ -285,54 +337,54 @@ router.get('/summary/all', requireAuth, async (req, res) => {
   }
 });
 
-  // GET /api/attendance/records?start=YYYY-MM-DD&end=YYYY-MM-DD&userId=...
-  // Returns raw attendance rows (id, user_id, user_name, type, notes, created_at)
-  router.get('/records', requireAuth, async (req, res) => {
-    try {
-      const now = new Date();
-      const defaultStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-      const defaultEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
-      const start = req.query.start ?? defaultStart;
-      const end = req.query.end ?? defaultEnd;
+// GET /api/attendance/records?start=YYYY-MM-DD&end=YYYY-MM-DD&userId=...
+// Returns raw attendance rows (id, user_id, user_name, type, notes, created_at)
+router.get('/records', requireAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const defaultStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const start = req.query.start ?? defaultStart;
+    const end = req.query.end ?? defaultEnd;
 
-      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRe.test(start) || !dateRe.test(end)) {
-        return res.status(400).json({ success: false, message: 'Invalid start or end date format' });
-      }
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRe.test(start) || !dateRe.test(end)) {
+      return res.status(400).json({ success: false, message: 'Invalid start or end date format' });
+    }
 
-      const requesterRole = req.user?.role ?? null;
-      const requesterId = req.user?.id ?? null;
+    const requesterRole = req.user?.role ?? null;
+    const requesterId = req.user?.id ?? null;
 
-      const vals = [start, end];
-      let where = `created_at::date BETWEEN $1 AND $2`;
+    const vals = [start, end];
+    let where = `created_at::date BETWEEN $1 AND $2`;
 
-      if (req.query.userId) {
-        // Only admin or hr may query arbitrary userId; others must not
-        if (requesterRole !== 'admin' && requesterRole !== 'hr') {
-          // non privileged can't query others
-          if (String(req.query.userId) !== String(requesterId)) {
-            return res.status(403).json({ success: false, message: 'Forbidden' });
-          }
+    if (req.query.userId) {
+      // Only admin or hr may query arbitrary userId; others must not
+      if (requesterRole !== 'admin' && requesterRole !== 'hr') {
+        // non privileged can't query others
+        if (String(req.query.userId) !== String(requesterId)) {
+          return res.status(403).json({ success: false, message: 'Forbidden' });
         }
-        vals.push(String(req.query.userId));
-        where += ` AND user_id::text = $${vals.length}`;
+      }
+      vals.push(String(req.query.userId));
+      where += ` AND user_id::text = $${vals.length}`;
+    } else {
+      // no userId passed: admin sees all, hr will see all then be filtered by role, others only their own
+      if (requesterRole === 'admin') {
+        // no extra where
+      } else if (requesterRole === 'hr') {
+        // hr sees all rows initially, we'll filter by role after query
       } else {
-        // no userId passed: admin sees all, hr will see all then be filtered by role, others only their own
-        if (requesterRole === 'admin') {
-          // no extra where
-        } else if (requesterRole === 'hr') {
-          // hr sees all rows initially, we'll filter by role after query
-        } else {
-          // restrict to self
-          vals.push(String(requesterId));
-          where += ` AND user_id::text = $${vals.length}`;
-        }
+        // restrict to self
+        vals.push(String(requesterId));
+        where += ` AND user_id::text = $${vals.length}`;
       }
+    }
 
-      const q = `
+    const q = `
         SELECT a.id, a.user_id, u.name AS user_name, u.role AS user_role, a.notes,
                a.latitude, a.longitude,
-               to_char(a.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at
+               to_char(a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS created_at
   FROM attendance a
         LEFT JOIN users u ON u.id::text = a.user_id::text
         WHERE ${where}
@@ -340,43 +392,59 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         LIMIT 1000
       `;
 
-      const result = await pool.query(q, vals);
-      let rows = result.rows || [];
-      if (requesterRole === 'hr') {
-        rows = rows.filter(r => ((r.user_role||'').toString().toLowerCase() === 'engineer' || (r.user_role||'').toString().toLowerCase() === 'employee'));
-      }
+    const result = await pool.query(q, vals);
+    let rows = result.rows || [];
 
-      return res.json({ success: true, rows });
-    } catch (err) {
-      console.error('/attendance/records error', err);
-      return res.status(500).json({ success: false, message: 'Error fetching attendance records', error: err?.message ?? String(err) });
+    // hide latitude/longitude for hr/admin
+    if (requesterRole === 'hr' || requesterRole === 'admin') {
+      rows = rows.map(r => {
+        const { latitude, longitude, ...rest } = r;
+        return rest;
+      });
     }
-  });
+
+    if (requesterRole === 'hr') {
+      rows = rows.filter(r => ((r.user_role || '').toString().toLowerCase() === 'engineer' || (r.user_role || '').toString().toLowerCase() === 'employee'));
+    }
+
+    return res.json({ success: true, rows });
+  } catch (err) {
+    console.error('/attendance/records error', err);
+    return res.status(500).json({ success: false, message: 'Error fetching attendance records', error: err?.message ?? String(err) });
+  }
+});
 
 // GET /api/attendance/latest?userId=...
-router.get('/latest', async (req, res) => {
+router.get('/latest', requireAuth, async (req, res) => {
   try {
     const { userId } = req.query;
-    
+    const requesterRole = (req.user?.role || '').toString().toLowerCase();
+
     const query = `
       SELECT 
         type,
-        location[0] as latitude,
-        location[1] as longitude,
+        latitude,
+        longitude,
         created_at
       FROM attendance
       WHERE user_id = $1 
       AND DATE(created_at) = CURRENT_DATE
-      AND location IS NOT NULL
+      AND latitude IS NOT NULL
+      AND longitude IS NOT NULL
       ORDER BY created_at ASC
     `;
-    
+
     const result = await pool.query(query, [userId]);
-    const locations = result.rows;
+    let locations = result.rows || [];
+
+    // If requester is hr/admin, remove latitude/longitude fields
+    if (requesterRole === 'hr' || requesterRole === 'admin') {
+      locations = locations.map(loc => ({ type: loc.type, created_at: loc.created_at }));
+    }
 
     // Group locations by type
-    const punchIn = locations.find(loc => loc.type === 'in');
-    const punchOut = locations.find(loc => loc.type === 'out');
+    const punchIn = locations.find(loc => loc.type === 'punch_in');
+    const punchOut = locations.find(loc => loc.type === 'punch_out');
 
     res.json({
       success: true,
@@ -384,12 +452,12 @@ router.get('/latest', async (req, res) => {
         punch_in: punchIn ? {
           latitude: punchIn.latitude,
           longitude: punchIn.longitude,
-          time: punchIn.created_at
+          time: new Date(punchIn.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
         } : null,
         punch_out: punchOut ? {
           latitude: punchOut.latitude,
           longitude: punchOut.longitude,
-          time: punchOut.created_at
+          time: new Date(punchOut.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
         } : null,
         all_locations: locations
       }
@@ -400,9 +468,10 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-// Add this new route after other routes
-router.get('/engineers', async (req, res) => {
+// Add/modify /engineers route to require auth and hide locations for hr/admin
+router.get('/engineers', requireAuth, async (req, res) => {
   try {
+    const requesterRole = (req.user?.role || '').toString().toLowerCase();
     const query = await pool.query(`
       SELECT 
         u.id, 
@@ -423,7 +492,7 @@ router.get('/engineers', async (req, res) => {
             WHERE user_id = u.id 
               AND latitude IS NOT NULL 
               AND longitude IS NOT NULL
-              AND type IN ('punch_in', 'punch_out')  -- ✅ Only punch_in / punch_out records
+              AND type IN ('in', 'out')
           )
           SELECT json_build_object(
             'punch_in', (
@@ -433,7 +502,7 @@ router.get('/engineers', async (req, res) => {
                 'created_at', created_at
               )
               FROM last_attendance
-              WHERE type = 'punch_in' AND rn = 1
+              WHERE type = 'in' AND rn = 1
             ),
             'punch_out', (
               SELECT json_build_object(
@@ -442,7 +511,7 @@ router.get('/engineers', async (req, res) => {
                 'created_at', created_at
               )
               FROM last_attendance
-              WHERE type = 'punch_out' AND rn = 1
+              WHERE type = 'out' AND rn = 1
             )
           )
         ) as locations
@@ -451,26 +520,32 @@ router.get('/engineers', async (req, res) => {
       ORDER BY u.name;
     `);
 
-    console.log('Engineers with last punch_in/punch_out locations:', JSON.stringify(query.rows, null, 2));
-    res.json(query.rows);
+    let rows = query.rows || [];
+
+    // If requester is hr or admin, remove location details
+    if (requesterRole === 'hr' || requesterRole === 'admin') {
+      rows = rows.map(r => ({ id: r.id, name: r.name, role: r.role, locations: null }));
+    }
+
+    res.json(rows);
   } catch (err) {
     console.error('Error fetching engineers:', err);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to fetch engineers',
-      error: err.message 
+      error: err.message
     });
   }
 });
 
 // Get attendance summary for all users
 router.get('/summary/all', async (req, res) => {
-    let client = null;
-    try {
-        const { start, end } = req.query;
-        client = await getConnection();
-        
-        const result = await client.query(`
+  let client = null;
+  try {
+    const { start, end } = req.query;
+    client = await getConnection();
+
+    const result = await client.query(`
             SELECT 
                 u.id,
                 u.name,
@@ -483,23 +558,23 @@ router.get('/summary/all', async (req, res) => {
             ORDER BY u.name
         `, [start, end]);
 
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Error fetching attendance summary:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    } finally {
-        if (client) client.release();
-    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching attendance summary:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // Get attendance report for specific user
 router.get('/report', async (req, res) => {
-    let client = null;
-    try {
-        const { userId, start, end } = req.query;
-        client = await getConnection();
-        
-        const result = await client.query(`
+  let client = null;
+  try {
+    const { userId, start, end } = req.query;
+    client = await getConnection();
+
+    const result = await client.query(`
             SELECT 
                 id,
                 date,
@@ -513,23 +588,23 @@ router.get('/report', async (req, res) => {
             ORDER BY date DESC
         `, [userId, start, end]);
 
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Error fetching attendance report:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    } finally {
-        if (client) client.release();
-    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching attendance report:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 // Get raw attendance records
 router.get('/records', async (req, res) => {
-    let client = null;
-    try {
-        const { start, end } = req.query;
-        client = await getConnection();
-        
-        const result = await client.query(`
+  let client = null;
+  try {
+    const { start, end } = req.query;
+    client = await getConnection();
+
+    const result = await client.query(`
             SELECT 
                 a.id,
                 a.date,
@@ -545,59 +620,60 @@ router.get('/records', async (req, res) => {
             ORDER BY a.date DESC, u.name
         `, [start, end]);
 
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Error fetching attendance records:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    } finally {
-        if (client) client.release();
-    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching attendance records:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 router.get('/timeline/:userId', requireAuth, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const { date } = req.query;
+  try {
+    const { userId } = req.params;
+    const { date } = req.query;
 
-        const query = `
+    const query = `
             SELECT 
-                id,
-                punch_type,
-                created_at,
-                latitude,
-                longitude,
-                notes
-            FROM attendance
+  id,
+  punch_type,
+  (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') AS created_at,
+  latitude,
+  longitude,
+  notes
+FROM attendance
+
             WHERE user_id = $1 
             AND DATE(created_at) = $2::date
             AND punch_type IN ('in', 'out')
             ORDER BY created_at;
         `;
 
-        const result = await pool.query(query, [userId, date]);
+    const result = await pool.query(query, [userId, date]);
 
-        // Format the data for the frontend
-        const timeline = result.rows.map(record => ({
-            id: record.id,
-            latitude: Number(record.latitude),
-            longitude: Number(record.longitude),
-            updated_at: record.created_at,
-            point_type: record.punch_type === 'in' ? 'START' : 'END',
-            notes: record.notes
-        }));
+    // Format the data for the frontend
+    const timeline = result.rows.map(record => ({
+      id: record.id,
+      latitude: Number(record.latitude),
+      longitude: Number(record.longitude),
+      updated_at: record.created_at,
+      point_type: record.punch_type === 'in' ? 'START' : 'END',
+      notes: record.notes
+    }));
 
-        res.json({
-            success: true,
-            timeline
-        });
+    res.json({
+      success: true,
+      timeline
+    });
 
-    } catch (err) {
-        console.error('Timeline fetch error:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch timeline data'
-        });
-    }
+  } catch (err) {
+    console.error('Timeline fetch error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch timeline data'
+    });
+  }
 });
 
 export default router;

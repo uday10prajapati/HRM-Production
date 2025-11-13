@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import { useNavigate } from "react-router-dom";
+
 import axios from 'axios';
 
 // Note: the project already has Navbar and Sidebar components at client/src/components
@@ -12,6 +14,9 @@ function AttendancePage() {
   const [report, setReport] = useState({});
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  const navigate = useNavigate();
+
 
   // punch state
   const [punchLoading, setPunchLoading] = useState(false);
@@ -313,6 +318,12 @@ function AttendancePage() {
                   </svg>
                   Punch Out
                 </button>
+                <button
+                  onClick={() => navigate('/corrections')}
+                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                >
+                 Reports
+                </button>
               </div>
             </div>
 
@@ -427,6 +438,8 @@ function AttendancePage() {
                         <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                         <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Days</th>
                         <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leave Days</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch In</th>
+                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Out</th>
                         <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       </tr>
                     </thead>
@@ -453,6 +466,8 @@ function AttendancePage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.worked_days}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.leave_days}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.today_punch_in ?? '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.today_punch_out ?? '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                               r.present_today 
