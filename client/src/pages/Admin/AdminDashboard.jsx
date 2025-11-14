@@ -10,13 +10,16 @@ const Admin = () => {
   const [loading, setLoading] = useState(true);
   const [docsCount, setDocsCount] = useState(0);
   const [user, setUser] = useState(null);
+  const [assignedCallsCount, setAssignedCallsCount] = useState(0);
+
 
   // Fetch logged-in user
-    useEffect(() => {
-      const storedUser = localStorage.getItem("user");
-      if (!storedUser) navigate("/login");
-      else setUser(JSON.parse(storedUser));
-    }, [navigate]);
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) navigate("/login");
+    else setUser(JSON.parse(storedUser));
+  }, [navigate]);
+ 
 
   const fetchData = async () => {
     try {
@@ -25,7 +28,7 @@ const Admin = () => {
       const all = res.data.users || res.data || [];
       setUsers(all);
 
-      // documents count (aggregate endpoint)
+      // documents count (KEEPING THIS — no removal)
       try {
         const c = await axios.get('/api/documents/counts');
         const counts = Array.isArray(c.data?.counts) ? c.data.counts : [];
@@ -34,6 +37,7 @@ const Admin = () => {
       } catch (err) {
         console.warn('Failed to fetch documents count', err);
       }
+
     } catch (err) {
       console.error('Failed to load admin data', err);
     } finally {
@@ -41,9 +45,26 @@ const Admin = () => {
     }
   };
 
+  // NEW: Fetch assigned calls
+  const fetchAssignedCalls = async () => {
+    try {
+      const response = await axios.get("/api/service-calls/assigned-calls", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+
+      if (response.data.success) {
+        setAssignedCallsCount(response.data.calls.length); // ← Only updates assigned calls count
+      }
+    } catch (err) {
+      console.error("Failed to fetch assigned calls", err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchAssignedCalls();
   }, []);
 
   const totalUsers = users.length;
@@ -65,8 +86,8 @@ const Admin = () => {
                   <p className="mt-2 text-blue-100">Here's what's happening in your organization today</p>
                 </div>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => navigate('/all-users')} 
+                  <button
+                    onClick={() => navigate('/all-users')}
                     className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
                   >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -74,7 +95,7 @@ const Admin = () => {
                     </svg>
                     Manage Users
                   </button>
-                  
+
                 </div>
               </div>
             </div>
@@ -128,19 +149,24 @@ const Admin = () => {
                 <div className="flex items-center">
                   <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
                     <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M3 5a2 2 0 012-2h1.28a2 2 0 011.94 1.47l.7 2.49a2 2 0 01-.57 2.01l-1.1 1.1a16 16 0 006.58 6.58l1.1-1.1a2 2 0 012.01-.57l2.49.7A2 2 0 0121 17.72V19a2 2 0 01-2 2h-1C9.82 21 3 14.18 3 6V5z"
+                      />
                     </svg>
                   </div>
                   <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Documents</h3>
+                    <h3 className="text-sm font-medium text-gray-500">Assigned Calls</h3>
                     <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{docsCount}</div>
+                      <div className="text-2xl font-bold text-gray-900">{assignedCallsCount}</div>
                       <div className="ml-2 text-sm text-green-600">+8%</div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 border-t border-gray-100 pt-4">
-                  <a href="/documents" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View all documents →</a>
+                  <a href="/documents" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View all Assigned Calls →</a>
                 </div>
               </div>
 
@@ -180,14 +206,14 @@ const Admin = () => {
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Employee database, onboarding/offboarding, document management.</p>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => navigate('/all-users')} 
+                  <button
+                    onClick={() => navigate('/all-users')}
                     className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
                   >
                     Employees
                   </button>
-                  <button 
-                    onClick={() => navigate('/documents')} 
+                  <button
+                    onClick={() => navigate('/documents')}
                     className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
                   >
                     Documents
@@ -207,14 +233,14 @@ const Admin = () => {
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Call assignment, live tracking, task lifecycle management.</p>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => navigate('/assign-call')} 
+                  <button
+                    onClick={() => navigate('/assign-call')}
                     className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
                   >
                     Assign Calls
                   </button>
-                  <button 
-                    onClick={() => navigate('/map')} 
+                  <button
+                    onClick={() => navigate('/map')}
                     className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
                   >
                     Live Map
@@ -234,14 +260,14 @@ const Admin = () => {
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Salary slips, statutory reports, Form16 generation.</p>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => navigate('/payroll')} 
+                  <button
+                    onClick={() => navigate('/payroll')}
                     className="flex-1 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm font-medium"
                   >
                     Payroll
                   </button>
-                  <button 
-                    onClick={() => navigate('/reports/payroll')} 
+                  <button
+                    onClick={() => navigate('/reports/payroll')}
                     className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
                   >
                     Compliance
@@ -263,8 +289,8 @@ const Admin = () => {
                   <h4 className="ml-4 font-semibold text-gray-900">Time & Attendance</h4>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Track employee attendance, manage shifts, and monitor overtime efficiently.</p>
-                <button 
-                  onClick={() => navigate('/attendance')} 
+                <button
+                  onClick={() => navigate('/attendance')}
                   className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center justify-center"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,8 +311,8 @@ const Admin = () => {
                   <h4 className="ml-4 font-semibold text-gray-900">Leave Management</h4>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Streamline leave applications, approvals, and balance tracking.</p>
-                <button 
-                  onClick={() => navigate('/leave-management')} 
+                <button
+                  onClick={() => navigate('/leave-management')}
                   className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center justify-center"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -307,8 +333,8 @@ const Admin = () => {
                   <h4 className="ml-4 font-semibold text-gray-900">Inventory & Stock</h4>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Monitor stock levels, track usage, and manage inventory alerts.</p>
-                <button 
-                  onClick={() => navigate('/inventory')} 
+                <button
+                  onClick={() => navigate('/inventory')}
                   className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center justify-center"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -329,8 +355,8 @@ const Admin = () => {
                   <h4 className="ml-4 font-semibold text-gray-900">Roles & Permissions</h4>
                 </div>
                 <p className="text-sm text-gray-600 mb-4">Configure user roles, access levels, and security settings.</p>
-                <button 
-                  onClick={() => navigate('/roles')} 
+                <button
+                  onClick={() => navigate('/roles')}
                   className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center justify-center"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -349,7 +375,7 @@ const Admin = () => {
                     <h2 className="text-lg font-semibold text-gray-800">Recent Users</h2>
                     <p className="mt-1 text-sm text-gray-600">Latest user activities and updates</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => navigate('/all-users')}
                     className="inline-flex items-center px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors text-sm font-medium"
                   >
@@ -366,8 +392,8 @@ const Admin = () => {
                 <div className="p-8 text-center">
                   <div className="inline-flex items-center">
                     <svg className="animate-spin h-5 w-5 text-blue-500 mr-3" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                     <span className="text-gray-600">Loading users...</span>
                   </div>
