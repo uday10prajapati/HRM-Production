@@ -48,7 +48,7 @@ const AssignCalls = () => {
         try {
             setLoading(true);
             const res = await axios.post('http://localhost:5000/api/service-calls/search', {}, {
-                timeout: 5000 // Add timeout
+                // Add timeout
             });
 
             if (res.data?.success) {
@@ -151,7 +151,7 @@ const AssignCalls = () => {
     const fetchAssignedCalls = async () => {
         try {
             const response = await axios.get('http://localhost:5000/api/service-calls/assigned-calls', {
-                timeout: 5000 // Add timeout
+                // Add timeout
             });
 
             if (response.data?.success) {
@@ -460,6 +460,19 @@ const AssignCalls = () => {
                                                                 <p className="text-xs text-gray-500">
                                                                     Created: {new Date(call.created_at).toLocaleString()}
                                                                 </p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    <span className="font-medium">Dairy Name:</span> {call.dairy_name}
+                                                                </p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    <span className="font-medium">Description:</span> {call.description}
+                                                                </p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    <span className="font-medium">Part Used:</span> {call.part_used || 'N/A'}
+                                                                </p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    <span className="font-medium">Quantity Used:</span> {call.quantity_used || 'N/A'}
+                                                                </p>
+
                                                             </div>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-2">
