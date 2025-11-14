@@ -33,7 +33,8 @@ export default function LeaveManagement() {
         const leavesArr = data.leaves || [];
         setLeaves(leavesArr);
         // If HR/Admin and no pending rows returned, try admin "all" endpoint to help debugging
-          if ((canAct) && (!leavesArr || leavesArr.length === 0)) {
+        const canAct = user && (String(user.role || '').toLowerCase() === 'admin' || String(user.role || '').toLowerCase() === 'hr');
+        if ((canAct) && (!leavesArr || leavesArr.length === 0)) {
           try {
             const allRes = await axios.get(`${API_URL}/api/leave/all`, { headers });
             if (allRes?.data?.success) {
@@ -84,6 +85,30 @@ export default function LeaveManagement() {
 
   const user = getCurrentUser();
   const canAct = user && (String(user.role || '').toLowerCase() === 'admin' || String(user.role || '').toLowerCase() === 'hr');
+
+  // Helper function to format day_type display
+  const formatDayType = (dayType) => {
+    if (!dayType) return '-';
+    const type = String(dayType).toLowerCase();
+    if (type === 'half' || type === 'half day') {
+      return 'Half Day';
+    } else if (type === 'full' || type === 'full day') {
+      return 'Full Day';
+    }
+    return dayType;
+  };
+
+  // Helper function to get day_type badge color
+  const getDayTypeBadgeClass = (dayType) => {
+    if (!dayType) return 'bg-gray-100 text-gray-800';
+    const type = String(dayType).toLowerCase();
+    if (type === 'half' || type === 'half day') {
+      return 'bg-orange-100 text-orange-800';
+    } else if (type === 'full' || type === 'full day') {
+      return 'bg-purple-100 text-purple-800';
+    }
+    return 'bg-gray-100 text-gray-800';
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -138,6 +163,7 @@ export default function LeaveManagement() {
                       <tr className="bg-gray-50">
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Day Type</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
@@ -147,7 +173,7 @@ export default function LeaveManagement() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {(!leaves || leaves.length === 0) ? (
                         <tr>
-                          <td colSpan={canAct ? 6 : 5} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={canAct ? 7 : 6} className="px-6 py-8 text-center text-gray-500">
                             <p className="text-base">No pending leave requests</p>
                           </td>
                         </tr>
@@ -170,6 +196,11 @@ export default function LeaveManagement() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 {l.type || 'N/A'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDayTypeBadgeClass(l.day_type)}`}>
+                                {formatDayType(l.day_type)}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

@@ -26,6 +26,7 @@ const router = express.Router();
       await pool.query(`ALTER TABLE IF EXISTS leaves ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP`);
       await pool.query(`ALTER TABLE IF EXISTS leaves ADD COLUMN IF NOT EXISTS approved_by TEXT`);
       await pool.query(`ALTER TABLE IF EXISTS leaves ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`);
+      await pool.query(`ALTER TABLE IF EXISTS leaves ADD COLUMN IF NOT EXISTS day_type TEXT`);
     } catch (e) {
       console.warn('Could not ensure optional leaves columns exist:', e?.message || e);
     }
@@ -36,9 +37,9 @@ const router = express.Router();
 })();
 
 // POST /api/leave/apply
-// body: { userId, startDate, endDate, reason }
+// body: { userId, startDate, endDate, reason, type, day_type }
 router.post('/apply', async (req, res) => {
-  const { userId, startDate, endDate, reason } = req.body;
+  const { userId, startDate, endDate, reason, type, day_type } = req.body;
   if (!userId || !startDate || !endDate) {
     return res.status(400).json({ success: false, message: 'userId, startDate and endDate are required' });
   }
@@ -53,8 +54,8 @@ router.post('/apply', async (req, res) => {
   }
   try {
     const result = await pool.query(
-      `INSERT INTO leaves (user_id, start_date, end_date, reason, status) VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
-      [userId, startDate, endDate, reason || null]
+      `INSERT INTO leaves (user_id, start_date, end_date, reason, type, day_type, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
+      [userId, startDate, endDate, reason || null, type || null, day_type || 'full']
     );
     // fetch with user info
     const leave = result.rows[0];
@@ -108,10 +109,11 @@ router.get('/', async (req, res) => {
     }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    // select explicit columns expected by frontend
+    // select explicit columns expected by frontend - NOW INCLUDES day_type
     const query = `SELECT l.id,
       to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
       l.type,
+      l.day_type,
       l.reason,
       l.status,
       l.user_id,
@@ -151,7 +153,7 @@ router.put('/:id/approve', async (req, res) => {
     const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
     if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
     // accept both numeric and uuid ids by comparing as text
-    const result = await pool.query(`UPDATE leaves SET status='approved', updated_at=NOW() WHERE id::text=$1 RETURNING *`, [String(id)]);
+    const result = await pool.query(`UPDATE leaves SET status='approved', updated_at=NOW() WHERE id::text=$1 RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id)]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
     const leave = result.rows[0];
     try {
@@ -174,7 +176,7 @@ router.put('/:id/reject', async (req, res) => {
     const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
     const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
     if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
-    const result = await pool.query(`UPDATE leaves SET status='rejected', updated_at=NOW() WHERE id::text=$1 RETURNING *`, [String(id)]);
+    const result = await pool.query(`UPDATE leaves SET status='rejected', updated_at=NOW() WHERE id::text=$1 RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id)]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
     const leave = result.rows[0];
     try {
@@ -216,6 +218,7 @@ router.get('/all', async (req, res) => {
     const q = `SELECT l.id,
       to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
       l.type,
+      l.day_type,
       l.reason,
       l.status,
       l.user_id,
@@ -258,10 +261,10 @@ router.post('/_debug/seed', async (req, res) => {
     const user1 = urows[0].id;
     const user2 = urows[1] ? urows[1].id : urows[0].id;
 
-    await pool.query(`INSERT INTO leaves (user_id, start_date, end_date, reason, status, applied_at) VALUES
-      ($1, $2, $3, $4, 'pending', NOW()),
-      ($5, $6, $7, $8, 'pending', NOW())`,
-      [user1, now.toISOString().slice(0,10), now.toISOString().slice(0,10), '[SAMPLE] Short leave', user2, now.toISOString().slice(0,10), now.toISOString().slice(0,10), '[SAMPLE] Short leave 2']
+    await pool.query(`INSERT INTO leaves (user_id, start_date, end_date, reason, type, day_type, status, applied_at) VALUES
+      ($1, $2, $3, $4, $5, $6, 'pending', NOW()),
+      ($7, $8, $9, $10, $11, $12, 'pending', NOW())`,
+      [user1, now.toISOString().slice(0,10), now.toISOString().slice(0,10), '[SAMPLE] Short leave', 'Casual', 'full', user2, now.toISOString().slice(0,10), now.toISOString().slice(0,10), '[SAMPLE] Short leave 2', 'Casual', 'half']
     );
 
     return res.json({ success: true, message: 'Inserted sample leaves' });

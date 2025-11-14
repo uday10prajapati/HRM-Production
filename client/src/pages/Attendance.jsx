@@ -76,7 +76,17 @@ function AttendancePage() {
   const data = res.data;
       if (data.success) {
         // normalize to an array shape compatible with table (one row)
-        setReport([{ user_id: data.userId, name: currentUser?.name ?? 'You', role: currentUser?.role ?? '', worked_days: data.workedDays, leave_days: data.leaveDays, present_today: null, today_punch_in: null, today_punch_out: null }]);
+        setReport([{ 
+          user_id: data.userId, 
+          name: currentUser?.name ?? 'You', 
+          role: currentUser?.role ?? '', 
+          worked_days: data.workedDays, 
+          leave_days: data.leaveDays, 
+          punch_in: data.punch_in ?? '-',
+          punch_out: data.punch_out ?? '-',
+          present_today: data.present_today ?? false, 
+          status: data.present_today ? 'Present' : 'Absent'
+        }]);
       } else {
         setReport([]);
       }
@@ -106,6 +116,13 @@ function AttendancePage() {
       } catch (e) {
         // ignore parse errors
       }
+      // Map backend response fields to frontend display fields
+      rows = rows.map(r => ({
+        ...r,
+        punch_in: r.punch_in ?? '-',
+        punch_out: r.punch_out ?? '-',
+        status: r.status ?? (r.present_today ? 'Present' : 'Absent')
+      }));
       setReport(rows);
     } else {
       setReport([]);
@@ -216,7 +233,7 @@ function AttendancePage() {
         // ignore parse errors
       }
 
-      const payload = { userId, type };
+      const payload = { userId, type, punch_type: type };
       if (role !== 'hr' && role !== 'admin') {
         // try to get current location (graceful, non-blocking if denied) only for non-HR/admin
         const getCurrentLocation = (timeoutMs = 5000) => new Promise((resolve) => {
@@ -239,15 +256,15 @@ function AttendancePage() {
       const att = res?.data?.attendance ?? res?.data;
 
       // if backend returned created_at and type, use it to reconcile exact server time
-      if (att && att.created_at) {
+      if (att && att.created_at_ist) {
         setLatestPunch((prev) => {
-          const created = att.created_at;
+          const created = att.created_at_ist;
           if (!prev) {
             return type === "in"
-              ? { day: created.slice(0, 10), punch_in: created, punch_out: null }
-              : { day: created.slice(0, 10), punch_in: null, punch_out: created };
+              ? { date: created.slice(0, 10), punch_in: created, punch_out: null }
+              : { date: created.slice(0, 10), punch_in: null, punch_out: created };
           }
-          return { ...prev, ...(att.type === "in" || type === "in" ? { punch_in: created } : { punch_out: created }) };
+          return { ...prev, ...(att.punch_type === "in" || type === "in" ? { punch_in: created } : { punch_out: created }) };
         });
       } else {
         // fallback: re-fetch canonical data for today
@@ -464,17 +481,17 @@ function AttendancePage() {
                               {r.role}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.worked_days}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.leave_days}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.today_punch_in ?? '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.today_punch_out ?? '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.worked_days ?? 0}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.leave_days ?? 0}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.punch_in ?? '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.punch_out ?? '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              r.present_today 
+                              r.status === 'Present'
                                 ? 'bg-green-100 text-green-800' 
                                 : 'bg-gray-100 text-gray-800'
                             }`}>
-                              {r.present_today ? 'Present' : 'Absent'}
+                              {r.status ?? 'Absent'}
                             </span>
                           </td>
                         </tr>

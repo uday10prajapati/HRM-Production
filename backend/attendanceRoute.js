@@ -91,8 +91,8 @@ router.post('/punch', requireAuth, async (req, res) => {
 
     // Insert attendance row (uses created_at)
     const insertAttendance = `
-      INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes, created_at)
+      VALUES ($1, $2, $3, $4, $5, NOW)
       RETURNING id, created_at, punch_type
     `;
     const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes]);
@@ -265,7 +265,7 @@ router.get("/summary", async (req, res) => {
 });
 
 // GET /api/attendance/summary/all?start=YYYY-MM-DD&end=YYYY-MM-DD
-// returns for each user: user_id, name, role, workedDays, leaveDays, today_punch_in, today_punch_out, present_today(boolean)
+// returns for each user: user_id, name, role, worked_days, leave_days, punch_in, punch_out, status
 router.get('/summary/all', requireAuth, async (req, res) => {
   try {
     const now = new Date();
@@ -279,61 +279,106 @@ router.get('/summary/all', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid start or end date format' });
     }
 
-    // Use punch_type and created_at to compute punch in/out times (formatted)
+    // Query to fetch all users with punch_in and punch_out times from created_at
+    // Fixed: Calculate leave_days based on day_type (full=1, half=0.5)
     const q = `
-      SELECT u.id AS user_id, u.name, u.role,
+      SELECT 
+        u.id AS user_id, 
+        u.name, 
+        u.role,
         COALESCE(att.worked_days, 0) AS worked_days,
         COALESCE(l.leave_days, 0) AS leave_days,
-        td.punch_in AS today_punch_in,
-        td.punch_out AS today_punch_out,
-        (td.punch_in IS NOT NULL) AS present_today
+        COALESCE(td.punch_in, '-') AS punch_in,
+        COALESCE(td.punch_out, '-') AS punch_out,
+        (td.punch_in IS NOT NULL) AS present_today,
+        CASE 
+          WHEN td.punch_in IS NOT NULL THEN 'Present'
+          ELSE 'Absent'
+        END AS status
       FROM users u
       LEFT JOIN (
-        SELECT user_id::text AS user_id, COUNT(DISTINCT (created_at::date)) AS worked_days
+        -- Count worked days (distinct dates with attendance records)
+        SELECT 
+          user_id::text AS user_id, 
+          COUNT(DISTINCT DATE(created_at)) AS worked_days
         FROM attendance
-        WHERE punch_type = 'in' AND created_at::date BETWEEN $1 AND $2
+        WHERE DATE(created_at) BETWEEN $1::date AND $2::date
+          AND user_id IS NOT NULL
         GROUP BY user_id
       ) att ON att.user_id = u.id::text
       LEFT JOIN (
-        SELECT user_id::text AS user_id,
-          COALESCE(SUM(GREATEST(0, (LEAST(end_date::date, $2::date) - GREATEST(start_date::date, $1::date)) + 1)),0) AS leave_days
+        -- Calculate leave days: full day = 1, half day = 0.5
+        SELECT 
+          user_id::text AS user_id,
+          COALESCE(
+            SUM(
+              CASE 
+                WHEN day_type = 'half' OR day_type = 'half day' OR day_type = 'Half' OR day_type = 'Half Day' THEN 0.5
+                WHEN day_type = 'full' OR day_type = 'full day' OR day_type = 'Full' OR day_type = 'Full Day' THEN 1
+                ELSE 
+                  GREATEST(0, (LEAST(end_date::date, $2::date) - GREATEST(start_date::date, $1::date)) + 1)
+              END
+            ),
+            0
+          ) AS leave_days
         FROM leaves
-        WHERE NOT (end_date::date < $1::date OR start_date::date > $2::date)
+        WHERE status = 'approved'
+          AND NOT (end_date::date < $1::date OR start_date::date > $2::date)
         GROUP BY user_id
       ) l ON l.user_id = u.id::text
       LEFT JOIN (
-        SELECT user_id::text AS user_id,
-          to_char((MIN(created_at) FILTER (WHERE punch_type = 'punch_in')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
-          to_char((MAX(created_at) FILTER (WHERE punch_type = 'punch_out')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+        -- Fetch TODAY'S punch_in (first created_at) and punch_out (last created_at)
+        SELECT 
+          user_id::text AS user_id,
+          to_char(MIN(created_at), 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
+          to_char(MAX(created_at), 'YYYY-MM-DD HH24:MI:SS') AS punch_out
         FROM attendance
-        WHERE created_at::date = $3
+        WHERE DATE(created_at) = CURRENT_DATE
+          AND user_id IS NOT NULL
         GROUP BY user_id
       ) td ON td.user_id = u.id::text
       ORDER BY u.name ASC;
     `;
 
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await pool.query(q, [start, end, today]);
+    const result = await pool.query(q, [start, end]);
     let rows = result.rows || [];
     const requesterRole = (req.user?.role || '').toString().toLowerCase();
     const requesterId = req.user?.id ?? null;
 
-    if (requesterRole === 'hr') {
-      rows = rows.filter(r => {
-        const role = (r.role || '').toString().toLowerCase();
-        return role === 'engineer' || role === 'employee';
-      });
-    } else if (requesterRole === 'admin') {
-      // admin sees everything
-    } else {
-      // other roles only see their own row
-      rows = rows.filter(r => String(r.user_id) === String(requesterId));
+    console.log('Total rows fetched from DB:', rows.length);
+    if (rows.length > 0) {
+      console.log('Sample user data:', JSON.stringify(rows[0], null, 2));
     }
 
-    return res.json({ success: true, data: rows });
+    // Filter based on requester role
+    if (requesterRole === 'hr') {
+      // HR can see engineers, employees, and their own data
+      rows = rows.filter(r => {
+        const role = (r.role || '').toString().toLowerCase();
+        return role === 'engineer' || role === 'employee' || String(r.user_id) === String(requesterId);
+      });
+      console.log('Filtered for HR:', rows.length);
+    } else if (requesterRole === 'admin') {
+      // Admin sees all users (no filtering)
+      console.log('Admin viewing all users:', rows.length);
+    } else {
+      // Other roles only see their own data
+      rows = rows.filter(r => String(r.user_id) === String(requesterId));
+      console.log('Filtered for user:', rows.length);
+    }
+
+    return res.json({ 
+      success: true, 
+      data: rows,
+      count: rows.length 
+    });
   } catch (err) {
-    console.error('/attendance/summary/all error', err);
-    return res.status(500).json({ success: false, message: 'Error fetching attendance summary', error: err?.message ?? String(err) });
+    console.error('/attendance/summary/all error:', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching attendance summary', 
+      error: err?.message ?? String(err) 
+    });
   }
 });
 
