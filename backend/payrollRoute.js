@@ -15,8 +15,7 @@ const TDS_RATE = Number(process.env.TDS_RATE || 0.05);
 const PROFESSIONAL_TAX = Number(process.env.PROFESSIONAL_TAX || 200);
 const HOURLY_RATE = Number(process.env.HOURLY_RATE || 72.12);
 const DEFAULT_HOURS_PER_DAY = Number(process.env.HOURS_PER_WORKING_DAY || 8);
-const OVERTIME_MULTIPLIER = Number(process.env.OVERTIME_MULTIPLIER || 1.5);
-const LEAVE_DEDUCTION_AMOUNT = 572.76;
+
 
 // Helper: resolve identifier (id or email) to DB id
 async function resolveDbUserId(identifier) {
@@ -84,16 +83,14 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
   const start = `${year}-${String(month).padStart(2, '0')}-01`;
   const end = new Date(year, month, 0).toISOString().slice(0, 10);
 
-  let totalWorkingDays = 0;
-  for (let d = new Date(start); d <= new Date(end); d.setDate(d.getDate() + 1)) {
-    if (d.getDay() !== 0) totalWorkingDays++;
-  }
+  // Rule 1: Total working days = total days in the month (INCLUDING weekends/Sundays)
+  const totalWorkingDays = new Date(year, month, 0).getDate();
 
   const userId = cfg.user_id || cfg.userId || null;
-  let workedDays = 0, leaveDays = 0, totalOvertimeSeconds = 0, totalAttendanceSeconds = 0;
+  let workedDays = 0;
+  let totalAttendanceSeconds = 0;
+
   const wdQ = `SELECT COUNT(DISTINCT (created_at::date)) AS worked_days FROM attendance WHERE user_id::text=$1 AND type='in' AND created_at::date BETWEEN $2 AND $3`;
-  const lvQ = `SELECT COALESCE(SUM(GREATEST(0, (LEAST(end_date::date, $3::date) - GREATEST(start_date::date, $2::date)) + 1)),0) AS leave_days FROM leaves WHERE user_id::text=$1 AND NOT (end_date::date < $2::date OR start_date::date > $3::date)`;
-  const otQ = `SELECT COALESCE(SUM(overtime_seconds),0) AS overtime_seconds, COALESCE(SUM(hours),0) AS overtime_hours FROM overtime_records WHERE user_id::text=$1 AND date BETWEEN $2 AND $3`;
   const attQ = `
     SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (p.punch_out - p.punch_in))),0) AS worked_seconds
     FROM (
@@ -104,21 +101,13 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
     ) p
     WHERE p.punch_in IS NOT NULL AND p.punch_out IS NOT NULL
   `;
+
   try {
-    const [wdR, lvR, otR, attR] = await Promise.all([
+    const [wdR, attR] = await Promise.all([
       pool.query(wdQ, [userId, start, end]),
-      pool.query(lvQ, [userId, start, end]),
-      pool.query(otQ, [userId, start, end]).catch(() => ({ rows: [{ overtime_hours: 0 }] })),
       pool.query(attQ, [userId, start, end]).catch(() => ({ rows: [{ worked_seconds: 0 }] })),
     ]);
     workedDays = Number(wdR.rows[0]?.worked_days ?? 0);
-    leaveDays = Number(lvR.rows[0]?.leave_days ?? 0);
-    const otRow = otR.rows[0] || {};
-    if (otRow.overtime_seconds !== undefined && otRow.overtime_seconds !== null && Number(otRow.overtime_seconds) > 0) {
-      totalOvertimeSeconds = Number(otRow.overtime_seconds || 0);
-    } else {
-      totalOvertimeSeconds = Number((otRow.overtime_hours || 0)) * 3600;
-    }
     totalAttendanceSeconds = Number(attR.rows[0]?.worked_seconds ?? 0);
   } catch (err) {
     throw err;
@@ -126,111 +115,128 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
 
   const attendanceHours = Number((totalAttendanceSeconds / 3600) || 0);
   const useHourly = (cfg.salary_mode && String(cfg.salary_mode).toLowerCase() === 'hourly') || cfg.hourly === true;
+  
+  // Rule 5: Salary Mode
   let monthlyGross = basic + hra + allowancesSum;
   if (useHourly) monthlyGross = Number((attendanceHours * (Number(cfg.hourly_rate || HOURLY_RATE))).toFixed(2));
 
-  const perDaySalary = totalWorkingDays > 0 ? Number((monthlyGross / totalWorkingDays).toFixed(2)) : 0;
-  const leaveDeduction = Number((perDaySalary * leaveDays).toFixed(2));
-
-  const hourlyRate = useHourly ? Number(cfg.hourly_rate || HOURLY_RATE) : (totalWorkingDays * DEFAULT_HOURS_PER_DAY > 0 ? (monthlyGross / (totalWorkingDays * DEFAULT_HOURS_PER_DAY)) : 0);
-  const overtimeHours = totalOvertimeSeconds / 3600;
-  const overtimePay = Number((hourlyRate * overtimeHours * OVERTIME_MULTIPLIER).toFixed(2));
-
-  const proratedGross = Number((monthlyGross - leaveDeduction + overtimePay).toFixed(2));
-  const pf = Number((basic * PF_RATE).toFixed(2));
-  const esi_employee = Number((proratedGross * ESI_EMP_RATE).toFixed(2));
-  const esi_employer = Number((proratedGross * ESI_EMPLOYER_RATE).toFixed(2));
-  const professional_tax = Number(PROFESSIONAL_TAX);
-  const tds = Number((proratedGross * TDS_RATE).toFixed(2));
-  const otherDeductions = cfg.deductions || {};
-  const otherSum = Object.values(otherDeductions).reduce((s, v) => s + Number(v || 0), 0);
-  const net = Number((proratedGross - (pf + esi_employee + professional_tax + tds + otherSum)).toFixed(2));
-
-  // Add leave deduction calculation
-  const DAILY_SALARY_DEDUCTION = 576.96;
-  let leaveDeductionAmount = 0;
-  let totalLeaveDays = 0;
-
-  // Get current month's start and end dates
-  const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1; // JavaScript months are 0-based
-  const currentYear = currentDate.getFullYear();
-
-  // Calculate leaves for current month only
+  // Rule 2 & 3: Get leaves with day_type (full=1, half=0.5)
+  // Updated to use day_type instead of leave_type
   const leaveQuery = `
-      SELECT COUNT(*) as total_leave_days
-      FROM (
-          SELECT generate_series(
-              start_date::date,
-              LEAST(
-                  end_date::date,
-                  (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
-              ),
-              '1 day'::interval
-          )::date as leave_date
-          FROM leaves 
-          WHERE user_id = $1 
-          AND status = 'approved'
-          AND EXTRACT(MONTH FROM start_date) = $2
-          AND EXTRACT(YEAR FROM start_date) = $3
-          AND start_date <= CURRENT_DATE
-      ) as leave_dates
-      WHERE leave_date <= CURRENT_DATE`;
+    SELECT 
+      day_type,
+      COUNT(*) as count,
+      SUM(
+        CASE 
+          WHEN LOWER(day_type) IN ('half', 'half day') THEN 0.5
+          ELSE 1
+        END
+      ) as total_days
+    FROM (
+      SELECT 
+        CASE 
+          WHEN LOWER(day_type) IN ('half', 'half day') THEN 'half'
+          ELSE 'full'
+        END as day_type,
+        generate_series(start_date::date, end_date::date, '1 day'::interval)::date as leave_date
+      FROM leaves 
+      WHERE user_id::text = $1 
+        AND LOWER(status) = 'approved'
+        AND NOT (end_date::date < $2::date OR start_date::date > $3::date)
+    ) as expanded_leaves
+    GROUP BY day_type
+  `;
+
+  let leave_full_days = 0;
+  let leave_half_days = 0;
 
   try {
-      const leaveResult = await pool.query(leaveQuery, [
-          userId, 
-          currentMonth,
-          currentYear
-      ]);
-
-      totalLeaveDays = parseInt(leaveResult.rows[0]?.total_leave_days || 0);
-      leaveDeductionAmount = totalLeaveDays * DAILY_SALARY_DEDUCTION;
-
-      console.log(`Leave calculation for ${currentMonth}/${currentYear}:`, {
-          totalLeaveDays,
-          leaveDeductionAmount
-      });
-
+    const leaveResult = await pool.query(leaveQuery, [userId, start, end]);
+    
+    leaveResult.rows.forEach(row => {
+      if (row.day_type === 'full') {
+        leave_full_days = Number(row.total_days || 0);
+      } else if (row.day_type === 'half') {
+        leave_half_days = Number(row.total_days || 0);
+      }
+    });
   } catch (err) {
-      console.error('Error calculating leave deductions:', err);
-      throw err;
+    console.error('Error calculating leaves:', err);
+    throw err;
   }
 
-  // Calculate final net pay with current month's leave deductions
-  const finalNetPay = Number((proratedGross - (
-      pf + 
-      esi_employee + 
-      professional_tax + 
-      tds + 
-      otherSum + 
-      leaveDeductionAmount
-  )).toFixed(2));
+  // Rule 3: Free Leave Policy
+  const FREE_FULL_DAY = 1;
+  const FREE_HALF_DAY = 1;
 
+  const chargeable_full_days = Math.max(0, leave_full_days - FREE_FULL_DAY);
+  const chargeable_half_days = Math.max(0, leave_half_days - FREE_HALF_DAY);
+
+  // Rule 4: Leave Deduction Calculation
+  const per_day_salary = Number((monthlyGross / totalWorkingDays).toFixed(2));
+  const leave_deduction = Number(
+    (chargeable_full_days * per_day_salary) + (chargeable_half_days * (per_day_salary / 2))
+  ).toFixed(2);
+
+  // Deductions
+  const pf = Number((basic * PF_RATE).toFixed(2));
+  const esi_employee = Number((monthlyGross * ESI_EMP_RATE).toFixed(2));
+  const esi_employer = Number((monthlyGross * ESI_EMPLOYER_RATE).toFixed(2));
+  const professional_tax = Number(PROFESSIONAL_TAX);
+  const tds = Number((monthlyGross * TDS_RATE).toFixed(2));
+  const otherDeductions = cfg.deductions || {};
+  const otherSum = Object.values(otherDeductions).reduce((s, v) => s + Number(v || 0), 0);
+
+  // Rule 7: Net Pay Calculation
+  const gross_pay = monthlyGross;
+  const net_pay = Number(
+    (gross_pay - (pf + esi_employee + professional_tax + tds + otherSum + Number(leave_deduction)))
+  ).toFixed(2);
+
+  // Rule 8: Return object with all required fields
   return {
-    basic,
-    per_day_salary: perDaySalary,
+    // Rule 1: Total working days
     total_working_days: totalWorkingDays,
+    
+    // Rule 2 & 3: Leave breakdown
+    leave_full_days: Number(leave_full_days.toFixed(2)),
+    leave_half_days: Number(leave_half_days.toFixed(2)),
+    chargeable_full_days: Number(chargeable_full_days.toFixed(2)),
+    chargeable_half_days: Number(chargeable_half_days.toFixed(2)),
+    
+    // Rule 4: Leave deduction
+    leave_deduction: Number(leave_deduction),
+    per_day_salary: per_day_salary,
+    
+    // Attendance
     worked_days: workedDays,
-    leave_days: totalLeaveDays,
-    overtime_hours: Number(overtimeHours.toFixed(2)),
     attendance_hours: Number(attendanceHours.toFixed(2)),
-    overtime_pay: overtimePay,
-    hra,
-    allowances,
-    allowancesSum,
-    gross: proratedGross,
-    pf,
-    esi_employee,
-    esi_employer,
-    professional_tax,
-    tds,
+    
+    // Rule 5: Earnings
+    basic: basic,
+    hra: hra,
+    allowances: allowances,
+    allowancesSum: allowancesSum,
+    gross_pay: Number(gross_pay.toFixed(2)),
+    
+    // Deductions
+    pf: pf,
+    esi_employee: esi_employee,
+    esi_employer: esi_employer,
+    professional_tax: professional_tax,
+    tds: tds,
     other_deductions: otherDeductions,
-    net_pay: finalNetPay,
-    gross_pay: proratedGross,
-    leave_deduction: Number(leaveDeductionAmount.toFixed(2)),
-    month: currentMonth,
-    year: currentYear
+    otherSum: otherSum,
+    
+    // Rule 7: Net Pay
+    net_pay: Number(net_pay),
+    
+    // Additional fields for compatibility
+    gross: Number(gross_pay.toFixed(2)),
+    overtime_hours: 0,
+    overtime_pay: 0,
+    month: month,
+    year: year
   };
 }
 
@@ -254,13 +260,29 @@ router.get('/compute/:userId/:year/:month', async (req, res) => {
     if (!cfg) {
       const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
       const role = (ures.rows[0]?.role || '').toString().toLowerCase();
-      let monthlyGross = Number(process.env.DEFAULT_SALARY_OTHER || 25000);
-      if (role === 'engineer') monthlyGross = 40000;
-      else if (role === 'hr') monthlyGross = 50000;
-      else if (role === 'admin') monthlyGross = 60000;
-      const basic = Number((monthlyGross * 0.5).toFixed(2));
-      const hra = Number((monthlyGross * 0.2).toFixed(2));
-      const allowances = { other: Number((monthlyGross * 0.3).toFixed(2)) };
+      
+      // Adjusted salaries to achieve net pay of ~10000 after deductions
+      let basicSalary = 6000;  // Default
+      let hraSalary = 2400;    // Default
+      let otherAllowance = 1600;  // Default
+      
+      if (role === 'engineer') {
+          basicSalary = 6000;  // 60% of gross
+          hraSalary = 2400;    // 24% of gross
+          otherAllowance = 1600;  // 16% of gross
+      } else if (role === 'hr') {
+          basicSalary = 7500;  // 60% of gross
+          hraSalary = 3000;    // 24% of gross
+          otherAllowance = 2000;  // 16% of gross
+      } else if (role === 'admin') {
+          basicSalary = 9000;  // 60% of gross
+          hraSalary = 3600;    // 24% of gross
+          otherAllowance = 2400;  // 16% of gross
+      }
+      
+      const basic = Number(basicSalary.toFixed(2));
+      const hra = Number(hraSalary.toFixed(2));
+      const allowances = { other: Number(otherAllowance.toFixed(2)) };
       cfg = { user_id: dbUserId, basic, hra, allowances, deductions: {} };
     }
     if ((req.query.mode || '').toString().toLowerCase() === 'hourly') cfg.hourly = true;
@@ -377,61 +399,36 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
             return res.status(404).json({ error: 'user not found' });
         }
 
-        // Get approved leaves count
-        const leaveQuery = `
-            SELECT COUNT(*) as approved_leaves 
-            FROM leaves 
-            WHERE user_id = $1 
-            AND status = 'approved'  
-            AND EXTRACT(MONTH FROM start_date) = $2
-            AND EXTRACT(YEAR FROM start_date) = $3`;
+        // Get salary config
+        let cfg = null;
+        try {
+            const qc = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
+            cfg = qc.rows[0] || null;
+        } catch (e) {
+            console.warn('Could not fetch salary config:', e?.message);
+        }
 
-        const leaveResult = await pool.query(leaveQuery, [
-            dbUserId, 
-            Number(month),
-            Number(year)
-        ]);
+        // Use default config if not found
+        if (!cfg) {
+            const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
+            const role = (ures.rows[0]?.role || '').toString().toLowerCase();
+            let monthlyGross = Number(process.env.DEFAULT_SALARY_OTHER || 25000);
+            if (role === 'engineer') monthlyGross = 40000;
+            else if (role === 'hr') monthlyGross = 50000;
+            else if (role === 'admin') monthlyGross = 60000;
+            
+            const basic = Number((monthlyGross * 0.5).toFixed(2));
+            const hra = Number((monthlyGross * 0.2).toFixed(2));
+            const allowances = { other: Number((monthlyGross * 0.3).toFixed(2)) };
+            cfg = { user_id: dbUserId, basic, hra, allowances, deductions: {} };
+        }
 
-        const approvedLeaves = parseInt(leaveResult.rows[0]?.approved_leaves || 0);
-        const totalLeaveDeduction = approvedLeaves * LEAVE_DEDUCTION_AMOUNT;
+        // Compute payroll with updated logic
+        const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
 
-        // Get payroll record
-     // In the generatePayslipForUser function, modify the payroll record query:
-const payrollRecord = await pool.query(`
-    SELECT 
-        pr.*,
-        u.name as employee_name,
-        u.email as employee_email,
-        esc.basic,
-        esc.hra,
-        esc.allowances,
-        esc.deductions,
-        esc.salary_mode
-    FROM payroll_records pr
-    JOIN users u ON u.id = pr.user_id
-    LEFT JOIN employee_salary_config esc ON u.id = esc.user_id
-    WHERE pr.user_id = $1 AND pr.year = $2 AND pr.month = $3
-`, [dbUserId, Number(year), Number(month)]);
-
-        const slip = payrollRecord.rows[0] || {
-            basic: 0,
-            hra: 0,
-            allowances: {},
-            deductions: {},
-            overtime_pay: 0,
-            pf: 0,
-            esi_employee: 0,
-            professional_tax: 0,
-            tds: 0,
-            leave_days: approvedLeaves,
-            leave_deduction: totalLeaveDeduction,
-            gross: 0,
-            net_pay: 0,
-            employee_name: 'Employee'
-        };
-
-        // Adjust net pay for leave deductions
-        slip.net_pay = Number(slip.net_pay || 0) - totalLeaveDeduction;
+        // Get user details
+        const userQuery = await pool.query('SELECT name, email FROM users WHERE id=$1', [dbUserId]);
+        const userName = userQuery.rows[0]?.name || 'Employee';
 
         // Create PDF document
         const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -443,80 +440,83 @@ const payrollRecord = await pool.query(`
         // Pipe the PDF document directly to the response
         doc.pipe(res);
 
-        // PDF Content Generation
-        doc.fontSize(16).text('Salary Slip', { align: 'center' });
+        // PDF Header
+        doc.fontSize(16).text('SALARY SLIP', { align: 'center' });
         doc.moveDown();
-        doc.fontSize(10).text(`Month: ${month}/${year}`);
+        doc.fontSize(10);
+        doc.text(`Month: ${month}/${year}`, { align: 'left' });
         doc.text(`Employee ID: ${dbUserId}`);
-        doc.text(`Employee Name: ${slip.employee_name}`);
+        doc.text(`Employee Name: ${userName}`);
         doc.moveDown(0.5);
 
         // Attendance & Leave Section
-        doc.fontSize(12).text('Attendance & Leave', { underline: true });
+        doc.fontSize(12).text('ATTENDANCE & LEAVE', { underline: true });
         doc.fontSize(10);
-        doc.text(`Total Approved Leaves: ${approvedLeaves} days`);
-        doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
-        doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+        doc.text(`Total Working Days (Calendar): ${slip.total_working_days} days`);
+        doc.text(`Worked Days: ${slip.worked_days} days`);
+        doc.text(`Leave - Full Days: ${slip.leave_full_days} days`);
+        doc.text(`Leave - Half Days: ${slip.leave_half_days} days`);
+        doc.text(`Free Full Day: 1 day`);
+        doc.text(`Free Half Day: 1 day`);
+        doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} days`);
+        doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} days`);
         doc.moveDown();
 
         // Earnings Section
-        doc.fontSize(12).text('Earnings', { underline: true });
+        doc.fontSize(12).text('EARNINGS', { underline: true });
         doc.fontSize(10);
-        doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
-        doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
+        doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
+        doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
         
-        // Display Allowances if present
-        if (slip.allowances) {
-            const allowances = typeof slip.allowances === 'string' 
-                ? JSON.parse(slip.allowances) 
-                : slip.allowances;
-            Object.entries(allowances).forEach(([key, value]) => {
+        if (slip.allowancesSum > 0) {
+            Object.entries(slip.allowances).forEach(([key, value]) => {
                 doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
             });
         }
-        doc.text(`Overtime Pay: ₹${Number(slip.overtime_pay || 0).toFixed(2)}`);
         doc.moveDown(0.5);
+
+        // Leave Deduction Section
+        if (slip.leave_deduction > 0) {
+            doc.fontSize(12).text('LEAVE DEDUCTION', { underline: true });
+            doc.fontSize(10);
+            doc.text(`Per Day Salary: ₹${slip.per_day_salary.toFixed(2)}`);
+            doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} × ₹${slip.per_day_salary.toFixed(2)} = ₹${(slip.chargeable_full_days * slip.per_day_salary).toFixed(2)}`);
+            doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} × ₹${(slip.per_day_salary / 2).toFixed(2)} = ₹${(slip.chargeable_half_days * (slip.per_day_salary / 2)).toFixed(2)}`);
+            doc.text(`Total Leave Deduction: ₹${slip.leave_deduction.toFixed(2)}`);
+            doc.moveDown(0.5);
+        }
 
         // Deductions Section
-        doc.fontSize(12).text('Deductions', { underline: true });
+        doc.fontSize(12).text('STATUTORY DEDUCTIONS', { underline: true });
         doc.fontSize(10);
-        doc.text(`PF: ₹${Number(slip.pf).toFixed(2)}`);
-        doc.text(`ESI (Employee): ₹${Number(slip.esi_employee).toFixed(2)}`);
-        doc.text(`Professional Tax: ₹${Number(slip.professional_tax).toFixed(2)}`);
-        doc.text(`TDS: ₹${Number(slip.tds).toFixed(2)}`);
-        doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
-        doc.moveDown(0.5);
-
-        // Calculate total deductions including leave deductions
-        const totalDeductions = Number(slip.pf || 0) +
-            Number(slip.esi_employee || 0) +
-            Number(slip.professional_tax || 0) +
-            Number(slip.tds || 0) +
-            totalLeaveDeduction;
-
-        // Display total deductions
-        doc.moveDown(0.5);
-        doc.fontSize(12).text('Total Deductions', { underline: true });
-        doc.fontSize(10);
-        doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
-            Number(slip.esi_employee || 0) + 
-            Number(slip.professional_tax || 0) + 
-            Number(slip.tds || 0)).toFixed(2)}`);
-        doc.text(`Leave Deductions: ₹${totalLeaveDeduction.toFixed(2)}`);
-        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+        doc.text(`PF (12%): ₹${slip.pf.toFixed(2)}`);
+        doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
+        doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
+        doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
+        
+        if (slip.otherSum > 0) {
+            Object.entries(slip.other_deductions).forEach(([key, value]) => {
+                doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
+            });
+        }
         doc.moveDown(0.5);
 
         // Summary Section
-        doc.fontSize(12).text('Summary', { underline: true });
-        doc.fontSize(10);
-        doc.text(`Gross Salary: ₹${Number(slip.gross).toFixed(2)}`);
-        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-        doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
+        const totalStatutoryDeductions = slip.pf + slip.esi_employee + slip.professional_tax + slip.tds + slip.otherSum;
+        const totalDeductions = totalStatutoryDeductions + Number(slip.leave_deduction);
 
-        // Footer
+        doc.fontSize(12).text('SUMMARY', { underline: true });
+        doc.fontSize(10);
+        doc.text(`Gross Salary: ₹${slip.gross_pay.toFixed(2)}`);
+        doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions.toFixed(2)}`);
+        doc.text(`Leave Deductions: ₹${slip.leave_deduction.toFixed(2)}`);
+        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+        doc.moveDown(0.3);
+        doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
+        
         doc.moveDown();
         doc.fontSize(8);
-        doc.text('This is a computer generated payslip and does not require signature.', {
+        doc.text('This is a computer-generated payslip and does not require signature.', {
             align: 'center',
             italics: true
         });
@@ -731,7 +731,6 @@ router.get('/payslip-details/:userId', async (req, res) => {
                 pr.net_pay,
                 pr.pf,
                 pr.esi_employee,
-                pr.esi_employer,
                 pr.professional_tax,
                 pr.tds,
                 pr.overtime_pay
@@ -914,57 +913,59 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
         throw new Error(`User not found with identifier: ${identifier}`);
     }
 
-    // Get approved leaves count with proper date filtering
-    const leaveQuery = `
-        SELECT COUNT(*) as approved_leaves 
-        FROM leaves 
-        WHERE user_id = $1 
-        AND status = 'approved'  
-        AND EXTRACT(MONTH FROM start_date) = $2
-        AND EXTRACT(YEAR FROM start_date) = $3`;
+    // Get salary config
+    let cfg = null;
+    try {
+        const qc = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
+        cfg = qc.rows[0] || null;
+    } catch (e) {
+        console.warn('Could not fetch salary config:', e?.message);
+    }
 
-    const leaveResult = await pool.query(leaveQuery, [
-        dbUserId, 
-        Number(month),
-        Number(year)
-    ]);
+    // Use default config if not found - ADJUSTED FOR NET PAY OF 10000
+    if (!cfg) {
+        const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
+        const role = (ures.rows[0]?.role || '').toString().toLowerCase();
+        
+        // Adjusted salaries to achieve net pay of ~10000 after deductions
+        let basicSalary = 6000;  // Default
+        let hraSalary = 2400;    // Default
+        let otherAllowance = 1600;  // Default
+        
+        if (role === 'engineer') {
+            basicSalary = 6000;  // 60% of gross
+            hraSalary = 2400;    // 24% of gross
+            otherAllowance = 1600;  // 16% of gross
+            // Gross: 10000, Deductions: ~1000, Net: ~9000
+        } else if (role === 'hr') {
+            basicSalary = 7500;  // 60% of gross
+            hraSalary = 3000;    // 24% of gross
+            otherAllowance = 2000;  // 16% of gross
+            // Gross: 12500, Deductions: ~1250, Net: ~11250
+        } else if (role === 'admin') {
+            basicSalary = 9000;  // 60% of gross
+            hraSalary = 3600;    // 24% of gross
+            otherAllowance = 2400;  // 16% of gross
+            // Gross: 15000, Deductions: ~1500, Net: ~13500
+        }
+        
+        const basic = Number(basicSalary.toFixed(2));
+        const hra = Number(hraSalary.toFixed(2));
+        const allowances = { other: Number(otherAllowance.toFixed(2)) };
+        cfg = { user_id: dbUserId, basic, hra, allowances, deductions: {} };
+    }
 
-    const approvedLeaves = parseInt(leaveResult.rows[0]?.approved_leaves || 0);
-    const totalLeaveDeduction = approvedLeaves * LEAVE_DEDUCTION_AMOUNT;
+    // Compute payroll with updated logic
+    const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
 
-    // Get payroll record
-    const payrollRecord = await pool.query(`
-        SELECT 
-            pr.*,
-            u.name as employee_name,
-            u.email as employee_email
-        FROM payroll_records pr
-        JOIN users u ON u.id = pr.user_id
-        WHERE pr.user_id = $1 AND pr.year = $2 AND pr.month = $3
-    `, [dbUserId, Number(year), Number(month)]);
-
-    // Use actual record or create default
-    let slip = payrollRecord.rows[0] || {
-        basic: 0,
-        hra: 0,
-        allowances: {},
-        overtime_pay: 0,
-        pf: 0,
-        esi_employee: 0,
-        professional_tax: 0,
-        tds: 0,
-        leave_days: approvedLeaves,
-        leave_deduction: totalLeaveDeduction,
-        gross: 0,
-        net_pay: 0
-    };
-
-    // Adjust net pay for leave deductions
-    slip.net_pay = Number(slip.net_pay || 0) - totalLeaveDeduction;
+    // Get user details
+    const userQuery = await pool.query('SELECT name, email FROM users WHERE id=$1', [dbUserId]);
+    const userName = userQuery.rows[0]?.name || 'Employee';
 
     // Generate PDF if requested
     let savedPath = null;
     let fileName = null;
+
     if (opts.savePdf) {
         try {
             const uploadsBase = process.env.UPLOADS_DIR
@@ -978,8 +979,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
 
             const doc = new PDFDocument({ size: 'A4', margin: 40 });
             const writeStream = fs.createWriteStream(filePath);
-            
-            // Create a promise to handle stream completion
+
             const streamFinished = new Promise((resolve, reject) => {
                 writeStream.on('finish', resolve);
                 writeStream.on('error', reject);
@@ -988,74 +988,82 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.pipe(writeStream);
 
             // PDF Header
-            doc.fontSize(16).text('Salary Slip', { align: 'center' });
+            doc.fontSize(16).text('SALARY SLIP', { align: 'center' });
             doc.moveDown();
-            doc.fontSize(10).text(`Month: ${month}/${year}`);
+            doc.fontSize(10);
+            doc.text(`Month: ${month}/${year}`, { align: 'left' });
             doc.text(`Employee ID: ${dbUserId}`);
-            doc.text(`Employee Name: ${slip.employee_name}`);
+            doc.text(`Employee Name: ${userName}`);
             doc.moveDown(0.5);
 
             // Attendance & Leave Section
-            doc.fontSize(12).text('Attendance & Leave', { underline: true });
+            doc.fontSize(12).text('ATTENDANCE & LEAVE', { underline: true });
             doc.fontSize(10);
-            doc.text(`Total Approved Leaves: ${approvedLeaves} days`);
-            doc.text(`Leave Deduction Rate: ₹${LEAVE_DEDUCTION_AMOUNT} per day`);
-            doc.text(`Total Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
+            doc.text(`Total Working Days (Calendar): ${slip.total_working_days} days`);
+            doc.text(`Worked Days: ${slip.worked_days} days`);
+            doc.text(`Leave - Full Days: ${slip.leave_full_days} days`);
+            doc.text(`Leave - Half Days: ${slip.leave_half_days} days`);
+            doc.text(`Free Full Day: 1 day`);
+            doc.text(`Free Half Day: 1 day`);
+            doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} days`);
+            doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} days`);
             doc.moveDown();
 
             // Earnings Section
-            doc.fontSize(12).text('Earnings', { underline: true });
+            doc.fontSize(12).text('EARNINGS', { underline: true });
             doc.fontSize(10);
-            doc.text(`Basic: ₹${Number(slip.basic).toFixed(2)}`);
-            doc.text(`HRA: ₹${Number(slip.hra).toFixed(2)}`);
+            doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
+            doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
             
-            if (slip.allowances) {
-                const allowances = typeof slip.allowances === 'string' 
-                    ? JSON.parse(slip.allowances) 
-                    : slip.allowances;
-                Object.entries(allowances).forEach(([key, value]) => {
+            if (slip.allowancesSum > 0) {
+                Object.entries(slip.allowances).forEach(([key, value]) => {
                     doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
                 });
             }
-            doc.text(`Overtime Pay: ₹${Number(slip.overtime_pay || 0).toFixed(2)}`);
             doc.moveDown(0.5);
 
-            // Deductions Section
-            doc.fontSize(12).text('Deductions', { underline: true });
-            doc.fontSize(10);
-            doc.text(`PF: ₹${Number(slip.pf).toFixed(2)}`);
-            doc.text(`ESI (Employee): ₹${Number(slip.esi_employee).toFixed(2)}`);
-            doc.text(`Professional Tax: ₹${Number(slip.professional_tax).toFixed(2)}`);
-            doc.text(`TDS: ₹${Number(slip.tds).toFixed(2)}`);
-            doc.text(`Leave Deduction: ₹${totalLeaveDeduction.toFixed(2)}`);
-            doc.moveDown(0.5);
+            // Leave Deduction Section
+            if (slip.leave_deduction > 0) {
+                doc.fontSize(12).text('LEAVE DEDUCTION', { underline: true });
+                doc.fontSize(10);
+                doc.text(`Per Day Salary: ₹${slip.per_day_salary.toFixed(2)}`);
+                doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} × ₹${slip.per_day_salary.toFixed(2)} = ₹${(slip.chargeable_full_days * slip.per_day_salary).toFixed(2)}`);
+                doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} × ₹${(slip.per_day_salary / 2).toFixed(2)} = ₹${(slip.chargeable_half_days * (slip.per_day_salary / 2)).toFixed(2)}`);
+                doc.text(`Total Leave Deduction: ₹${slip.leave_deduction.toFixed(2)}`);
+                doc.moveDown(0.5);
+            }
 
-            const totalDeductions = Number(slip.pf || 0) +
-                Number(slip.esi_employee || 0) +
-                Number(slip.professional_tax || 0) +
-                Number(slip.tds || 0) +
-                totalLeaveDeduction;
-
-            doc.fontSize(12).text('Total Deductions', { underline: true });
+            // Statutory Deductions Section
+            doc.fontSize(12).text('STATUTORY DEDUCTIONS', { underline: true });
             doc.fontSize(10);
-            doc.text(`Statutory Deductions: ₹${(Number(slip.pf || 0) + 
-                Number(slip.esi_employee || 0) + 
-                Number(slip.professional_tax || 0) + 
-                Number(slip.tds || 0)).toFixed(2)}`);
-            doc.text(`Leave Deductions: ₹${totalLeaveDeduction.toFixed(2)}`);
-            doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+            doc.text(`PF (12%): ₹${slip.pf.toFixed(2)}`);
+            doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
+            doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
+            doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
+            
+            if (slip.otherSum > 0) {
+                Object.entries(slip.other_deductions).forEach(([key, value]) => {
+                    doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
+                });
+            }
             doc.moveDown(0.5);
 
             // Summary Section
-            doc.fontSize(12).text('Summary', { underline: true });
-            doc.fontSize(10);
-            doc.text(`Gross Salary: ₹${Number(slip.gross).toFixed(2)}`);
-            doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-            doc.text(`Net Payable: ₹${(Number(slip.gross) - totalDeductions).toFixed(2)}`);
+            const totalStatutoryDeductions = slip.pf + slip.esi_employee + slip.professional_tax + slip.tds + slip.otherSum;
+            const totalDeductions = totalStatutoryDeductions + Number(slip.leave_deduction);
 
+            doc.fontSize(12).text('SUMMARY', { underline: true });
+            doc.fontSize(10);
+            doc.text(`Gross Salary: ₹${slip.gross_pay.toFixed(2)}`);
+            doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions.toFixed(2)}`);
+            doc.text(`Leave Deductions: ₹${slip.leave_deduction.toFixed(2)}`);
+            doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
+            doc.moveDown(0.3);
+            doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
+            
             doc.moveDown();
             doc.fontSize(8);
-            doc.text('This is a computer generated payslip and does not require signature.', {
+            doc.text('This is a computer-generated payslip and does not require signature.', {
                 align: 'center',
                 italics: true
             });
@@ -1063,47 +1071,11 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.end();
             await streamFinished;
 
+            // Save to database
             const existingRecord = await pool.query(`
-                SELECT *
-                FROM payroll_records
+                SELECT id FROM payroll_records
                 WHERE user_id = $1 AND year = $2 AND month = $3
             `, [dbUserId, Number(year), Number(month)]);
-
-            const lastMonthDate = new Date(year, month - 2, 1);
-            const lastMonthRecord = await pool.query(`
-                SELECT 
-                    basic, hra, allowances,
-                    overtime_pay, pf, esi_employee,
-                    professional_tax, tds, gross, net_pay
-                FROM payroll_records 
-                WHERE user_id = $1 
-                AND year = $2 
-                AND month = $3
-            `, [
-                dbUserId,
-                lastMonthDate.getFullYear(),
-                lastMonthDate.getMonth() + 1
-            ]);
-
-            const lastMonthData = lastMonthRecord.rows[0] || {
-                basic: 0,
-                hra: 0,
-                allowances: {},
-                overtime_pay: 0,
-                pf: 0,
-                esi_employee: 0,
-                professional_tax: 0,
-                tds: 0,
-                gross: 0,
-                net_pay: 0
-            };
-
-            slip = {
-                ...lastMonthData,
-                leave_days: approvedLeaves,
-                leave_deduction: totalLeaveDeduction,
-                employee_name: slip.employee_name || 'Employee'
-            };
 
             if (existingRecord.rows.length > 0) {
                 await pool.query(`
@@ -1111,81 +1083,62 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
                     SET 
                         basic = $4,
                         hra = $5,
-                        allowances = $6,
-                        overtime_pay = $7,
-                        pf = $8,
-                        esi_employee = $9,
-                        professional_tax = $10,
-                        tds = $11,
+                        allowances = $6::jsonb,
+                        pf = $7,
+                        esi_employee = $8,
+                        professional_tax = $9,
+                        tds = $10,
+                        deductions = $11::jsonb,
                         gross = $12,
                         net_pay = $13,
-                        leave_days = $14,
-                        leave_deduction = $15,
-                        pdf_path = $16,
-                        file_name = $17,
+                        leave_full_days = $14,
+                        leave_half_days = $15,
+                        chargeable_full_days = $16,
+                        chargeable_half_days = $17,
+                        leave_deduction = $18,
+                        pdf_path = $19,
+                        file_name = $20,
                         updated_at = NOW()
                     WHERE user_id = $1 
                     AND year = $2 
                     AND month = $3
                 `, [
-                    dbUserId,
-                    Number(year),
-                    Number(month),
-                    lastMonthData.basic,
-                    lastMonthData.hra,
-                    lastMonthData.allowances,
-                    lastMonthData.overtime_pay,
-                    lastMonthData.pf,
-                    lastMonthData.esi_employee,
-                    lastMonthData.professional_tax,
-                    lastMonthData.tds,
-                    lastMonthData.gross,
-                    lastMonthData.net_pay,
-                    approvedLeaves,
-                    totalLeaveDeduction,
-                    savedPath,
-                    fileName
+                    dbUserId, Number(year), Number(month),
+                    slip.basic, slip.hra, JSON.stringify(slip.allowances),
+                    slip.pf, slip.esi_employee, slip.professional_tax, slip.tds,
+                    JSON.stringify(slip.other_deductions),
+                    slip.gross_pay, slip.net_pay,
+                    slip.leave_full_days, slip.leave_half_days,
+                    slip.chargeable_full_days, slip.chargeable_half_days,
+                    slip.leave_deduction,
+                    savedPath, fileName
                 ]);
             } else {
                 await pool.query(`
                     INSERT INTO payroll_records (
                         user_id, year, month,
-                        basic, hra, allowances,
-                        overtime_pay, pf, esi_employee,
-                        professional_tax, tds, gross, net_pay,
-                        leave_days, leave_deduction,
+                        basic, hra, allowances, pf, esi_employee,
+                        professional_tax, tds, deductions,
+                        gross, net_pay,
+                        leave_full_days, leave_half_days,
+                        chargeable_full_days, chargeable_half_days,
+                        leave_deduction,
                         pdf_path, file_name,
                         created_at, updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
                 `, [
-                    dbUserId,
-                    Number(year),
-                    Number(month),
-                    lastMonthData.basic,
-                    lastMonthData.hra,
-                    lastMonthData.allowances,
-                    lastMonthData.overtime_pay,
-                    lastMonthData.pf,
-                    lastMonthData.esi_employee,
-                    lastMonthData.professional_tax,
-                    lastMonthData.tds,
-                    lastMonthData.gross,
-                    lastMonthData.net_pay,
-                    approvedLeaves,
-                    totalLeaveDeduction,
-                    savedPath,
-                    fileName
+                    dbUserId, Number(year), Number(month),
+                    slip.basic, slip.hra, JSON.stringify(slip.allowances),
+                    slip.pf, slip.esi_employee, slip.professional_tax, slip.tds,
+                    JSON.stringify(slip.other_deductions),
+                    slip.gross_pay, slip.net_pay,
+                    slip.leave_full_days, slip.leave_half_days,
+                    slip.chargeable_full_days, slip.chargeable_half_days,
+                    slip.leave_deduction,
+                    savedPath, fileName
                 ]);
             }
-
-            console.log('Successfully generated payslip:', {
-                userId: dbUserId,
-                year,
-                month,
-                path: savedPath,
-                fileName
-            });
 
         } catch (e) {
             console.error('Failed to save PDF:', e);
@@ -1200,11 +1153,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
         month: Number(month),
         path: savedPath,
         fileName: fileName,
-        slip: {
-            ...slip,
-            leave_days: approvedLeaves,
-            leave_deduction: totalLeaveDeduction
-        }
+        slip: slip
     };
 }
 

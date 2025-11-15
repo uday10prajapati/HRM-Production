@@ -171,42 +171,115 @@ export default function Payroll() {
             doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
             
             let y = 40;
+            
+            // Attendance & Leave Section
+            doc.setFontSize(10);
+            doc.text('ATTENDANCE & LEAVE:', 14, y);
+            y += 6;
+            doc.setFontSize(9);
+            doc.text(`Total Working Days: ${slip.total_working_days || 0}`, 14, y);
+            y += 5;
+            doc.text(`Leave - Full Days: ${slip.leave_full_days || 0}`, 14, y);
+            y += 5;
+            doc.text(`Leave - Half Days: ${slip.leave_half_days || 0}`, 14, y);
+            y += 5;
+            doc.text(`Chargeable Full Days: ${slip.chargeable_full_days || 0}`, 14, y);
+            y += 5;
+            doc.text(`Chargeable Half Days: ${slip.chargeable_half_days || 0}`, 14, y);
+            y += 8;
+
+            // Earnings Section
+            doc.setFontSize(10);
+            doc.text('EARNINGS:', 14, y);
+            y += 6;
             const earningData = [
-                ['Basic', `₹${slip.basic}`],
-                ['HRA', `₹${slip.hra}`],
+                ['Basic', `₹${slip.basic || 0}`],
+                ['HRA', `₹${slip.hra || 0}`],
+                ['Allowances', `₹${slip.allowancesSum || 0}`],
             ];
-            doc.text('Earnings:', 14, y);
             doc.autoTable({ 
-                startY: y + 4, 
+                startY: y, 
                 head: [['Earning', 'Amount']], 
                 body: earningData,
                 theme: 'grid',
-                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] }
+                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+                columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
             });
 
-            y = doc.lastAutoTable.finalY + 10;
-
-            doc.text(`Gross: ₹${slip.gross}`, 14, y);
+            y = doc.lastAutoTable.finalY + 8;
+            doc.setFontSize(10);
+            doc.text(`Gross Salary: ₹${slip.gross_pay || slip.gross || 0}`, 14, y);
             y += 8;
 
+            // Leave Deduction Section
+            if (slip.leave_deduction > 0) {
+                doc.setFontSize(10);
+                doc.text('LEAVE DEDUCTION:', 14, y);
+                y += 6;
+                const leaveData = [
+                    [`Per Day Salary`, `₹${slip.per_day_salary || 0}`],
+                    [`Chargeable Full (${slip.chargeable_full_days || 0} × ₹${slip.per_day_salary || 0})`, `₹${(slip.chargeable_full_days * slip.per_day_salary) || 0}`],
+                    [`Chargeable Half (${slip.chargeable_half_days || 0} × ₹${(slip.per_day_salary / 2) || 0})`, `₹${(slip.chargeable_half_days * (slip.per_day_salary / 2)) || 0}`],
+                ];
+                doc.autoTable({
+                    startY: y,
+                    head: [['Description', 'Amount']],
+                    body: leaveData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [255, 200, 124], textColor: [0, 0, 0] },
+                    columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
+                });
+                y = doc.lastAutoTable.finalY + 8;
+                doc.setFontSize(10);
+                doc.text(`Total Leave Deduction: ₹${slip.leave_deduction || 0}`, 14, y);
+                y += 8;
+            }
+
+            // Deductions Section
+            doc.setFontSize(10);
+            doc.text('STATUTORY DEDUCTIONS:', 14, y);
+            y += 6;
             const deductions = [
-                ['PF', `₹${slip.pf || 0}`],
+                ['PF (12%)', `₹${slip.pf || 0}`],
                 ['ESI (Employee)', `₹${slip.esi_employee || 0}`],
                 ['Professional Tax', `₹${slip.professional_tax || 0}`],
                 ['TDS', `₹${slip.tds || 0}`],
             ];
 
-            doc.text(`Deductions:`, 14, y + 2);
             doc.autoTable({ 
-                startY: y + 6, 
+                startY: y, 
                 head: [['Deduction', 'Amount']], 
                 body: deductions,
                 theme: 'grid',
-                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] }
+                headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+                columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
             });
 
             y = doc.lastAutoTable.finalY + 10;
-            doc.text(`Net Pay: ₹${slip.net_pay}`, 14, y);
+            
+            // Summary
+            const totalStatutoryDeductions = (slip.pf || 0) + (slip.esi_employee || 0) + (slip.professional_tax || 0) + (slip.tds || 0) + (slip.otherSum || 0);
+            const totalDeductions = totalStatutoryDeductions + (slip.leave_deduction || 0);
+            
+            doc.setFontSize(10);
+            doc.text('SUMMARY:', 14, y);
+            y += 6;
+            doc.text(`Gross Salary: ₹${slip.gross_pay || slip.gross || 0}`, 14, y);
+            y += 5;
+            doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions}`, 14, y);
+            y += 5;
+            doc.text(`Leave Deductions: ₹${slip.leave_deduction || 0}`, 14, y);
+            y += 5;
+            doc.text(`Total Deductions: ₹${totalDeductions}`, 14, y);
+            y += 8;
+            
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text(`NET PAY: ₹${slip.net_pay || 0}`, 14, y);
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(8);
+            doc.text('This is a computer-generated payslip and does not require signature.', 14, doc.internal.pageSize.height - 10, { align: 'left' });
 
             doc.save(`salary_slip_${user.email}_${year}_${month}.pdf`);
             toast.info(`Payslip download started for ${user.name}.`);
@@ -219,61 +292,59 @@ export default function Payroll() {
 
     // Fix applied here: Use getRequesterHeaders() instead of getAuthHeaders()
     async function viewSlip(user) {
-    try {
-        const headers = getRequesterHeaders();
-        const yearMonthPath = `${year}/${month}`;
-
-        // Step 1: Check if payslip exists
-        let checkRes;
         try {
-            checkRes = await axios.get(`/api/payroll/pdf-file/${user.id}/${yearMonthPath}`, { headers });
-            console.log("Payslip metadata:", checkRes.data);
-        } catch (checkErr) {
-            const status = checkErr.response?.status;
-            if (status === 404) {
-                const confirmGenerate = window.confirm("Payslip not found. Would you like to generate it?");
-                if (confirmGenerate) {
-                    await generatePayslipForUser(user);
-                    // Wait a bit longer for file creation
-                    setTimeout(() => viewSlip(user), 3000);
+            const headers = getRequesterHeaders();
+            const yearMonthPath = `${year}/${month}`;
+
+            // Step 1: Check if payslip exists
+            let checkRes;
+            try {
+                checkRes = await axios.get(`/api/payroll/pdf-file/${user.id}/${yearMonthPath}`, { headers });
+                console.log("Payslip metadata:", checkRes.data);
+            } catch (checkErr) {
+                const status = checkErr.response?.status;
+                if (status === 404) {
+                    const confirmGenerate = window.confirm("Payslip not found. Would you like to generate it?");
+                    if (confirmGenerate) {
+                        await generatePayslipForUser(user);
+                        // Wait a bit longer for file creation
+                        setTimeout(() => viewSlip(user), 3000);
+                    }
+                    return;
                 }
-                return;
+                if (status === 401) {
+                    toast.error("Unauthorized — please log in again.");
+                    return;
+                }
+                throw checkErr;
             }
+
+            // Step 2: Fetch PDF
+            const pdfResponse = await axios.get(`/api/payroll/pdf/${user.id}/${yearMonthPath}`, {
+                headers: { ...headers, Accept: 'application/pdf' },
+                responseType: 'blob'
+            });
+
+            // Step 3: Display PDF
+            const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+            const blobUrl = window.URL.createObjectURL(blob);
+            setPdfUrl(blobUrl);
+            setShowPdfModal(true);
+            toast.success(`Opened payslip for ${user.name}`);
+
+        } catch (err) {
+            console.error("ViewSlip Error:", err);
+            const status = err.response?.status;
+
             if (status === 401) {
-                toast.error("Unauthorized — please log in again.");
-                return;
+                toast.error("Session expired or invalid token. Please log in again.");
+            } else if (status === 404) {
+                toast.warn("Payslip not found. Generate it first.");
+            } else {
+                toast.error("Error viewing payslip: " + (err.message || "Unknown error"));
             }
-            throw checkErr;
-        }
-
-        // Step 2: Fetch PDF
-        const pdfResponse = await axios.get(`/api/payroll/pdf/${user.id}/${yearMonthPath}`, {
-            headers: { ...headers, Accept: 'application/pdf' },
-            responseType: 'blob'
-        });
-
-        // Step 3: Display PDF
-        const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
-        const blobUrl = window.URL.createObjectURL(blob);
-        setPdfUrl(blobUrl);
-        setShowPdfModal(true);
-        toast.success(`Opened payslip for ${user.name}`);
-
-    } catch (err) {
-        console.error("ViewSlip Error:", err);
-        const status = err.response?.status;
-
-        if (status === 401) {
-            toast.error("Session expired or invalid token. Please log in again.");
-        } else if (status === 404) {
-            toast.warn("Payslip not found. Generate it first.");
-        } else {
-            toast.error("Error viewing payslip: " + (err.message || "Unknown error"));
         }
     }
-}
-
-
 
     // Add email validation - still useful
     function isValidEmail(email) {
