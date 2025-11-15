@@ -256,7 +256,7 @@ router.get('/compute/:userId/:year/:month', async (req, res) => {
     if (!dbUserId) return res.status(404).json({ error: 'user not found' });
 
     let cfg = null;
-    try { const qc = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]); cfg = qc.rows[0] || null; } catch (e) { /* continue */ }
+    try { const qc = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 LIMIT 1', [dbUserId]); cfg = qc.rows[0] || null; } catch (e) { /* continue */ }
     if (!cfg) {
       const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
       const role = (ures.rows[0]?.role || '').toString().toLowerCase();
@@ -350,15 +350,19 @@ router.get('/config/:userId', async (req, res) => {
 
 // GET /slip/:userId/:year/:month - return stored payroll record if present
 router.get('/slip/:userId/:year/:month', async (req, res) => {
-  const { userId, year, month } = req.params;
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
   try {
+    const { userId, year, month } = req.params;
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+
     const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
     const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
     const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
     const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
     const isSelf = String(requester) === String(userId);
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
+    
+    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
 
     const dbUserId = await resolveDbUserId(userId);
     if (!dbUserId) return res.status(404).json({ error: 'user not found' });
@@ -402,7 +406,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         // Get salary config
         let cfg = null;
         try {
-            const qc = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
+            const qc = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
             cfg = qc.rows[0] || null;
         } catch (e) {
             console.warn('Could not fetch salary config:', e?.message);
@@ -916,7 +920,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
     // Get salary config
     let cfg = null;
     try {
-        const qc = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
+        const qc = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
         cfg = qc.rows[0] || null;
     } catch (e) {
         console.warn('Could not fetch salary config:', e?.message);
@@ -1360,6 +1364,299 @@ router.get('/get-path/:userId/:year/:month', requireAuth, async (req, res) => {
             message: 'Failed to fetch payslip path'
         });
     }
+});
+
+// Fix applied here: Calculate deductions properly in viewSlip
+async function viewSlip(user) {
+    try {
+        const headers = getRequesterHeaders();
+        const yearMonthPath = `${year}/${month}`;
+
+        // Step 1: Check if payslip exists
+        let checkRes;
+        try {
+            checkRes = await axios.get(`/api/payroll/pdf-file/${user.id}/${yearMonthPath}`, { headers });
+            console.log("Payslip metadata:", checkRes.data);
+        } catch (checkErr) {
+            const status = checkErr.response?.status;
+            if (status === 404) {
+                const confirmGenerate = window.confirm("Payslip not found. Would you like to generate it?");
+                if (confirmGenerate) {
+                    await generatePayslipForUser(user);
+                    // Wait a bit longer for file creation
+                    setTimeout(() => viewSlip(user), 3000);
+                }
+                return;
+            }
+            if (status === 401) {
+                toast.error("Unauthorized — please log in again.");
+                return;
+            }
+            throw checkErr;
+        }
+
+        // Step 2: Fetch slip data for calculations
+        let slipData = null;
+        try {
+            const slipRes = await axios.get(`/api/payroll/slip/${user.id}/${year}/${month}`, { headers });
+            slipData = slipRes.data;
+            console.log("Slip data:", slipData);
+        } catch (slipErr) {
+            console.warn("Could not fetch slip data, using defaults from PDF");
+        }
+
+        // Step 3: Fetch PDF
+        const pdfResponse = await axios.get(`/api/payroll/pdf/${user.id}/${yearMonthPath}`, {
+            headers: { ...headers, Accept: 'application/pdf' },
+            responseType: 'blob'
+        });
+
+        // Step 4: Create enhanced PDF with proper calculations
+        const doc = new jsPDF();
+        doc.setFontSize(12);
+        doc.text(`Salary Slip - ${month}/${year}`, 14, 20);
+        doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
+        
+        let y = 40;
+        
+        // Use fetched slip data if available, otherwise use default values
+        const slip = slipData || {
+            total_working_days: 0,
+            worked_days: 0,
+            leave_full_days: 0,
+            leave_half_days: 0,
+            chargeable_full_days: 0,
+            chargeable_half_days: 0,
+            basic: 0,
+            hra: 0,
+            allowancesSum: 0,
+            gross_pay: 0,
+            per_day_salary: 0,
+            pf: 0,
+            esi_employee: 0,
+            professional_tax: 0,
+            tds: 0,
+            otherSum: 0,
+            leave_deduction: 0,
+            net_pay: 0
+        };
+
+        // Attendance & Leave Section
+        doc.setFontSize(10);
+        doc.text('ATTENDANCE & LEAVE:', 14, y);
+        y += 6;
+        doc.setFontSize(9);
+        doc.text(`Total Working Days: ${slip.total_working_days || 0}`, 14, y);
+        y += 5;
+        doc.text(`Leave - Full Days: ${slip.leave_full_days || 0}`, 14, y);
+        y += 5;
+        doc.text(`Leave - Half Days: ${slip.leave_half_days || 0}`, 14, y);
+        y += 5;
+        doc.text(`Chargeable Full Days: ${slip.chargeable_full_days || 0}`, 14, y);
+        y += 5;
+        doc.text(`Chargeable Half Days: ${slip.chargeable_half_days || 0}`, 14, y);
+        y += 8;
+
+        // Earnings Section
+        doc.setFontSize(10);
+        doc.text('EARNINGS:', 14, y);
+        y += 6;
+        const earningData = [
+            ['Basic', `₹${Number(slip.basic || 0).toFixed(2)}`],
+            ['HRA', `₹${Number(slip.hra || 0).toFixed(2)}`],
+            ['Allowances', `₹${Number(slip.allowancesSum || 0).toFixed(2)}`],
+        ];
+        doc.autoTable({ 
+            startY: y, 
+            head: [['Earning', 'Amount']], 
+            body: earningData,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+            columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
+        });
+
+        y = doc.lastAutoTable.finalY + 8;
+        doc.setFontSize(10);
+        doc.text(`Gross Salary: ₹${Number(slip.gross_pay || slip.gross || 0).toFixed(2)}`, 14, y);
+        y += 8;
+
+        // Leave Deduction Section
+        if (Number(slip.leave_deduction || 0) > 0) {
+            doc.setFontSize(10);
+            doc.text('LEAVE DEDUCTION:', 14, y);
+            y += 6;
+            const leaveData = [
+                [`Per Day Salary`, `₹${Number(slip.per_day_salary || 0).toFixed(2)}`],
+                [`Chargeable Full (${Number(slip.chargeable_full_days || 0)} × ₹${Number(slip.per_day_salary || 0).toFixed(2)})`, `₹${(Number(slip.chargeable_full_days || 0) * Number(slip.per_day_salary || 0)).toFixed(2)}`],
+                [`Chargeable Half (${Number(slip.chargeable_half_days || 0)} × ₹${(Number(slip.per_day_salary || 0) / 2).toFixed(2)})`, `₹${(Number(slip.chargeable_half_days || 0) * (Number(slip.per_day_salary || 0) / 2)).toFixed(2)}`],
+            ];
+            doc.autoTable({
+                startY: y,
+                head: [['Description', 'Amount']],
+                body: leaveData,
+                theme: 'grid',
+                headStyles: { fillColor: [255, 200, 124], textColor: [0, 0, 0] },
+                columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
+            });
+            y = doc.lastAutoTable.finalY + 8;
+            doc.setFontSize(10);
+            doc.text(`Total Leave Deduction: ₹${Number(slip.leave_deduction || 0).toFixed(2)}`, 14, y);
+            y += 8;
+        }
+
+        // Deductions Section
+        doc.setFontSize(10);
+        doc.text('STATUTORY DEDUCTIONS:', 14, y);
+        y += 6;
+        const deductions = [
+            ['PF (12%)', `₹${Number(slip.pf || 0).toFixed(2)}`],
+            ['ESI (Employee)', `₹${Number(slip.esi_employee || 0).toFixed(2)}`],
+            ['Professional Tax', `₹${Number(slip.professional_tax || 0).toFixed(2)}`],
+            ['TDS', `₹${Number(slip.tds || 0).toFixed(2)}`],
+        ];
+
+        doc.autoTable({ 
+            startY: y, 
+            head: [['Deduction', 'Amount']], 
+            body: deductions,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
+            columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 50, halign: 'right' } }
+        });
+
+        y = doc.lastAutoTable.finalY + 10;
+        
+        // Summary with proper calculations
+        const pf = Number(slip.pf || 0);
+        const esi = Number(slip.esi_employee || 0);
+        const pt = Number(slip.professional_tax || 0);
+        const tds = Number(slip.tds || 0);
+        const otherDed = Number(slip.otherSum || 0);
+        const leaveDed = Number(slip.leave_deduction || 0);
+        
+        const totalStatutoryDeductions = pf + esi + pt + tds + otherDed;
+        const totalDeductions = totalStatutoryDeductions + leaveDed;
+        const grossSalary = Number(slip.gross_pay || slip.gross || 0);
+        const netPay = grossSalary - totalDeductions;
+        
+        doc.setFontSize(10);
+        doc.text('SUMMARY:', 14, y);
+        y += 6;
+        doc.text(`Gross Salary: ₹${grossSalary.toFixed(2)}`, 14, y);
+        y += 5;
+        doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions.toFixed(2)}`, 14, y);
+        y += 5;
+        doc.text(`Leave Deductions: ₹${leaveDed.toFixed(2)}`, 14, y);
+        y += 5;
+        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`, 14, y);
+        y += 8;
+        
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text(`NET PAY: ₹${netPay.toFixed(2)}`, 14, y);
+        
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        doc.text('This is a computer-generated payslip and does not require signature.', 14, doc.internal.pageSize.height - 10, { align: 'left' });
+
+        // Display PDF
+        const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+        const blobUrl = window.URL.createObjectURL(blob);
+        setPdfUrl(blobUrl);
+        setShowPdfModal(true);
+        toast.success(`Opened payslip for ${user.name}`);
+
+    } catch (err) {
+        console.error("ViewSlip Error:", err);
+        const status = err.response?.status;
+
+        if (status === 401) {
+            toast.error("Session expired or invalid token. Please log in again.");
+        } else if (status === 404) {
+            toast.warn("Payslip not found. Generate it first.");
+        } else {
+            toast.error("Error viewing payslip: " + (err.message || "Unknown error"));
+        }
+    }
+}
+
+// GET /slip/:userId/:year/:month - fetch saved slip data from database
+router.get('/slip/:userId/:year/:month', async (req, res) => {
+  try {
+    const { userId, year, month } = req.params;
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+
+    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
+    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+    const isSelf = String(requester) === String(userId);
+    
+    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const dbUserId = await resolveDbUserId(userId);
+    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+
+    // Fetch saved payroll record from database
+    const result = await pool.query(`
+      SELECT 
+        user_id, year, month,
+        basic, hra, allowances, pf, esi_employee,
+        professional_tax, tds, deductions,
+        gross, net_pay,
+        leave_full_days, leave_half_days,
+        chargeable_full_days, chargeable_half_days,
+        leave_deduction, per_day_salary,
+        pdf_path, file_name
+      FROM payroll_records
+      WHERE user_id::text = $1 
+      AND year = $2 
+      AND month = $3
+      LIMIT 1
+    `, [dbUserId, Number(year), Number(month)]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Payslip not found' });
+    }
+
+    const record = result.rows[0];
+    const slip = {
+      basic: Number(record.basic || 0),
+      hra: Number(record.hra || 0),
+      allowances: record.allowances || {},
+      allowancesSum: Object.values(record.allowances || {}).reduce((s, v) => s + Number(v || 0), 0),
+      pf: Number(record.pf || 0),
+      esi_employee: Number(record.esi_employee || 0),
+      professional_tax: Number(record.professional_tax || 0),
+      tds: Number(record.tds || 0),
+      other_deductions: record.deductions || {},
+      otherSum: Object.values(record.deductions || {}).reduce((s, v) => s + Number(v || 0), 0),
+      gross_pay: Number(record.gross || 0),
+      net_pay: Number(record.net_pay || 0),
+      leave_full_days: Number(record.leave_full_days || 0),
+      leave_half_days: Number(record.leave_half_days || 0),
+      chargeable_full_days: Number(record.chargeable_full_days || 0),
+      chargeable_half_days: Number(record.chargeable_half_days || 0),
+      leave_deduction: Number(record.leave_deduction || 0),
+      per_day_salary: Number(record.per_day_salary || 0),
+      total_working_days: 30, // Assuming 30 days per month
+      worked_days: 0 // Would need to calculate from attendance
+    };
+
+    return res.json({
+      success: true,
+      slip: slip
+    });
+
+  } catch (err) {
+    console.error('Error fetching slip:', err);
+    return res.status(500).json({
+      error: 'Failed to fetch payslip',
+      message: err.message
+    });
+  }
 });
 
 export default router;
