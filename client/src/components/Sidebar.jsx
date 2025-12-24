@@ -71,10 +71,10 @@ const Sidebar = () => {
   })();
 
   return (
-    <div className="min-h-screen w-72 bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col">
+    <div className="min-h-screen w-56 bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col">
       {/* Logo Section */}
-      <div className="p-6 border-b border-gray-700/50">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+      <div className="p-3 border-b border-gray-700/50">
+        <h1 className="text-lg font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
           HRM System
         </h1>
       </div>
