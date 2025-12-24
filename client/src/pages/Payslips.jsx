@@ -30,7 +30,7 @@ export default function Payslips() {
     async function viewSlip(slip) {
         if (slip?.pdf?.path) {
             // Use absolute URL with backend port
-            setPdfUrl(`http://localhost:5000/api/payroll/view-pdf?path=${encodeURIComponent(slip.pdf.path)}`);
+            setPdfUrl(`https://hrm-production.onrender.com/api/payroll/view-pdf?path=${encodeURIComponent(slip.pdf.path)}`);
             setShowPdfModal(true);
         } else {
             alert('PDF not available for this payslip');

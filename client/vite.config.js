@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       '^/uploads/.*': {
-        target: 'http://localhost:5000',
+        target: 'https://hrm-production.onrender.com',
         changeOrigin: true,
         secure: false,
       }

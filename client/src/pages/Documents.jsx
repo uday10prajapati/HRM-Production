@@ -3,7 +3,7 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import axios from 'axios';
 
-axios.defaults.baseURL = 'http://localhost:5000';
+axios.defaults.baseURL = 'https://hrm-production.onrender.com';
 
 export default function ViewAssignedCalls() {
   const [assignedCalls, setAssignedCalls] = useState([]);

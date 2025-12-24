@@ -4,7 +4,7 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
 // Add a base URL constant
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://hrm-production.onrender.com';
 
 const AssignCalls = () => {
     const [soccd, setSoccd] = useState('');
@@ -47,7 +47,7 @@ const AssignCalls = () => {
     const fetchEngineers = async () => {
         try {
             setLoading(true);
-            const res = await axios.post('http://localhost:5000/api/service-calls/search', {}, {
+            const res = await axios.post('https://hrm-production.onrender.com/api/service-calls/search', {}, {
                 // Add timeout
             });
 
@@ -126,7 +126,7 @@ const AssignCalls = () => {
             };
 
             const response = await axios.post(
-                'http://localhost:5000/api/service-calls/assign-call',
+                'https://hrm-production.onrender.com/api/service-calls/assign-call',
                 assignData,
                 {
                     headers: {
@@ -150,7 +150,7 @@ const AssignCalls = () => {
 
     const fetchAssignedCalls = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/api/service-calls/assigned-calls', {
+            const response = await axios.get('https://hrm-production.onrender.com/api/service-calls/assigned-calls', {
                 // Add timeout
             });
 
@@ -177,7 +177,7 @@ const AssignCalls = () => {
     const updateCallStatus = async (callId, newStatus) => {
         try {
             const response = await axios.put(
-                `http://localhost:5000/api/service-calls/update-status/${callId}`,
+                `https://hrm-production.onrender.com/api/service-calls/update-status/${callId}`,
                 { status: newStatus }
             );
             if (response.data.success) {

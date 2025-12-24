@@ -15,7 +15,7 @@ export default function ApplyLeave() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
-  const API_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:5000';
+  const API_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_URL) || 'https://hrm-production.onrender.com';
 
   function getUserFromStorage() {
     const keys = ['user', 'currentUser', 'auth', 'current_user'];

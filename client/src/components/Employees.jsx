@@ -5,7 +5,7 @@ export default function Employees() {
 
     useEffect(() => {
         // Fetch users from backend API
-        fetch("http://localhost:5000/api/users")
+        fetch("https://hrm-production.onrender.com/api/users")
             .then((res) => res.json())
             .then((data) => setUsers(data))
             .catch(console.error);
