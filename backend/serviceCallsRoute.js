@@ -425,50 +425,12 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
 
 // Move this route to the top of your routes (before any :id routes)
 router.post('/search', async (req, res) => {
-    let client = null;
     try {
-        const { soccd, society } = req.body;
+        const { soccd, society } = req.body || {};
+        console.log('=== SEARCH ROUTE CALLED ===');
         console.log('Search params:', { soccd, society });
         
-        client = await pool.connect();
-        
-    // Query for societies: combine three source tables and return unified
-    // columns named `code`, `society`, `taluka` so the frontend can render
-    // a single table. Keep a SOURCE column to know origin if needed.
-    const societyQuery = `
-      SELECT * FROM (
-        SELECT 
-          'Tapi'::text AS source,
-          "SOCCD"::text AS code,
-          "SOCIETY"::text AS society,
-          "TALUKA NAME"::text AS taluka
-        FROM service_call_tapi
-        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
-          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-        UNION ALL
-        SELECT 
-          'Surat'::text AS source,
-          "SOCCD"::text AS code,
-          "SOCIETY"::text AS society,
-          "TALUKA NAME"::text AS taluka
-        FROM service_call_surat
-        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
-          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-        UNION ALL
-        SELECT 
-          'Dairy'::text AS source,
-          "SOCCD"::text AS code,
-          "SOCIETY"::text AS society,
-          "TALUKA NAME"::text AS taluka
-        FROM service_call_dairy_list
-        WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
-          AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
-      ) combined_results
-      ORDER BY source, society
-      LIMIT 200000
-    `;
-
-        // Query for engineers
+        // Query for engineers - this is the main query
         const engineerQuery = `
             SELECT 
                 id,
@@ -481,37 +443,61 @@ router.post('/search', async (req, res) => {
             ORDER BY name ASC
         `;
 
-        // Execute both queries
-        const [societyResult, engineerResult] = await Promise.all([
-            client.query(societyQuery, [
-                soccd ? Number(soccd.trim()) : null,
-                society ? society.trim().toUpperCase() : null
-            ]),
-            client.query(engineerQuery)
-        ]);
-        
-        console.log('Query results - Societies:', societyResult.rows.length);
-        console.log('Query results - Engineers:', engineerResult.rows.length);
-        
-        res.json({
-            success: true,
-            data: {
-                societies: societyResult.rows,
-                engineers: engineerResult.rows
+        try {
+            console.log('Executing engineer query...');
+            const engineerResult = await pool.query(engineerQuery);
+            console.log('✓ Engineer query successful, found:', engineerResult.rows.length, 'engineers');
+
+            // Try to query societies if needed
+            let societyResult = { rows: [] };
+            try {
+                if (soccd || society) {
+                    const societyQuery = `
+                      SELECT 
+                        'Dairy'::text AS source,
+                        "SOCCD"::text AS code,
+                        "SOCIETY"::text AS society,
+                        "TALUKA NAME"::text AS taluka
+                      FROM service_call_dairy_list
+                      WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
+                        AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))
+                      ORDER BY society
+                      LIMIT 200000
+                    `;
+                    
+                    console.log('Executing society query...');
+                    societyResult = await pool.query(societyQuery, [
+                        soccd ? String(soccd).trim() : null,
+                        society ? String(society).trim().toUpperCase() : null
+                    ]);
+                    console.log('✓ Society query successful, found:', societyResult.rows.length, 'societies');
+                }
+            } catch (tableErr) {
+                console.warn('⚠ Society table query failed (this is ok):', tableErr.message);
             }
-        });
+            
+            console.log('✓ Returning response with', engineerResult.rows.length, 'engineers and', societyResult.rows.length, 'societies');
+            
+            return res.json({
+                success: true,
+                data: {
+                    societies: societyResult.rows || [],
+                    engineers: engineerResult.rows || []
+                }
+            });
+        } catch (queryErr) {
+            console.error('✗ Query execution error:', queryErr.message);
+            throw queryErr;
+        }
         
     } catch (err) {
-        console.error('Search error:', err);
-        res.status(500).json({
+        console.error('✗ Search route error:', err.message);
+        console.error('Error details:', err);
+        return res.status(500).json({
             success: false,
             error: 'Search failed',
             message: err.message
         });
-    } finally {
-        if (client) {
-            client.release();
-        }
     }
 });
 
