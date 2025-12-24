@@ -137,6 +137,7 @@ const AssignCalls = () => {
 
             if (response.data.success) {
                 alert('Call assigned successfully!');
+                setShowPopup(false);
                 setDairyName('');
                 setProblem('');
                 setSelectedEngineer(null);
