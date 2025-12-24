@@ -92,7 +92,7 @@ router.post('/punch', requireAuth, async (req, res) => {
     // Insert attendance row (uses created_at)
     const insertAttendance = `
       INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
       RETURNING id, created_at, punch_type
     `;
     const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes]);
