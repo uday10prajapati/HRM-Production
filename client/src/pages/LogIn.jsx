@@ -55,10 +55,14 @@ function Login() {
                     role: data.role,
                 };
 
-                // Store user details in localStorage and log for debugging
+                // Store user details and token in localStorage
                 localStorage.setItem("user", JSON.stringify(userData));
+                localStorage.setItem("token", data.token || "authenticated"); // Store token
                 // set axios default auth header so subsequent axios calls include the user id
                 axios.defaults.headers.common['x-user-id'] = String(userData.id);
+                if (data.token) {
+                  axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+                }
                 console.log("Stored user:", localStorage.getItem("user"));
 
                 setTimeout(() => {
@@ -69,6 +73,7 @@ function Login() {
                         setMessage('Access denied: portal available to HR and Admin only');
                         // remove stored user and redirect back to login after brief delay
                         localStorage.removeItem('user');
+                        localStorage.removeItem('token');
                         setTimeout(() => navigate('/login'), 1200);
                     }
                 }, 1000);
