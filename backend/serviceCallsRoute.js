@@ -531,3 +531,63 @@ router.post('/send-sms', async (req, res) => {
 });
 
 export default router;
+
+// --- New endpoints: update status and letterhead workflow ---
+// Update call status (used by client)
+router.put('/update-status/:callId', requireAuth, async (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const newStatus = req.body.status;
+    if (!newStatus) return res.status(400).json({ success: false, message: 'Missing status' });
+
+    const q = `UPDATE assign_call SET status = $1 WHERE call_id::text = $2 RETURNING *`;
+    const result = await pool.query(q, [newStatus, String(callId)]);
+    if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+
+    return res.json({ success: true, call: result.rows[0] });
+  } catch (err) {
+    console.error('update-status error', err);
+    return res.status(500).json({ success: false, message: 'Failed to update status' });
+  }
+});
+
+// Mark letterhead received by engineer, or submitted to HR/admin
+router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const action = (req.body.action || '').toString(); // 'receive' or 'submit'
+    const requesterRole = req.user?.role ?? '';
+
+    if (!action) return res.status(400).json({ success: false, message: 'Missing action' });
+
+    if (action === 'receive') {
+      // Allow engineers to mark letterhead received
+      if ((requesterRole || '').toString().toLowerCase() !== 'engineer') {
+        return res.status(403).json({ success: false, message: 'Only engineers can mark letterhead received' });
+      }
+
+      const q = `UPDATE assign_call SET letterhead_received = true WHERE call_id::text = $1 RETURNING *`;
+      const result = await pool.query(q, [String(callId)]);
+      if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+      return res.json({ success: true, call: result.rows[0] });
+    }
+
+    if (action === 'submit') {
+      // Only HR/Admin can mark submitted/received by HR
+      if (!isHrOrAdmin(requesterRole)) {
+        return res.status(403).json({ success: false, message: 'Only HR/Admin can mark letterhead submitted' });
+      }
+
+      const q = `UPDATE assign_call SET letterhead_submitted = true, status = $1 WHERE call_id::text = $2 RETURNING *`;
+      const newStatus = 'letterhead_received_by_hr';
+      const result = await pool.query(q, [newStatus, String(callId)]);
+      if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
+      return res.json({ success: true, call: result.rows[0] });
+    }
+
+    return res.status(400).json({ success: false, message: 'Unsupported action' });
+  } catch (err) {
+    console.error('letterhead update error', err);
+    return res.status(500).json({ success: false, message: 'Failed to update letterhead status' });
+  }
+});

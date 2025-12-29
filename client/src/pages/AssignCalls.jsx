@@ -47,7 +47,7 @@ const AssignCalls = () => {
     const fetchEngineers = async () => {
         try {
             setLoading(true);
-            const res = await axios.post('https://hrm-production.onrender.com/api/service-calls/search', {}, {
+            const res = await axios.post(`${API_URL}/api/service-calls/search`, {}, {
                 // Add timeout
             });
 
@@ -126,7 +126,7 @@ const AssignCalls = () => {
         };
 
         const response = await axios.post(
-            'https://hrm-production.onrender.com/api/service-calls/assign-call',
+            `${API_URL}/api/service-calls/assign-call`,
             assignData,
             { headers: { 'Content-Type': 'application/json' } }
         );
@@ -154,7 +154,7 @@ const AssignCalls = () => {
 
     const fetchAssignedCalls = async () => {
         try {
-            const response = await axios.get('https://hrm-production.onrender.com/api/service-calls/assigned-calls', {
+            const response = await axios.get(`${API_URL}/api/service-calls/assigned-calls`, {
                 // Add timeout
             });
 
@@ -181,7 +181,7 @@ const AssignCalls = () => {
     const updateCallStatus = async (callId, newStatus) => {
         try {
             const response = await axios.put(
-                `https://hrm-production.onrender.com/api/service-calls/update-status/${callId}`,
+                `${API_URL}/api/service-calls/update-status/${callId}`,
                 { status: newStatus }
             );
             if (response.data.success) {
@@ -190,6 +190,26 @@ const AssignCalls = () => {
         } catch (err) {
             console.error('Error updating status:', err);
             alert('Failed to update call status');
+        }
+    };
+
+    const markLetterheadReceived = async (callId) => {
+        try {
+            const response = await axios.put(`${API_URL}/api/service-calls/assign-call/${callId}/letterhead`, { action: 'receive' });
+            if (response.data.success) fetchAssignedCalls();
+        } catch (err) {
+            console.error('Error marking letterhead received:', err);
+            alert(err.response?.data?.message || 'Failed to mark letterhead received');
+        }
+    };
+
+    const markLetterheadSubmitted = async (callId) => {
+        try {
+            const response = await axios.put(`${API_URL}/api/service-calls/assign-call/${callId}/letterhead`, { action: 'submit' });
+            if (response.data.success) fetchAssignedCalls();
+        } catch (err) {
+            console.error('Error marking letterhead submitted:', err);
+            alert(err.response?.data?.message || 'Failed to mark letterhead submitted');
         }
     };
 
@@ -490,13 +510,44 @@ const AssignCalls = () => {
                                                                 <select
                                                                     className="mt-2 border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                                     value={call.status}
-                                                                    onChange={(e) => updateCallStatus(call.id, e.target.value)}
+                                                                    onChange={(e) => updateCallStatus(call.call_id || call.id, e.target.value)}
                                                                 >
                                                                     <option value="pending">Pending</option>
                                                                     <option value="in_progress">In Progress</option>
                                                                     <option value="completed">Completed</option>
                                                                 </select>
                                                             )}
+
+                                                            {/* Letterhead status & actions */}
+                                                            <div className="mt-2 text-right space-y-2">
+                                                                {call.letterhead_received ? (
+                                                                    <div className="text-sm text-green-700 bg-green-50 inline-block px-3 py-1 rounded">Letterhead received by engineer</div>
+                                                                ) : (
+                                                                    // show receive button to engineers only
+                                                                    userRole?.toLowerCase() === 'engineer' && (
+                                                                        <button
+                                                                            onClick={() => markLetterheadReceived(call.call_id || call.id)}
+                                                                            className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                                                                        >
+                                                                            Mark Letterhead Received
+                                                                        </button>
+                                                                    )
+                                                                )}
+
+                                                                {call.letterhead_submitted ? (
+                                                                    <div className="text-sm text-blue-700 bg-blue-50 inline-block px-3 py-1 rounded">Letterhead received by HR/Admin</div>
+                                                                ) : (
+                                                                    // show submit button to HR/Admin when engineer has received it
+                                                                    isHrOrAdmin(userRole) && call.letterhead_received && (
+                                                                        <button
+                                                                            onClick={() => markLetterheadSubmitted(call.call_id || call.id)}
+                                                                            className="mt-2 px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                                                                        >
+                                                                            Mark Given to HR/Admin
+                                                                        </button>
+                                                                    )
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
