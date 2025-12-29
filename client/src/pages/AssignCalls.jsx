@@ -109,45 +109,48 @@ const AssignCalls = () => {
 
     // Update handleSubmitAssignment function
     const handleSubmitAssignment = async () => {
-        try {
-            if (!selectedEngineer || !dairyName || !problem) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            const assignData = {
-                id: selectedEngineer.id,
-                name: selectedEngineer.name,
-                role: selectedEngineer.role,
-                mobile_number: selectedEngineer.mobile_number,
-                dairy_name: dairyName,
-                problem: problem,
-                description: problem
-            };
-
-            const response = await axios.post(
-                'https://hrm-production.onrender.com/api/service-calls/assign-call',
-                assignData,
-                {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (response.data.success) {
-                alert('Call assigned successfully!');
-                setShowPopup(false);
-                setDairyName('');
-                setProblem('');
-                setSelectedEngineer(null);
-                fetchAssignedCalls(); // Refresh the list
-            }
-        } catch (err) {
-            console.error('Assignment error:', err);
-            alert(err.response?.data?.message || 'Failed to assign call');
+    try {
+        if (!selectedEngineer || !dairyName || !problem) {
+            alert('Please fill in all required fields');
+            return;
         }
-    };
+
+        const assignData = {
+            id: selectedEngineer.id,
+            name: selectedEngineer.name,
+            role: selectedEngineer.role,
+            mobile_number: selectedEngineer.mobile_number,
+            dairy_name: dairyName,
+            problem: problem,
+            description: problem
+        };
+
+        const response = await axios.post(
+            'https://hrm-production.onrender.com/api/service-calls/assign-call',
+            assignData,
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        if (response.data.success) {
+            // ✅ CLOSE CARD AUTOMATICALLY
+            setShowPopup(false);
+
+            // ✅ RESET FORM
+            setSelectedEngineer(null);
+            setDairyName('');
+            setProblem('');
+
+            // ✅ REFRESH ASSIGNED CALLS
+            fetchAssignedCalls();
+
+            alert('Call assigned successfully!');
+        }
+    } catch (err) {
+        console.error('Assignment error:', err);
+        alert(err.response?.data?.message || 'Failed to assign call');
+    }
+};
+
 
     const fetchAssignedCalls = async () => {
         try {
