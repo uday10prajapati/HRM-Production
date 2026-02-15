@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import { API_CONFIG, API_ENDPOINTS, getFullApiUrl } from '../utils/api.config';
 
 export default function ApplyLeave() {
   const [leaves, setLeaves] = useState([]);
@@ -15,7 +16,8 @@ export default function ApplyLeave() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
-  const API_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_URL) || 'https://hrms.sandjglobaltech.com';
+  // Use centralized API config
+  const API_URL = API_CONFIG.BASE_URL;
 
   function getUserFromStorage() {
     const keys = ['user', 'currentUser', 'auth', 'current_user'];
