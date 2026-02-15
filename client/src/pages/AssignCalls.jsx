@@ -125,7 +125,7 @@ const AssignCalls = () => {
         };
 
         const response = await axios.post(
-            `${API_URL}/api/service-calls/assign-call`,
+            '/api/service-calls/assign-call',
             assignData,
             { headers: { 'Content-Type': 'application/json' } }
         );
@@ -153,7 +153,7 @@ const AssignCalls = () => {
 
     const fetchAssignedCalls = async () => {
         try {
-            const response = await axios.get(`${API_URL}/api/service-calls/assigned-calls`, {
+            const response = await axios.get('/api/service-calls/assigned-calls', {
                 // Add timeout
             });
 
@@ -180,7 +180,7 @@ const AssignCalls = () => {
     const updateCallStatus = async (callId, newStatus) => {
         try {
             const response = await axios.put(
-                `${API_URL}/api/service-calls/update-status/${callId}`,
+                `/api/service-calls/update-status/${callId}`,
                 { status: newStatus }
             );
             if (response.data.success) {
@@ -194,7 +194,7 @@ const AssignCalls = () => {
 
     const markLetterheadReceived = async (callId) => {
         try {
-            const response = await axios.put(`${API_URL}/api/service-calls/assign-call/${callId}/letterhead`, { action: 'receive' });
+            const response = await axios.put(`/api/service-calls/assign-call/${callId}/letterhead`, { action: 'receive' });
             if (response.data.success) fetchAssignedCalls();
         } catch (err) {
             console.error('Error marking letterhead received:', err);
@@ -204,7 +204,7 @@ const AssignCalls = () => {
 
     const markLetterheadSubmitted = async (callId) => {
         try {
-            const response = await axios.put(`${API_URL}/api/service-calls/assign-call/${callId}/letterhead`, { action: 'submit' });
+            const response = await axios.put(`/api/service-calls/assign-call/${callId}/letterhead`, { action: 'submit' });
             if (response.data.success) fetchAssignedCalls();
         } catch (err) {
             console.error('Error marking letterhead submitted:', err);
@@ -264,7 +264,7 @@ const AssignCalls = () => {
                                                         ? { soccd: soccd, society: value }
                                                         : { society: value };
 
-                                                    const res = await axios.post(`${API_URL}/api/service-calls/search`, searchPayload);
+                                                    const res = await axios.post('/api/service-calls/search', searchPayload);
 
                                                     if (res.data.success) {
                                                         setSocietySuggestions(res.data.data.societies || []);

@@ -188,7 +188,7 @@ function AttendancePage() {
       const reqParams = { userId, start: date, end: date };
       if (!headers || !headers['x-user-id']) reqParams.userId = userId;
   console.debug('fetchLatestPunch: calling report with', { params: reqParams, headers });
-  const res = await axios.get(`${API_URL}/api/attendance/report`, { params: reqParams, headers });
+  const res = await axios.get('/api/attendance/report', { params: reqParams, headers });
       const data = res.data;
       let row = null;
       // handle different response shapes defensively
@@ -252,7 +252,7 @@ function AttendancePage() {
   const { id, headers } = getAuthHeaders();
   if (!id) console.warn('handlePunch: no user id found in localStorage');
   console.debug('handlePunch: sending punch', { payload, headers });
-  const res = await axios.post(`${API_URL}/api/attendance/punch`, payload, { headers });
+  const res = await axios.post('/api/attendance/punch', payload, { headers });
       const att = res?.data?.attendance ?? res?.data;
 
       // if backend returned created_at and type, use it to reconcile exact server time
