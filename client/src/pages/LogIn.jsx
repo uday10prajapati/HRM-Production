@@ -17,29 +17,15 @@ function Login() {
         }
 
         try {
-            let response;
+            let data;
             try {
-                response = await fetch(`/api/auth/login`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email, password }),
-                });
+                const response = await axios.post('/api/auth/login', { email, password });
+                data = response.data;
             } catch (netErr) {
                 console.error('Network error when calling auth:', netErr);
                 setMessage('⚠️ Could not reach authentication server (check backend)');
                 return;
             }
-
-            if (!response.ok) {
-                // try to read error text/json
-                let errText = '';
-                try { errText = await response.text(); } catch (e) { errText = String(e); }
-                console.error('Auth endpoint returned error', response.status, errText);
-                setMessage(`❌ Login failed: ${response.status} ${errText}`);
-                return;
-            }
-
-            const data = await response.json();
 
             if (data.success && data.user && data.role) {
                 setMessage("✅ Login successful!");

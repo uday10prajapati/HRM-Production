@@ -25,6 +25,11 @@ const AssignCalls = () => {
     const [showDairySuggestions, setShowDairySuggestions] = useState(false);
     const [foundSocieties, setFoundSocieties] = useState([]);
     const [showSocietySuggestions, setShowSocietySuggestions] = useState(false);
+    const [showResolvedEditModal, setShowResolvedEditModal] = useState(false);
+    const [editingCall, setEditingCall] = useState(null);
+    const [editProblem1, setEditProblem1] = useState('');
+    const [editProblem2, setEditProblem2] = useState('');
+    const [editSolutions, setEditSolutions] = useState('');
 
     // Add this helper function at the top of your component
     const isHrOrAdmin = (userRole) => {
@@ -209,6 +214,42 @@ const AssignCalls = () => {
         } catch (err) {
             console.error('Error marking letterhead submitted:', err);
             alert(err.response?.data?.message || 'Failed to mark letterhead submitted');
+        }
+    };
+
+    const openResolvedEditModal = (call) => {
+        setEditingCall(call);
+        setEditProblem1(call.problem1 || '');
+        setEditProblem2(call.problem2 || '');
+        setEditSolutions(call.solutions || '');
+        setShowResolvedEditModal(true);
+    };
+
+    const handleUpdateResolvedCallDetails = async () => {
+        try {
+            if (!editingCall) return;
+
+            const response = await axios.put(
+                `/api/service-calls/assign-call/${editingCall.call_id || editingCall.id}/resolved-details`,
+                {
+                    problem1: editProblem1,
+                    problem2: editProblem2,
+                    solutions: editSolutions
+                }
+            );
+
+            if (response.data.success) {
+                setShowResolvedEditModal(false);
+                setEditingCall(null);
+                setEditProblem1('');
+                setEditProblem2('');
+                setEditSolutions('');
+                fetchAssignedCalls();
+                alert('Call details updated successfully!');
+            }
+        } catch (err) {
+            console.error('Error updating call details:', err);
+            alert(err.response?.data?.message || 'Failed to update call details');
         }
     };
 
@@ -495,16 +536,44 @@ const AssignCalls = () => {
                                                                 <p className="text-sm text-gray-600">
                                                                     <span className="font-medium">Quantity Used:</span> {call.quantity_used || 'N/A'}
                                                                 </p>
+                                                                {call.status === 'resolved' && (
+                                                                    <>
+                                                                        {call.problem1 && (
+                                                                            <p className="text-sm text-gray-600">
+                                                                                <span className="font-medium">Problem 1:</span> {call.problem1}
+                                                                            </p>
+                                                                        )}
+                                                                        {call.problem2 && (
+                                                                            <p className="text-sm text-gray-600">
+                                                                                <span className="font-medium">Problem 2:</span> {call.problem2}
+                                                                            </p>
+                                                                        )}
+                                                                        {call.solutions && (
+                                                                            <p className="text-sm text-gray-600">
+                                                                                <span className="font-medium">Solutions:</span> {call.solutions}
+                                                                            </p>
+                                                                        )}
+                                                                    </>
+                                                                )}
 
                                                             </div>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-2">
                                                             <span className={`px-3 py-1 rounded-full text-sm font-medium ${call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                                                 call.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                                    call.status === 'resolved' ? 'bg-purple-100 text-purple-800' :
                                                                     'bg-blue-100 text-blue-800'
                                                                 }`}>
                                                                 {call.status}
                                                             </span>
+                                                            {call.status === 'resolved' && isHrOrAdmin(userRole) && (
+                                                                <button
+                                                                    onClick={() => openResolvedEditModal(call)}
+                                                                    className="mt-2 px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
+                                                                >
+                                                                    Edit Details
+                                                                </button>
+                                                            )}
                                                             {!isHrOrAdmin(userRole) && (
                                                                 <select
                                                                     className="mt-2 border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -514,6 +583,7 @@ const AssignCalls = () => {
                                                                     <option value="pending">Pending</option>
                                                                     <option value="in_progress">In Progress</option>
                                                                     <option value="completed">Completed</option>
+                                                                    <option value="resolved">Resolved</option>
                                                                 </select>
                                                             )}
 
@@ -664,6 +734,93 @@ const AssignCalls = () => {
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 Assign Call
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Resolved Call Details Edit Modal */}
+            {showResolvedEditModal && editingCall && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md m-4">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-semibold text-gray-900">Edit Resolved Call Details</h3>
+                            <button
+                                onClick={() => {
+                                    setShowResolvedEditModal(false);
+                                    setEditingCall(null);
+                                }}
+                                className="text-gray-400 hover:text-gray-500 transition-colors"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="mb-6 p-4 bg-purple-50 rounded-lg">
+                            <h4 className="font-medium text-gray-900">{editingCall.dairy_name}</h4>
+                            <p className="text-sm text-gray-500">Engineer: {editingCall.name}</p>
+                            <p className="text-sm text-gray-500">Problem: {editingCall.problem}</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Problem 1
+                                </label>
+                                <textarea
+                                    value={editProblem1}
+                                    onChange={(e) => setEditProblem1(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    placeholder="Enter problem 1"
+                                    rows="2"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Problem 2
+                                </label>
+                                <textarea
+                                    value={editProblem2}
+                                    onChange={(e) => setEditProblem2(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    placeholder="Enter problem 2"
+                                    rows="2"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Solutions
+                                </label>
+                                <textarea
+                                    value={editSolutions}
+                                    onChange={(e) => setEditSolutions(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    placeholder="Enter solutions"
+                                    rows="3"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowResolvedEditModal(false);
+                                    setEditingCall(null);
+                                }}
+                                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUpdateResolvedCallDetails}
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                            >
+                                Save Details
                             </button>
                         </div>
                     </div>
