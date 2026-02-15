@@ -6,7 +6,10 @@
 const getApiUrl = () => {
   // Priority: env var > localhost dev > production domain
   if (import.meta?.env?.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+    let url = import.meta.env.VITE_API_URL;
+    // Remove /api suffix if present (endpoints include it)
+    url = url.replace(/\/api\/?$/, '');
+    return url || 'http://localhost:5001';
   }
   
   // Development
