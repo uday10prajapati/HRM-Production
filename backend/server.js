@@ -154,7 +154,7 @@ async function startServer() {
     setInterval(maybeRunPayrollScheduler, 60 * 1000);
     // --- end payroll scheduler ---
 
-    app.listen(process.env.PORT || 5000, () => console.log(`✅ Server running on port ${process.env.PORT || 5000}`));
+    app.listen(process.env.PORT || 5001, () => console.log(`✅ Server running on port ${process.env.PORT || 5001}`));
 }
 
 startServer().catch(err => {
