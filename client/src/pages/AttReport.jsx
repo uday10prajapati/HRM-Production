@@ -7,7 +7,7 @@ function AttReports() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const API_URL = import.meta.env.VITE_API_URL || "https://hrms.sandjglobaltech.com";
+  // Use relative API path
 
   useEffect(() => {
     fetchReports();
@@ -29,7 +29,7 @@ function AttReports() {
     setLoading(true);
     try {
       const headers = getAuthHeaders();
-      const res = await axios.get(`${API_URL}/api/corrections`, { headers });
+      const res = await axios.get('/api/corrections', { headers });
 
       const data = res.data?.rows || res.data || [];
       setReports(Array.isArray(data) ? data : []);

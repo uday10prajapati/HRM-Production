@@ -4,8 +4,8 @@ export default function Employees() {
     const [users, setUsers] = useState([]);
 
     useEffect(() => {
-        // Fetch users from backend API
-        fetch("https://hrms.sandjglobaltech.com/api/users")
+        // Fetch users from backend API (relative path)
+        fetch('/api/users')
             .then((res) => res.json())
             .then((data) => setUsers(data))
             .catch(console.error);

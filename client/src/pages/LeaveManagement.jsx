@@ -7,7 +7,8 @@ export default function LeaveManagement() {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
+  // Use relative API paths so frontend and backend share same origin
+  // All requests should target `/api/...`
 
   const getCurrentUser = () => {
     try {
@@ -27,7 +28,7 @@ export default function LeaveManagement() {
       const headers = {};
       if (user && user.id) headers['x-user-id'] = user.id;
 
-      const res = await axios.get(`${API_URL}/api/leave`, { params: { status: 'pending' }, headers });
+      const res = await axios.get('/api/leave', { params: { status: 'pending' }, headers });
       const data = res.data;
       if (data && data.success) {
         const leavesArr = data.leaves || [];
@@ -35,8 +36,8 @@ export default function LeaveManagement() {
         // If HR/Admin and no pending rows returned, try admin "all" endpoint to help debugging
         const canAct = user && (String(user.role || '').toLowerCase() === 'admin' || String(user.role || '').toLowerCase() === 'hr');
         if ((canAct) && (!leavesArr || leavesArr.length === 0)) {
-          try {
-            const allRes = await axios.get(`${API_URL}/api/leave/all`, { headers });
+            try {
+            const allRes = await axios.get('/api/leave/all', { headers });
             if (allRes?.data?.success) {
               setLeaves(allRes.data.leaves || []);
               // fallback to admin view: don't show a message to the user
@@ -67,7 +68,7 @@ export default function LeaveManagement() {
       const headers = {};
       if (user && user.id) headers['x-user-id'] = user.id;
 
-      const res = await axios.put(`${API_URL}/api/leave/${id}/${action}`, null, { headers });
+      const res = await axios.put(`/api/leave/${id}/${action}`, null, { headers });
       const data = res.data;
       if (data && data.success) {
         await fetchLeaves();

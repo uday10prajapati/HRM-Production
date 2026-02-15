@@ -6,7 +6,7 @@ export default function Payroll() {
     const [payroll, setPayroll] = useState([]);
 
     useEffect(() => {
-        fetch("https://hrms.sandjglobaltech.com/api/payroll")
+        fetch('/api/payroll')
             .then((res) => res.json())
             .then((data) => setPayroll(data))
             .catch(console.error);

@@ -16,7 +16,7 @@ export default function PendingTasks() {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/tasks/pending`);
+      const response = await axios.get('/api/tasks/pending');
       
       // Extract tasks array from response data
       if (response.data && response.data.tasks) {

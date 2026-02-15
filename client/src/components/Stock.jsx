@@ -7,7 +7,7 @@ export default function Stock() {
 
     useEffect(() => {
         setLoading(true);
-        fetch("https://hrms.sandjglobaltech.com/api/stock")
+        fetch('/api/stock')
             .then((res) => res.json())
             .then((data) => {
                 setStock(data);

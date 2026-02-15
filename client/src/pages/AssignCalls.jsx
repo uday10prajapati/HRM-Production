@@ -3,8 +3,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
-// Add a base URL constant
-const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
+// Use relative API paths; endpoints are under /api/
 
 const AssignCalls = () => {
     const [soccd, setSoccd] = useState('');
@@ -47,7 +46,7 @@ const AssignCalls = () => {
     const fetchEngineers = async () => {
         try {
             setLoading(true);
-            const res = await axios.post(`${API_URL}/api/service-calls/search`, {}, {
+            const res = await axios.post('/api/service-calls/search', {}, {
                 // Add timeout
             });
 
@@ -78,7 +77,7 @@ const AssignCalls = () => {
                 return;
             }
 
-            const response = await axios.post(`${API_URL}/api/service-calls/search`, {
+            const response = await axios.post('/api/service-calls/search', {
                 soccd: soccd || undefined,
                 society: society || undefined
             });
@@ -282,7 +281,7 @@ const AssignCalls = () => {
                                             onFocus={async () => {
                                                 if (soccd) {
                                                     try {
-                                                        const res = await axios.post(`${API_URL}/api/service-calls/search`, {
+                                                        const res = await axios.post('/api/service-calls/search', {
                                                             soccd: soccd,
                                                         });
                                                         if (res.data.success) {

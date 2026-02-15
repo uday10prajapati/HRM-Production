@@ -29,8 +29,8 @@ export default function Payslips() {
 
     async function viewSlip(slip) {
         if (slip?.pdf?.path) {
-            // Use absolute URL with backend port
-            setPdfUrl(`https://hrms.sandjglobaltech.com/api/payroll/view-pdf?path=${encodeURIComponent(slip.pdf.path)}`);
+            // Use relative API path so same-origin is used
+            setPdfUrl(`/api/payroll/view-pdf?path=${encodeURIComponent(slip.pdf.path)}`);
             setShowPdfModal(true);
         } else {
             alert('PDF not available for this payslip');

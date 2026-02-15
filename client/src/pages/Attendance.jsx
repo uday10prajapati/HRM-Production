@@ -22,7 +22,7 @@ function AttendancePage() {
   const [punchLoading, setPunchLoading] = useState(false);
   const [latestPunch, setLatestPunch] = useState(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
+  // Use relative API paths (requests target /api/...)
 
   const getAuthHeaders = () => {
     try {
@@ -72,7 +72,7 @@ function AttendancePage() {
   const reqParams = { userId: params.userId, month };
   if (!headers || !headers['x-user-id']) reqParams.userId = params.userId;
   console.debug('fetchReport: calling summary with', { params: reqParams, headers });
-  res = await axios.get(`${API_URL}/api/attendance/summary`, { params: reqParams, headers });
+  res = await axios.get('/api/attendance/summary', { params: reqParams, headers });
   const data = res.data;
       if (data.success) {
         // normalize to an array shape compatible with table (one row)
@@ -99,7 +99,7 @@ function AttendancePage() {
       // attach userId fallback when header missing
       if (!headers || !headers['x-user-id']) reqParams.userId = reqParams.userId ?? id;
   console.debug('fetchReport: calling summary/all with', { params: reqParams, headers });
-  res = await axios.get(`${API_URL}/api/attendance/summary/all`, { params: reqParams, headers });
+  res = await axios.get('/api/attendance/summary/all', { params: reqParams, headers });
     }
     const data = res.data;
     if (data.success) {
@@ -158,7 +158,7 @@ function AttendancePage() {
       const reqParams = { ...params };
       if (!headers || !headers['x-user-id']) reqParams.userId = reqParams.userId ?? id;
   console.debug('fetchRawRecords: calling records with', { params: reqParams, headers });
-  const res = await axios.get(`${API_URL}/api/attendance/records`, { params: reqParams, headers });
+  const res = await axios.get('/api/attendance/records', { params: reqParams, headers });
       setRawRecords(res.data.rows || []);
     } catch (err) {
       console.error('Failed to fetch raw attendance records', err?.response?.data ?? err);
