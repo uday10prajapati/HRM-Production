@@ -10,9 +10,10 @@ import GiveTaskModal from "../components/modals/GiveTaskModal";
 import TaskStatusModal from "../components/modals/TaskStatusModal";
 import DocumentsModal from "../components/modals/DocumentsModal";
 import { useNavigate } from "react-router-dom";
+import { API_CONFIG } from "../utils/api.config";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-axios.defaults.baseURL = API_BASE_URL;
+// Set axios baseURL to domain only (endpoints include /api/)
+axios.defaults.baseURL = API_CONFIG.BASE_URL;
 
 // Modals are now in separate files under components/modals/
 

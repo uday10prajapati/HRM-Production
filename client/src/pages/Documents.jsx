@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import axios from 'axios';
+import { API_CONFIG } from '../utils/api.config';
 
-axios.defaults.baseURL = 'https://hrms.sandjglobaltech.com';
+axios.defaults.baseURL = API_CONFIG.BASE_URL;
 
 export default function ViewAssignedCalls() {
   const [assignedCalls, setAssignedCalls] = useState([]);

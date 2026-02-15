@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import "../index.css";
 import App from "./App.jsx";
 import axios from 'axios';
+import { API_CONFIG } from './utils/api.config';
+
+// Set axios baseURL to API domain (no /api/ suffix - endpoints include it)
+axios.defaults.baseURL = API_CONFIG.BASE_URL;
 
 // Setup axios with auth token
 const token = localStorage.getItem('token');
