@@ -25,7 +25,8 @@ const Admin = () => {
     try {
       setLoading(true);
       const res = await axios.get('/api/users/');
-      const all = res.data.users || res.data || [];
+      // Safely extract users array from response
+      const all = Array.isArray(res.data?.users) ? res.data.users : (Array.isArray(res.data) ? res.data : []);
       setUsers(all);
 
       // documents count (KEEPING THIS — no removal)
@@ -40,6 +41,7 @@ const Admin = () => {
 
     } catch (err) {
       console.error('Failed to load admin data', err);
+      setUsers([]); // Ensure users is always an array
     } finally {
       setLoading(false);
     }

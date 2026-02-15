@@ -17,7 +17,7 @@ function Login() {
         }
 
         try {
-            const API_URL = import.meta.env.VITE_API_URL || 'https://hrm-production.onrender.com';
+            const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
 
             let response;
             try {

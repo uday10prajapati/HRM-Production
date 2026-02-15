@@ -22,7 +22,7 @@ function AttendancePage() {
   const [punchLoading, setPunchLoading] = useState(false);
   const [latestPunch, setLatestPunch] = useState(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://hrm-production.onrender.com';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
 
   const getAuthHeaders = () => {
     try {

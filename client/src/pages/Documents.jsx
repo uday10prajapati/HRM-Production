@@ -3,7 +3,7 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import axios from 'axios';
 
-axios.defaults.baseURL = 'https://hrm-production.onrender.com';
+axios.defaults.baseURL = 'https://hrms.sandjglobaltech.com';
 
 export default function ViewAssignedCalls() {
   const [assignedCalls, setAssignedCalls] = useState([]);

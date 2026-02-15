@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       '^/uploads/.*': {
-        target: 'https://hrm-production.onrender.com',
+        target: 'https://hrms.sandjglobaltech.com',
         changeOrigin: true,
         secure: false,
       }

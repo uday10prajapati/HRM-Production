@@ -7,7 +7,7 @@ export default function LeaveManagement() {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://hrm-production.onrender.com';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
 
   const getCurrentUser = () => {
     try {

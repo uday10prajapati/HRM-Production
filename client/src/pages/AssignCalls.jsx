@@ -4,7 +4,7 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 
 // Add a base URL constant
-const API_URL = import.meta.env.VITE_API_URL || 'https://hrm-production.onrender.com';
+const API_URL = import.meta.env.VITE_API_URL || 'https://hrms.sandjglobaltech.com';
 
 const AssignCalls = () => {
     const [soccd, setSoccd] = useState('');
