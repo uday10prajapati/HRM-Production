@@ -27,11 +27,32 @@ let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shi
 dotenv.config();
 const app = express();
 
-// Enable CORS
-app.use(cors());
+// Enable CORS with allowed origins
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://hrms.sandjglobaltech.com',
+  'https://hrms.sandjglobaltech.com'
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200
+}));
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve uploaded files (documents, user files) from UPLOADS_BASE (defaults to <repo>/storage/uploads)
 // Client requests to /uploads/... will be served by Express, not the React router.
