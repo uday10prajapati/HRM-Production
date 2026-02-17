@@ -2,6 +2,12 @@ import express from "express";
 import { pool } from "./db.js";
 // bcrypt removed - storing plain-text passwords (INSECURE)
 import requireAuth from './authMiddleware.js';
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY; // Prefer service role for admin actions
+const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
 const router = express.Router();
 
@@ -44,7 +50,7 @@ const router = express.Router();
 // Create tasks table if it doesn't exist (safe startup helper)
 (async function createTasksTableIfMissing() {
   try {
-      await pool.query(`
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS tasks (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -100,7 +106,7 @@ router.get("/", async (req, res) => {
     console.error('GET /api/users query error:', err?.message || err);
     // If tasks or other joined table is missing (e.g., migrations didn't run or extension unavailable),
     // fall back to a simpler users-only query so the frontend can still load a user list.
-      if (/relation \"tasks\" does not exist/i.test(String(err?.message || '')) || /does not exist/i.test(String(err?.message || ''))) {
+    if (/relation \"tasks\" does not exist/i.test(String(err?.message || '')) || /does not exist/i.test(String(err?.message || ''))) {
       try {
         const fallback = await pool.query('SELECT id, name, email, role, leave_balance FROM users ORDER BY id ASC');
         return res.json({ success: true, users: fallback.rows });
@@ -128,9 +134,9 @@ router.get("/me", async (req, res) => {
       });
     }
 
-      // Accept both UUID and legacy integer-like ids. We'll compare as text
-      // so Postgres doesn't error when comparing uuid = integer.
-      const result = await pool.query(
+    // Accept both UUID and legacy integer-like ids. We'll compare as text
+    // so Postgres doesn't error when comparing uuid = integer.
+    const result = await pool.query(
       `
       SELECT 
         u.id AS id,
@@ -242,7 +248,7 @@ router.post("/create", requireAuth, async (req, res) => {
     password,
     leave_balance,
     leaveBalance,
-  attendanceStatus,
+    attendanceStatus,
     mobile_number,
   } = req.body;
 
@@ -257,12 +263,47 @@ router.post("/create", requireAuth, async (req, res) => {
   const hashedPassword = password;
 
   try {
+    let newUserId = null;
+    let supabaseError = null;
+
+    // 1. Create in Supabase Auth if credentials available
+    if (supabase) {
+      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, role, mobile_number }
+      });
+
+      if (authErr) {
+        console.warn('Supabase Auth createUser failed:', authErr.message);
+        supabaseError = authErr.message;
+        // If user already exists in Supabase, we might want to try to find their ID?
+        // For now, proceed to create locally with a random ID if we can't get the Supabase ID.
+      } else if (authData && authData.user) {
+        console.log('✅ Created user in Supabase Auth:', authData.user.id);
+        newUserId = authData.user.id;
+      }
+    } else {
+      console.warn('Supabase client not initialized (missing env vars), skipping Supabase Auth creation.');
+    }
+
+    // 2. Create in Local DB
+    // Use the Supabase ID if we have it, otherwise generate one locally
+    const finalId = newUserId || crypto.randomUUID();
+
     const result = await pool.query(
       `INSERT INTO users (id, name, email, role, leave_balance, password, mobile_number)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, email, role, leaveBal, hashedPassword, mobile_number]
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [finalId, name, email, role, leaveBal, hashedPassword, mobile_number]
     );
-    res.status(201).json({ success: true, user: result.rows[0] });
+
+    res.status(201).json({
+      success: true,
+      user: result.rows[0],
+      supabaseSync: !!newUserId,
+      supabaseError
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Error creating user", error: err.message });
@@ -278,7 +319,7 @@ router.put("/update/:id", async (req, res) => {
     role,
     leave_balance,
     leaveBalance,
-    
+
     attendanceStatus,
     mobile_number,
   } = req.body;
@@ -379,12 +420,12 @@ router.post("/assign-task", async (req, res) => {
     `);
 
     // make sure columns exist
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`);
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`);
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_name TEXT`);
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_address TEXT`);
-  await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_mobile TEXT`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'pending'`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(128)`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_name TEXT`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_address TEXT`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS customer_mobile TEXT`);
 
     const queryText =
       "INSERT INTO tasks (user_id, title, description, status, assigned_by, assigned_to, customer_name, customer_address, customer_mobile) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
@@ -406,33 +447,33 @@ router.post("/assign-task", async (req, res) => {
       targetEmail = resolved.rows[0].email;
     }
 
-      // Inspect tasks table column types so we insert values matching existing schema
-      const cols = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='tasks' AND column_name IN ('user_id','assigned_by')");
-      const colMap = {};
-      for (const r of cols.rows) colMap[r.column_name] = r.data_type;
+    // Inspect tasks table column types so we insert values matching existing schema
+    const cols = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='tasks' AND column_name IN ('user_id','assigned_by')");
+    const colMap = {};
+    for (const r of cols.rows) colMap[r.column_name] = r.data_type;
 
-      // If tasks.user_id is integer in existing schema, convert resolved id to integer (if possible)
-      if (colMap['user_id'] && colMap['user_id'].toLowerCase().includes('int')) {
-        // If the existing tasks.user_id column is integer, convert it to TEXT so it can accept UUIDs
-        try {
-          // drop foreign key if present
-          await pool.query("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_user_id_fkey");
-        } catch (e) {
-          // ignore
-        }
-        try {
-          await pool.query("ALTER TABLE tasks ALTER COLUMN user_id TYPE TEXT USING user_id::text");
-          // update local map
-          colMap['user_id'] = 'text';
-        } catch (e) {
-          console.warn('Could not alter tasks.user_id to text:', e?.message || e);
-        }
+    // If tasks.user_id is integer in existing schema, convert resolved id to integer (if possible)
+    if (colMap['user_id'] && colMap['user_id'].toLowerCase().includes('int')) {
+      // If the existing tasks.user_id column is integer, convert it to TEXT so it can accept UUIDs
+      try {
+        // drop foreign key if present
+        await pool.query("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_user_id_fkey");
+      } catch (e) {
+        // ignore
       }
+      try {
+        await pool.query("ALTER TABLE tasks ALTER COLUMN user_id TYPE TEXT USING user_id::text");
+        // update local map
+        colMap['user_id'] = 'text';
+      } catch (e) {
+        console.warn('Could not alter tasks.user_id to text:', e?.message || e);
+      }
+    }
 
     // Use requester header as assigned_by if client didn't provide one
     const requester = req.header('x-user-id') || null;
 
-  const promises = tasks.map(async (task) => {
+    const promises = tasks.map(async (task) => {
       if (!task.title || !task.description) {
         throw new Error("Task title and description are required");
       }
@@ -533,8 +574,8 @@ router.put("/tasks/:taskId", async (req, res) => {
 
 // Get all engineers
 router.get('/engineers', async (req, res) => {
-    try {
-        const result = await pool.query(`
+  try {
+    const result = await pool.query(`
             SELECT 
                 id,
                 name,
@@ -545,11 +586,11 @@ router.get('/engineers', async (req, res) => {
             WHERE LOWER(role) = 'engineer'
             ORDER BY name ASC
         `);
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Error fetching engineers:', err);
-        res.status(500).json({ error: 'Failed to fetch engineers' });
-    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching engineers:', err);
+    res.status(500).json({ error: 'Failed to fetch engineers' });
+  }
 });
 
 export default router;
