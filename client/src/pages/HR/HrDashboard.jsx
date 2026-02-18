@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import Sidebar from "../../components/Sidebar"; 
+import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/Navbar";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -24,8 +24,12 @@ const HrDashboard = () => {
     engineerId: "",
     dairyName: "",
     problem: "",
+    problem: "",
     description: ""
   });
+  const [assignedCallsCount, setAssignedCallsCount] = useState(0);
+  const [dairySuggestions, setDairySuggestions] = useState([]);
+  const [showDairySuggestions, setShowDairySuggestions] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -53,7 +57,10 @@ const HrDashboard = () => {
         fetchShifts();
         fetchUsers();
         fetchTomorrowAssignments();
+        fetchUsers();
+        fetchTomorrowAssignments();
         fetchEngineers();
+        fetchAssignedCalls();
       }
     })();
   }, [navigate]);
@@ -91,7 +98,7 @@ const HrDashboard = () => {
     d.setDate(d.getDate() + 1);
     return d.toISOString().slice(0, 10);
   }
-  
+
   async function fetchShifts() {
     try {
       const res = await axios.get("/api/shifts");
@@ -127,11 +134,27 @@ const HrDashboard = () => {
     }
   };
 
+  const fetchAssignedCalls = async () => {
+    try {
+      const response = await axios.get("/api/service-calls/assigned-calls", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+
+      if (response.data.success) {
+        setAssignedCallsCount(response.data.calls.length);
+      }
+    } catch (err) {
+      console.error("Failed to fetch assigned calls", err);
+    }
+  };
+
   // fetch latest attendance row for a user that contains latitude/longitude
   async function fetchUserLocation(user) {
     try {
       setLocLoading(true);
-      const today = new Date().toISOString().slice(0,10);
+      const today = new Date().toISOString().slice(0, 10);
       // request a wide range; the endpoint will filter and we pick the latest row with coords
       const params = { userId: user.id, start: '1970-01-01', end: today };
       // include x-user-id header if present for auth fallback
@@ -144,7 +167,7 @@ const HrDashboard = () => {
           const id = u?.id ?? u?.userId ?? null;
           if (id) headers['x-user-id'] = String(id);
         }
-      } catch (e) {}
+      } catch (e) { }
 
       const res = await axios.get(`/api/attendance/records`, { params, headers });
       const rows = res?.data?.rows ?? [];
@@ -155,7 +178,7 @@ const HrDashboard = () => {
         return;
       }
       // sort by created_at descending
-      withCoords.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+      withCoords.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       const latest = withCoords[0];
       setSelectedLocation({ user, latitude: latest.latitude, longitude: latest.longitude, when: latest.created_at });
     } catch (err) {
@@ -283,7 +306,7 @@ const HrDashboard = () => {
                   <p className="mt-2 text-blue-100">Manage your organization's workforce efficiently</p>
                 </div>
                 <div className="flex gap-3">
-                  <button 
+                  <button
                     onClick={() => setIsCreateOpen(true)}
                     className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
                   >
@@ -292,7 +315,7 @@ const HrDashboard = () => {
                     </svg>
                     Create Shift
                   </button>
-                  <button 
+                  <button
                     onClick={() => setIsAssignCallOpen(true)}
                     className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
                   >
@@ -306,7 +329,7 @@ const HrDashboard = () => {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
                 <div className="flex items-center">
                   <div className="p-3 bg-blue-50 rounded-lg">
@@ -348,6 +371,60 @@ const HrDashboard = () => {
                   </div>
                 </div>
               </div>
+              {/* Assigned Calls Card */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
+                <div className="flex items-center">
+                  <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M3 5a2 2 0 012-2h1.28a2 2 0 011.94 1.47l.7 2.49a2 2 0 01-.57 2.01l-1.1 1.1a16 16 0 006.58 6.58l1.1-1.1a2 2 0 012.01-.57l2.49.7A2 2 0 0121 17.72V19a2 2 0 01-2 2h-1C9.82 21 3 14.18 3 6V5z"
+                      />
+                    </svg>
+                  </div>
+                  <div className="ml-4 flex-1">
+                    <h3 className="text-sm font-medium text-gray-500">Assigned Calls</h3>
+                    <div className="mt-2 flex items-baseline">
+                      <div className="text-2xl font-bold text-gray-900">{assignedCallsCount}</div>
+                      <div className="ml-2 text-sm text-green-600">+8%</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  <a href="/assign-call" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View all Assigned Calls →</a>
+                </div>
+              </div>
+            </div>
+
+            {/* Field Service Management (FSM) Module */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-all">
+                <div className="flex items-center mb-4">
+                  <div className="p-3 bg-indigo-50 rounded-lg">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="ml-4 text-lg font-semibold text-gray-900">Field Service Management (FSM)</h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">Call assignment, live tracking, task lifecycle management.</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => navigate('/assign-call')}
+                    className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
+                  >
+                    Assign Calls
+                  </button>
+                  <button
+                    onClick={() => navigate('/map')}
+                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
+                  >
+                    Live Map
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Tomorrow's Assignments Section */}
@@ -355,8 +432,8 @@ const HrDashboard = () => {
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-800">Tomorrow's Assignments</h2>
-                  <button 
-                    onClick={() => { setAssignForm(f => ({...f, date: tomorrowDate()})); setIsAssignOpen(true); }}
+                  <button
+                    onClick={() => { setAssignForm(f => ({ ...f, date: tomorrowDate() })); setIsAssignOpen(true); }}
                     className="inline-flex items-center px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,98 +481,158 @@ const HrDashboard = () => {
             {/* Rest of the existing modals with enhanced styling... */}
           </div>
         </main>
-      </div>
+      </div >
 
       {/* Create shift modal */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <form onSubmit={handleCreateShift} className="bg-white p-6 rounded shadow w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Create Shift</h3>
-            <input className="mb-2 w-full border p-2" placeholder="Shift name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            <div className="flex gap-2 mb-2">
-              <input type="time" className="w-1/2 border p-2" value={form.start_time} onChange={e => setForm({...form, start_time: e.target.value})} />
-              <input type="time" className="w-1/2 border p-2" value={form.end_time} onChange={e => setForm({...form, end_time: e.target.value})} />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setIsCreateOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
-              <button type="submit" className="px-3 py-1 bg-green-600 text-white rounded">Create</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {
+        isCreateOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <form onSubmit={handleCreateShift} className="bg-white p-6 rounded shadow w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-3">Create Shift</h3>
+              <input className="mb-2 w-full border p-2" placeholder="Shift name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <div className="flex gap-2 mb-2">
+                <input type="time" className="w-1/2 border p-2" value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} />
+                <input type="time" className="w-1/2 border p-2" value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsCreateOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
+                <button type="submit" className="px-3 py-1 bg-green-600 text-white rounded">Create</button>
+              </div>
+            </form>
+          </div>
+        )
+      }
 
       {/* Assign shift modal */}
-      {isAssignOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <form onSubmit={handleAssign} className="bg-white p-6 rounded shadow w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Assign Shift</h3>
-            <select className="mb-2 w-full border p-2" value={assignForm.userId} onChange={e => setAssignForm({...assignForm, userId: e.target.value})}>
-              <option value="">Select user</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-            </select>
-            <select className="mb-2 w-full border p-2" value={assignForm.shiftId} onChange={e => setAssignForm({...assignForm, shiftId: e.target.value})}>
-              <option value="">Select shift</option>
-              {shifts.map(s => <option key={s.id} value={s.id}>{s.name} — {s.start_time}–{s.end_time}</option>)}
-            </select>
-            <input type="date" className="mb-2 w-full border p-2" value={assignForm.date} onChange={e => setAssignForm({...assignForm, date: e.target.value})} />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setIsAssignOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
-              <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded">Assign</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {
+        isAssignOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <form onSubmit={handleAssign} className="bg-white p-6 rounded shadow w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-3">Assign Shift</h3>
+              <select className="mb-2 w-full border p-2" value={assignForm.userId} onChange={e => setAssignForm({ ...assignForm, userId: e.target.value })}>
+                <option value="">Select user</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+              </select>
+              <select className="mb-2 w-full border p-2" value={assignForm.shiftId} onChange={e => setAssignForm({ ...assignForm, shiftId: e.target.value })}>
+                <option value="">Select shift</option>
+                {shifts.map(s => <option key={s.id} value={s.id}>{s.name} — {s.start_time}–{s.end_time}</option>)}
+              </select>
+              <input type="date" className="mb-2 w-full border p-2" value={assignForm.date} onChange={e => setAssignForm({ ...assignForm, date: e.target.value })} />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsAssignOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
+                <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded">Assign</button>
+              </div>
+            </form>
+          </div>
+        )
+      }
       {/* Adjust leave modal */}
-      {isAdjustOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <form onSubmit={handleAdjustSubmit} className="bg-white p-6 rounded shadow w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Adjust Leave Balance</h3>
-            <div className="mb-2">Selected user ID: {adjustForm.userId}</div>
-            <input type="number" className="mb-2 w-full border p-2" placeholder="Leave balance" value={adjustForm.leave_balance} onChange={e => setAdjustForm({...adjustForm, leave_balance: e.target.value})} />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setIsAdjustOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
-              <button type="submit" className="px-3 py-1 bg-yellow-500 text-white rounded">Save</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {
+        isAdjustOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <form onSubmit={handleAdjustSubmit} className="bg-white p-6 rounded shadow w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-3">Adjust Leave Balance</h3>
+              <div className="mb-2">Selected user ID: {adjustForm.userId}</div>
+              <input type="number" className="mb-2 w-full border p-2" placeholder="Leave balance" value={adjustForm.leave_balance} onChange={e => setAdjustForm({ ...adjustForm, leave_balance: e.target.value })} />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsAdjustOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
+                <button type="submit" className="px-3 py-1 bg-yellow-500 text-white rounded">Save</button>
+              </div>
+            </form>
+          </div>
+        )
+      }
       {/* Assign service call modal */}
-      {isAssignCallOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <form onSubmit={handleAssignCall} className="bg-white p-6 rounded shadow w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-3">Assign Service Call</h3>
-            <select className="mb-2 w-full border p-2" value={assignCallForm.engineerId} onChange={e => setAssignCallForm({...assignCallForm, engineerId: e.target.value})}>
-              <option value="">Select engineer</option>
-              {engineers.map(eng => <option key={eng.id} value={eng.id}>{eng.name} ({eng.role})</option>)}
-            </select>
-            <input className="mb-2 w-full border p-2" placeholder="Dairy name" value={assignCallForm.dairyName} onChange={e => setAssignCallForm({...assignCallForm, dairyName: e.target.value})} />
-            <input className="mb-2 w-full border p-2" placeholder="Problem" value={assignCallForm.problem} onChange={e => setAssignCallForm({...assignCallForm, problem: e.target.value})} />
-            <textarea className="mb-2 w-full border p-2" placeholder="Description" value={assignCallForm.description} onChange={e => setAssignCallForm({...assignCallForm, description: e.target.value})} />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setIsAssignCallOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
-              <button type="submit" className="px-3 py-1 bg-purple-600 text-white rounded">Assign Call</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {
+        isAssignCallOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <form onSubmit={handleAssignCall} className="bg-white p-6 rounded shadow w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-3">Assign Service Call</h3>
+              <select className="mb-2 w-full border p-2" value={assignCallForm.engineerId} onChange={e => setAssignCallForm({ ...assignCallForm, engineerId: e.target.value })}>
+                <option value="">Select engineer</option>
+                {engineers.map(eng => <option key={eng.id} value={eng.id}>{eng.name} ({eng.role})</option>)}
+              </select>
+
+
+              <div className="relative mb-2">
+                <input
+                  className="w-full border p-2"
+                  placeholder="Dairy name / Society"
+                  value={assignCallForm.dairyName}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setAssignCallForm({ ...assignCallForm, dairyName: val });
+
+                    if (val.length > 0) {
+                      try {
+                        const res = await axios.post('/api/service-calls/search', { society: val });
+                        if (res.data.success) {
+                          setDairySuggestions(res.data.data.societies || []);
+                          setShowDairySuggestions(true);
+                        } else {
+                          setDairySuggestions([]);
+                        }
+                      } catch (err) {
+                        console.error("Error fetching suggestions:", err);
+                        setDairySuggestions([]);
+                      }
+                    } else {
+                      setDairySuggestions([]);
+                      setShowDairySuggestions(false);
+                    }
+                  }}
+                  onFocus={() => {
+                    if (assignCallForm.dairyName) setShowDairySuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowDairySuggestions(false), 200)}
+                />
+                {showDairySuggestions && dairySuggestions.length > 0 && (
+                  <ul className="absolute z-10 bg-white border border-gray-200 rounded shadow-md mt-1 w-full max-h-48 overflow-y-auto">
+                    {dairySuggestions.map((item, idx) => (
+                      <li
+                        key={idx}
+                        className="p-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700"
+                        onMouseDown={() => {
+                          setAssignCallForm(prev => ({ ...prev, dairyName: item.society }));
+                          setShowDairySuggestions(false);
+                        }}
+                      >
+                        {item.society} <span className="text-gray-400 text-xs">({item.taluka})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <input className="mb-2 w-full border p-2" placeholder="Problem" value={assignCallForm.problem} onChange={e => setAssignCallForm({ ...assignCallForm, problem: e.target.value })} />
+              <textarea className="mb-2 w-full border p-2" placeholder="Description" value={assignCallForm.description} onChange={e => setAssignCallForm({ ...assignCallForm, description: e.target.value })} />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsAssignCallOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
+                <button type="submit" className="px-3 py-1 bg-purple-600 text-white rounded">Assign Call</button>
+              </div>
+            </form>
+          </div>
+        )
+      }
       {/* Location modal */}
-      {selectedLocation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white p-6 rounded shadow w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-2">Last Known Location for {selectedLocation.user?.name}</h3>
-            <div className="mb-2 text-sm text-gray-700">When: {selectedLocation.when}</div>
-            <div className="mb-4">
-              <div className="text-sm">Latitude: <span className="font-mono">{selectedLocation.latitude}</span></div>
-              <div className="text-sm">Longitude: <span className="font-mono">{selectedLocation.longitude}</span></div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setSelectedLocation(null)} className="px-3 py-1 border rounded">Close</button>
-              <button onClick={() => window.open(`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}`, '_blank')} className="px-3 py-1 bg-blue-600 text-white rounded">View on Google Maps</button>
+      {
+        selectedLocation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white p-6 rounded shadow w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-2">Last Known Location for {selectedLocation.user?.name}</h3>
+              <div className="mb-2 text-sm text-gray-700">When: {selectedLocation.when}</div>
+              <div className="mb-4">
+                <div className="text-sm">Latitude: <span className="font-mono">{selectedLocation.latitude}</span></div>
+                <div className="text-sm">Longitude: <span className="font-mono">{selectedLocation.longitude}</span></div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setSelectedLocation(null)} className="px-3 py-1 border rounded">Close</button>
+                <button onClick={() => window.open(`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}`, '_blank')} className="px-3 py-1 bg-blue-600 text-white rounded">View on Google Maps</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 

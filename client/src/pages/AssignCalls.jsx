@@ -113,47 +113,47 @@ const AssignCalls = () => {
 
     // Update handleSubmitAssignment function
     const handleSubmitAssignment = async () => {
-    try {
-        if (!selectedEngineer || !dairyName || !problem) {
-            alert('Please fill in all required fields');
-            return;
+        try {
+            if (!selectedEngineer || !dairyName || !problem) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            const assignData = {
+                id: selectedEngineer.id,
+                name: selectedEngineer.name,
+                role: selectedEngineer.role,
+                mobile_number: selectedEngineer.mobile_number,
+                dairy_name: dairyName,
+                problem: problem,
+                description: problem
+            };
+
+            const response = await axios.post(
+                '/api/service-calls/assign-call',
+                assignData,
+                { headers: { 'Content-Type': 'application/json' } }
+            );
+
+            if (response.data.success) {
+                // ✅ CLOSE CARD AUTOMATICALLY
+                setShowPopup(false);
+
+                // ✅ RESET FORM
+                setSelectedEngineer(null);
+                setDairyName('');
+                setProblem('');
+
+                // ✅ REFRESH ASSIGNED CALLS
+                fetchAssignedCalls();
+
+                alert('Call assigned successfully!');
+            }
+        } catch (err) {
+            console.error('Assignment error:', err);
+            alert(err.response?.data?.message || 'Failed to assign call');
         }
-
-        const assignData = {
-            id: selectedEngineer.id,
-            name: selectedEngineer.name,
-            role: selectedEngineer.role,
-            mobile_number: selectedEngineer.mobile_number,
-            dairy_name: dairyName,
-            problem: problem,
-            description: problem
-        };
-
-        const response = await axios.post(
-            '/api/service-calls/assign-call',
-            assignData,
-            { headers: { 'Content-Type': 'application/json' } }
-        );
-
-        if (response.data.success) {
-            // ✅ CLOSE CARD AUTOMATICALLY
-            setShowPopup(false);
-
-            // ✅ RESET FORM
-            setSelectedEngineer(null);
-            setDairyName('');
-            setProblem('');
-
-            // ✅ REFRESH ASSIGNED CALLS
-            fetchAssignedCalls();
-
-            alert('Call assigned successfully!');
-        }
-    } catch (err) {
-        console.error('Assignment error:', err);
-        alert(err.response?.data?.message || 'Failed to assign call');
-    }
-};
+    };
 
 
     const fetchAssignedCalls = async () => {
@@ -346,7 +346,7 @@ const AssignCalls = () => {
                                                     <li
                                                         key={idx}
                                                         className="p-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700"
-                                                        onClick={() => {
+                                                        onMouseDown={() => {
                                                             setSociety(item.society);
                                                             setShowSuggestions(false);
                                                         }}
@@ -562,7 +562,7 @@ const AssignCalls = () => {
                                                             <span className={`px-3 py-1 rounded-full text-sm font-medium ${call.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                                                 call.status === 'completed' ? 'bg-green-100 text-green-800' :
                                                                     call.status === 'resolved' ? 'bg-purple-100 text-purple-800' :
-                                                                    'bg-blue-100 text-blue-800'
+                                                                        'bg-blue-100 text-blue-800'
                                                                 }`}>
                                                                 {call.status}
                                                             </span>
@@ -691,7 +691,7 @@ const AssignCalls = () => {
                                                     <li
                                                         key={idx}
                                                         className="p-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700"
-                                                        onClick={() => {
+                                                        onMouseDown={() => {
                                                             setDairyName(item.society);
                                                             setShowDairySuggestions(false);
                                                         }}

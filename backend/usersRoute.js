@@ -8,6 +8,9 @@ import crypto from 'crypto';
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY; // Prefer service role for admin actions
 const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
+if (supabase && (!supabase.auth || !supabase.auth.admin)) {
+  console.error("⚠️ Supabase client initialized, but auth.admin is missing. Ensure SUPABASE_SERVICE_ROLE_KEY is used, not the anon key.");
+}
 
 const router = express.Router();
 
@@ -263,29 +266,33 @@ router.post("/create", requireAuth, async (req, res) => {
   const hashedPassword = password;
 
   try {
+    console.error("[DEBUG] Starting user creation for:", email);
     let newUserId = null;
     let supabaseError = null;
 
     // 1. Create in Supabase Auth if credentials available
     if (supabase) {
-      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { name, role, mobile_number }
-      });
+      if (!supabase.auth || !supabase.auth.admin) {
+        console.error("[DEBUG] Supabase skipped: auth.admin not available.");
+      } else {
+        console.error("[DEBUG] Attempting Supabase creation...");
+        const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { name, role, mobile_number }
+        });
 
-      if (authErr) {
-        console.warn('Supabase Auth createUser failed:', authErr.message);
-        supabaseError = authErr.message;
-        // If user already exists in Supabase, we might want to try to find their ID?
-        // For now, proceed to create locally with a random ID if we can't get the Supabase ID.
-      } else if (authData && authData.user) {
-        console.log('✅ Created user in Supabase Auth:', authData.user.id);
-        newUserId = authData.user.id;
+        if (authErr) {
+          console.error('[DEBUG] Supabase Auth createUser failed:', authErr.message);
+          supabaseError = authErr.message;
+        } else if (authData && authData.user) {
+          console.error('[DEBUG] Created user in Supabase Auth:', authData.user.id);
+          newUserId = authData.user.id;
+        }
       }
     } else {
-      console.warn('Supabase client not initialized (missing env vars), skipping Supabase Auth creation.');
+      console.error('[DEBUG] Supabase client not initialized, skipping.');
     }
 
     // 2. Create in Local DB
@@ -305,7 +312,7 @@ router.post("/create", requireAuth, async (req, res) => {
       supabaseError
     });
   } catch (err) {
-    console.error(err);
+    console.error("[DEBUG] Create User Error Stack:", err.stack);
     res.status(500).json({ success: false, message: "Error creating user", error: err.message });
   }
 });

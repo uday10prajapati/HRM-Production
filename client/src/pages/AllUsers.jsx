@@ -33,7 +33,7 @@ const AllUsers = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
+  const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   const [isDocumentsModalOpen, setDocumentsModalOpen] = useState(false);
 
 
@@ -128,8 +128,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   const openTaskModal = (user) => {
     setSelectedUser(user);
     setTaskData({ title: "", description: "", customerName: "", customerAddress: "" });
-  // ensure mobile is present in state
-  setTaskData(prev => ({ ...prev, customerMobile: "" }));
+    // ensure mobile is present in state
+    setTaskData(prev => ({ ...prev, customerMobile: "" }));
     setTaskModalOpen(true);
   };
 
@@ -164,7 +164,9 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
       fetchUsers();
     } catch (err) {
       console.error("Add user failed", err);
-      alert("Failed to add user. Please check console.");
+      const msg = err.response?.data?.message || err.message;
+      const detailed = err.response?.data?.error || '';
+      alert(`Failed to add user: ${msg}\n${detailed}`);
     }
   };
 
@@ -199,8 +201,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
         tasks: [taskData], // <--- send an array of tasks
       });
       alert(`Task assigned to ${selectedUser.name}`);
-  setTaskModalOpen(false);
-  setTaskData({ title: "", description: "", customerName: "", customerAddress: "", customerMobile: "" });
+      setTaskModalOpen(false);
+      setTaskData({ title: "", description: "", customerName: "", customerAddress: "", customerMobile: "" });
     } catch (err) {
       console.error("Assign task failed", err);
       alert("Failed to assign task. Please check console.");
@@ -208,9 +210,9 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   };
 
   const openTaskStatusModal = (user) => {
-  setSelectedUser(user); // make sure we know which user’s tasks to show
-  setTaskStatusModalOpen(true);
-};
+    setSelectedUser(user); // make sure we know which user’s tasks to show
+    setTaskStatusModalOpen(true);
+  };
 
 
 
@@ -233,12 +235,12 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
               onClose={() => setAddModalOpen(false)}
             />
           )}
-{isDocumentsModalOpen && selectedUser && (
-  <DocumentsModal 
-    userId={selectedUser.id} // Changed from currentUserId to selectedUser.id
-    onClose={() => setDocumentsModalOpen(false)} 
-  />
-)}
+          {isDocumentsModalOpen && selectedUser && (
+            <DocumentsModal
+              userId={selectedUser.id} // Changed from currentUserId to selectedUser.id
+              onClose={() => setDocumentsModalOpen(false)}
+            />
+          )}
           {isEditModalOpen && (
             <EditUserModal
               formData={formData}
@@ -265,11 +267,11 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
           )}
 
           {isTaskStatusModalOpen && selectedUser && (
-  <TaskStatusModal
-    selectedUser={selectedUser}
-    onClose={() => setTaskStatusModalOpen(false)}
-  />
-)}
+            <TaskStatusModal
+              selectedUser={selectedUser}
+              onClose={() => setTaskStatusModalOpen(false)}
+            />
+          )}
 
           <div className="max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-8">
@@ -336,7 +338,7 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                             {u.leave_balance ?? "N/A"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {((user?.role || '').toString().toLowerCase() === 'hr' || 
+                            {((user?.role || '').toString().toLowerCase() === 'hr' ||
                               (user?.role || '').toString().toLowerCase() === 'admin') ? (
                               <button
                                 onClick={() => openTaskStatusModal(u)}
@@ -346,8 +348,8 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                               </button>
                             ) : (
                               <span className="text-gray-500">
-                                {(u.tasks && u.tasks.length > 0) ? 
-                                  `${u.tasks.length} task${u.tasks.length > 1 ? 's' : ''}` : 
+                                {(u.tasks && u.tasks.length > 0) ?
+                                  `${u.tasks.length} task${u.tasks.length > 1 ? 's' : ''}` :
                                   'No tasks'}
                               </span>
                             )}
@@ -370,18 +372,18 @@ const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
-                              {(((user?.role || '').toString().toLowerCase() === 'hr') || 
-                                ((user?.role || '').toString().toLowerCase() === 'admin')) && 
+                              {(((user?.role || '').toString().toLowerCase() === 'hr') ||
+                                ((user?.role || '').toString().toLowerCase() === 'admin')) &&
                                 ((u.role || '').toString().toLowerCase() === 'engineer') && (
-                                <button
-                                  onClick={() => openTaskModal(u)}
-                                  className="text-gray-600 hover:text-indigo-600 transition-colors"
-                                >
-                                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                  </svg>
-                                </button>
-                              )}
+                                  <button
+                                    onClick={() => openTaskModal(u)}
+                                    className="text-gray-600 hover:text-indigo-600 transition-colors"
+                                  >
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                    </svg>
+                                  </button>
+                                )}
                               {(user?.role || '').toString().toLowerCase() === 'admin' && (
                                 <button
                                   onClick={() => openDocumentsModal(u)}
