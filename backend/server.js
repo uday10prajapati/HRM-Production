@@ -12,8 +12,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 // Use UPLOADS_DIR env var when provided, otherwise default to <repo_root>/storage/uploads
 const UPLOADS_BASE = process.env.UPLOADS_DIR
-    ? path.resolve(process.env.UPLOADS_DIR)
-    : path.join(REPO_ROOT, 'storage', 'uploads');
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.join(REPO_ROOT, 'storage', 'uploads');
 // ensure directory exists
 try { fs.mkdirSync(UPLOADS_BASE, { recursive: true }); } catch (e) { /* ignore */ }
 import dotenv from "dotenv";
@@ -67,118 +67,111 @@ app.use('/payslips', express.static(path.join(__dirname, 'storage', 'uploads', '
 const _origLog = console.log.bind(console);
 const _origInfo = console.info ? console.info.bind(console) : _origLog;
 const _origWarn = console.warn ? console.warn.bind(console) : _origLog;
-const SHOW_STARTUP_LOGS = String(process.env.SHOW_STARTUP_LOGS || '').toLowerCase() === 'true';
+const SHOW_STARTUP_LOGS = true; // FORCE TRUE FOR DEBUGGING
 
 function _shouldAllowStartupMessage(args) {
-    try {
-        const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-        if (SHOW_STARTUP_LOGS) return true;
-        if (msg.includes('PostgreSQL connected successfully') || msg.includes('Server running on port') || msg.includes('✅ PostgreSQL connected successfully') || msg.includes('✅Server running on port')) return true;
-        return false;
-    } catch (e) {
-        return false;
-    }
+  return true; // ALLOW ALL LOGS
 }
 
 console.log = (...args) => {
-    if (_shouldAllowStartupMessage(args)) _origLog(...args);
+  _origLog(...args);
 };
 console.info = (...args) => {
-    if (_shouldAllowStartupMessage(args)) _origInfo(...args);
+  _origInfo(...args);
 };
 console.warn = (...args) => {
-    if (SHOW_STARTUP_LOGS) _origWarn(...args);
+  _origWarn(...args);
 };
 
 async function startServer() {
-    // ensure DB connection first
-    await ensureDbConnection();
+  // ensure DB connection first
+  await ensureDbConnection();
 
-    // now dynamically import route modules so their startup helpers run serially
-    authRoutes = (await import('./authRoutes.js')).default;
-    usersRoutes = (await import('./usersRoute.js')).default;
-    documentsRoutes = (await import('./documentsRoute.js')).default;
-    attendanceRoutes = (await import('./attendanceRoute.js')).default;
-    leaveRoutes = (await import('./leaveRoute.js')).default;
-    shiftsRoute = (await import('./shiftsRoute.js')).default;
-    overtimeRoute = (await import('./overtimeRoute.js')).default;
-    stockRoute = (await import('./stockRoute.js')).default;
-    payrollRoute = (await import('./payrollRoute.js')).default;
-    liveLocationsRoute = (await import('./liveLocationsRoute.js')).default;
-    serviceCallsRoute = (await import('./serviceCallsRoute.js')).default;
-    taskRoute = (await import('./taskRoute.js')).default;
-    attendanceCorrectionRoute = (await import('./attendanceCorrectionRoute.js')).default;
-
-
-    // mount task routes
-    
-        // start assignment listener which listens to Postgres NOTIFY events
-        // The listener sends SMS/FCM notifications when a service_call is assigned
-        try {
-            const { default: startAssignmentListener } = await import('./assignmentListener.js');
-            startAssignmentListener().catch((e) => console.warn('assignmentListener failed to start:', e?.message || e));
-        } catch (e) {
-            console.warn('Could not import assignmentListener:', e?.message || e);
-        }
-
-    // mount routes
-    app.use('/api/auth', authRoutes);
-    app.use('/api/users', usersRoutes);
-    app.use('/api/documents', documentsRoutes);
-    app.use('/api/attendance', attendanceRoutes);
-    app.use('/api/leave', leaveRoutes);
-    app.use('/api/shifts', shiftsRoute);
-    app.use('/api/overtime', overtimeRoute);
-    app.use('/api/stock', stockRoute);
-    app.use('/api/payroll', payrollRoute);
-    app.use('/api/live_locations', liveLocationsRoute);
-    app.use('/api/service-calls', serviceCallsRoute);
-    app.use('/api/tasks', taskRoute);
-    app.use('/api/corrections', attendanceCorrectionRoute);
+  // now dynamically import route modules so their startup helpers run serially
+  authRoutes = (await import('./authRoutes.js')).default;
+  usersRoutes = (await import('./usersRoute.js')).default;
+  documentsRoutes = (await import('./documentsRoute.js')).default;
+  attendanceRoutes = (await import('./attendanceRoute.js')).default;
+  leaveRoutes = (await import('./leaveRoute.js')).default;
+  shiftsRoute = (await import('./shiftsRoute.js')).default;
+  overtimeRoute = (await import('./overtimeRoute.js')).default;
+  stockRoute = (await import('./stockRoute.js')).default;
+  payrollRoute = (await import('./payrollRoute.js')).default;
+  liveLocationsRoute = (await import('./liveLocationsRoute.js')).default;
+  serviceCallsRoute = (await import('./serviceCallsRoute.js')).default;
+  taskRoute = (await import('./taskRoute.js')).default;
+  attendanceCorrectionRoute = (await import('./attendanceCorrectionRoute.js')).default;
 
 
-    // --- Payroll scheduler: daily check, run on configured day of month ---
-    const PAYROLL_RUN_DAY = Number(process.env.PAYROLL_RUN_DAY || 1); // day of month to run (1-28/29/30/31)
-    const PAYROLL_RUN_HOUR = Number(process.env.PAYROLL_RUN_HOUR || 0); // hour (0-23)
-    const PAYROLL_RUN_MIN = Number(process.env.PAYROLL_RUN_MIN || 5); // minute
-    let _lastPayrollKey = null;
+  // mount task routes
 
-    async function maybeRunPayrollScheduler() {
+  // start assignment listener which listens to Postgres NOTIFY events
+  // The listener sends SMS/FCM notifications when a service_call is assigned
+  try {
+    const { default: startAssignmentListener } = await import('./assignmentListener.js');
+    startAssignmentListener().catch((e) => console.warn('assignmentListener failed to start:', e?.message || e));
+  } catch (e) {
+    console.warn('Could not import assignmentListener:', e?.message || e);
+  }
+
+  // mount routes
+  app.use('/api/auth', authRoutes);
+  app.use('/api/users', usersRoutes);
+  app.use('/api/documents', documentsRoutes);
+  app.use('/api/attendance', attendanceRoutes);
+  app.use('/api/leave', leaveRoutes);
+  app.use('/api/shifts', shiftsRoute);
+  app.use('/api/overtime', overtimeRoute);
+  app.use('/api/stock', stockRoute);
+  app.use('/api/payroll', payrollRoute);
+  app.use('/api/live_locations', liveLocationsRoute);
+  app.use('/api/service-calls', serviceCallsRoute);
+  app.use('/api/tasks', taskRoute);
+  app.use('/api/corrections', attendanceCorrectionRoute);
+
+
+  // --- Payroll scheduler: daily check, run on configured day of month ---
+  const PAYROLL_RUN_DAY = Number(process.env.PAYROLL_RUN_DAY || 1); // day of month to run (1-28/29/30/31)
+  const PAYROLL_RUN_HOUR = Number(process.env.PAYROLL_RUN_HOUR || 0); // hour (0-23)
+  const PAYROLL_RUN_MIN = Number(process.env.PAYROLL_RUN_MIN || 5); // minute
+  let _lastPayrollKey = null;
+
+  async function maybeRunPayrollScheduler() {
+    try {
+      const now = new Date();
+      if (now.getDate() !== PAYROLL_RUN_DAY) return;
+      if (now.getHours() !== PAYROLL_RUN_HOUR) return;
+      if (now.getMinutes() < PAYROLL_RUN_MIN) return; // allow minute threshold
+      const key = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+      if (_lastPayrollKey === key) return; // already ran today
+      // import the generator and run
       try {
-        const now = new Date();
-        if (now.getDate() !== PAYROLL_RUN_DAY) return;
-        if (now.getHours() !== PAYROLL_RUN_HOUR) return;
-        if (now.getMinutes() < PAYROLL_RUN_MIN) return; // allow minute threshold
-        const key = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-        if (_lastPayrollKey === key) return; // already ran today
-        // import the generator and run
-        try {
-          const mod = await import('./payrollRoute.js');
-          if (typeof mod.generatePayslipsForAll === 'function') {
-            console.log(`Running payroll generator for ${now.getFullYear()}-${now.getMonth()+1}`);
-            const res = await mod.generatePayslipsForAll(now.getFullYear(), now.getMonth() + 1, { savePdf: true });
-            console.log('Payroll run result:', res);
-          } else {
-            console.warn('Payroll generator not available');
-          }
-        } catch (e) {
-          console.error('Payroll scheduler error:', e?.message || e);
+        const mod = await import('./payrollRoute.js');
+        if (typeof mod.generatePayslipsForAll === 'function') {
+          console.log(`Running payroll generator for ${now.getFullYear()}-${now.getMonth() + 1}`);
+          const res = await mod.generatePayslipsForAll(now.getFullYear(), now.getMonth() + 1, { savePdf: true });
+          console.log('Payroll run result:', res);
+        } else {
+          console.warn('Payroll generator not available');
         }
-        _lastPayrollKey = key;
       } catch (e) {
-        console.error('Payroll scheduler unexpected error:', e?.message || e);
+        console.error('Payroll scheduler error:', e?.message || e);
       }
+      _lastPayrollKey = key;
+    } catch (e) {
+      console.error('Payroll scheduler unexpected error:', e?.message || e);
     }
+  }
 
-    // run once at startup (if matches day/hour/min) and then every minute
-    maybeRunPayrollScheduler().catch(() => {});
-    setInterval(maybeRunPayrollScheduler, 60 * 1000);
-    // --- end payroll scheduler ---
+  // run once at startup (if matches day/hour/min) and then every minute
+  maybeRunPayrollScheduler().catch(() => { });
+  setInterval(maybeRunPayrollScheduler, 60 * 1000);
+  // --- end payroll scheduler ---
 
-    app.listen(process.env.PORT || 5001, () => console.log(`✅ Server running on port ${process.env.PORT || 5001}`));
+  app.listen(process.env.PORT || 5001, () => console.log(`✅ Server running on port ${process.env.PORT || 5001}`));
 }
 
 startServer().catch(err => {
-    console.error('Failed to start server:', err);
-    process.exit(1);
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

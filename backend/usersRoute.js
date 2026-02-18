@@ -240,10 +240,20 @@ router.get("/:id", async (req, res) => {
 
 // POST create new user
 // POST /create - create a user. Only admin may create users via the API.
+// Helper to generate UUID if crypto.randomUUID is not available
+const generateUUID = () => {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 router.post("/create", requireAuth, async (req, res) => {
   // only admin allowed
   const roleRequester = req.user?.role ?? null;
   if (roleRequester !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden: only admin may create users' });
+
   const {
     name,
     email,
@@ -280,7 +290,7 @@ router.post("/create", requireAuth, async (req, res) => {
           email,
           password,
           email_confirm: true,
-          user_metadata: { name, role, mobile_number }
+          user_metadata: { name, role, mobile_number: mobile_number || null }
         });
 
         if (authErr) {
@@ -297,12 +307,16 @@ router.post("/create", requireAuth, async (req, res) => {
 
     // 2. Create in Local DB
     // Use the Supabase ID if we have it, otherwise generate one locally
-    const finalId = newUserId || crypto.randomUUID();
+    const finalId = newUserId || generateUUID();
+    // Ensure mobile_number is null if undefined/empty, unless you specifically want empty string
+    const finalMobile = mobile_number || null;
+
+    console.error(`[DEBUG] Inserting into DB: ID=${finalId}, Name=${name}, Email=${email}, Mobile=${finalMobile}`);
 
     const result = await pool.query(
       `INSERT INTO users (id, name, email, role, leave_balance, password, mobile_number)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [finalId, name, email, role, leaveBal, hashedPassword, mobile_number]
+      [finalId, name, email, role, leaveBal, hashedPassword, finalMobile]
     );
 
     res.status(201).json({
