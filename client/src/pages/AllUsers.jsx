@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
@@ -35,7 +35,8 @@ const AllUsers = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [isTaskStatusModalOpen, setTaskStatusModalOpen] = useState(false);
   const [isDocumentsModalOpen, setDocumentsModalOpen] = useState(false);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   // Form data
   const [formData, setFormData] = useState({
@@ -77,7 +78,6 @@ const AllUsers = () => {
       setUsers(allUsers);
       setLoading(false);
     } catch (err) {
-      // Log full axios response (status + body) when available to aid debugging
       console.error('GET /api/users failed:', err.response?.status, err.response?.data || err.message);
       setError(`Failed to load users (${err.response?.status || 'network error'})`);
       setLoading(false);
@@ -128,22 +128,24 @@ const AllUsers = () => {
   const openTaskModal = (user) => {
     setSelectedUser(user);
     setTaskData({ title: "", description: "", customerName: "", customerAddress: "" });
-    // ensure mobile is present in state
     setTaskData(prev => ({ ...prev, customerMobile: "" }));
     setTaskModalOpen(true);
   };
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
+      const lb = Number(formData.leave_balance);
       const dataToSend = {
         ...formData,
-        leave_balance: Number(formData.leave_balance) || 20,
+        leave_balance: isNaN(lb) ? 20 : lb,
       };
       const createRes = await axios.post("/api/users/create", dataToSend);
       const createdUser = createRes.data?.user || createRes.data;
 
-      // If files were attached, upload them to documents endpoint
       const form = new FormData();
       if (formData.contractFile) form.append('contract', formData.contractFile);
       if (formData.idProofFile) form.append('idProof', formData.idProofFile);
@@ -156,7 +158,6 @@ const AllUsers = () => {
           });
         } catch (err) {
           console.warn('Document upload failed', err);
-          // Continue, user is created — backend can retry or admin can re-upload
         }
       }
 
@@ -164,9 +165,15 @@ const AllUsers = () => {
       fetchUsers();
     } catch (err) {
       console.error("Add user failed", err);
+      if (err.response) {
+        console.log("Server Response:", err.response.data);
+      }
       const msg = err.response?.data?.message || err.message;
       const detailed = err.response?.data?.error || '';
       alert(`Failed to add user: ${msg}\n${detailed}`);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -178,7 +185,11 @@ const AllUsers = () => {
       fetchUsers();
     } catch (err) {
       console.error("Edit user failed", err);
-      alert("Failed to update user. Please check console.");
+      if (err.response) {
+        console.log("Server Response:", err.response.data);
+      }
+      const msg = err.response?.data?.message || err.message;
+      alert(`Failed to update user: ${msg}`);
     }
   };
 
@@ -198,7 +209,7 @@ const AllUsers = () => {
     try {
       await axios.post(`/api/users/assign-task`, {
         userId: selectedUser.id,
-        tasks: [taskData], // <--- send an array of tasks
+        tasks: [taskData],
       });
       alert(`Task assigned to ${selectedUser.name}`);
       setTaskModalOpen(false);
@@ -210,14 +221,11 @@ const AllUsers = () => {
   };
 
   const openTaskStatusModal = (user) => {
-    setSelectedUser(user); // make sure we know which user’s tasks to show
+    setSelectedUser(user);
     setTaskStatusModalOpen(true);
   };
 
-
-
   // ---------- RENDER ----------
-  if (!user) return null;
   if (loading) return <div className="p-6 text-gray-600">Loading users...</div>;
   if (error) return <div className="p-6 text-red-600">{error}</div>;
 
@@ -233,45 +241,57 @@ const AllUsers = () => {
               setFormData={setFormData}
               onSubmit={handleAddSubmit}
               onClose={() => setAddModalOpen(false)}
+              loading={isSubmitting}
             />
-          )}
-          {isDocumentsModalOpen && selectedUser && (
-            <DocumentsModal
-              userId={selectedUser.id} // Changed from currentUserId to selectedUser.id
-              onClose={() => setDocumentsModalOpen(false)}
-            />
-          )}
-          {isEditModalOpen && (
-            <EditUserModal
-              formData={formData}
-              setFormData={setFormData}
-              onSubmit={handleEditSubmit}
-              onClose={() => setEditModalOpen(false)}
-            />
-          )}
-          {isDeleteModalOpen && (
-            <DeleteUserModal
-              selectedUser={selectedUser}
-              onDelete={handleDeleteSubmit}
-              onClose={() => setDeleteModalOpen(false)}
-            />
-          )}
-          {isTaskModalOpen && (
-            <GiveTaskModal
-              selectedUser={selectedUser}
-              taskData={taskData}
-              setTaskData={setTaskData}
-              onSubmit={handleTaskSubmit}
-              onClose={() => setTaskModalOpen(false)}
-            />
-          )}
+          )
+          }
+          {
+            isDocumentsModalOpen && selectedUser && (
+              <DocumentsModal
+                userId={selectedUser.id} // Changed from currentUserId to selectedUser.id
+                onClose={() => setDocumentsModalOpen(false)}
+              />
+            )
+          }
+          {
+            isEditModalOpen && (
+              <EditUserModal
+                formData={formData}
+                setFormData={setFormData}
+                onSubmit={handleEditSubmit}
+                onClose={() => setEditModalOpen(false)}
+              />
+            )
+          }
+          {
+            isDeleteModalOpen && (
+              <DeleteUserModal
+                selectedUser={selectedUser}
+                onDelete={handleDeleteSubmit}
+                onClose={() => setDeleteModalOpen(false)}
+              />
+            )
+          }
+          {
+            isTaskModalOpen && (
+              <GiveTaskModal
+                selectedUser={selectedUser}
+                taskData={taskData}
+                setTaskData={setTaskData}
+                onSubmit={handleTaskSubmit}
+                onClose={() => setTaskModalOpen(false)}
+              />
+            )
+          }
 
-          {isTaskStatusModalOpen && selectedUser && (
-            <TaskStatusModal
-              selectedUser={selectedUser}
-              onClose={() => setTaskStatusModalOpen(false)}
-            />
-          )}
+          {
+            isTaskStatusModalOpen && selectedUser && (
+              <TaskStatusModal
+                selectedUser={selectedUser}
+                onClose={() => setTaskStatusModalOpen(false)}
+              />
+            )
+          }
 
           <div className="max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-8">

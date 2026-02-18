@@ -1,7 +1,7 @@
 import React from "react";
 import ModalWrapper from "./ModalWrapper";
 
-const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
+const AddUserModal = ({ formData, setFormData, onSubmit, onClose, loading }) => {
   const onFileChange = (key, file) => setFormData({ ...formData, [key]: file });
 
   return (
@@ -11,6 +11,7 @@ const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* ... fields ... */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
             <input
@@ -146,14 +147,16 @@ const AddUserModal = ({ formData, setFormData, onSubmit, onClose }) => {
             type="button"
             className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm"
             onClick={onClose}
+            disabled={loading}
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+            className={`px-4 py-2 rounded text-white text-sm ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+            disabled={loading}
           >
-            Add user
+            {loading ? 'Processing...' : 'Add user'}
           </button>
         </div>
       </form>

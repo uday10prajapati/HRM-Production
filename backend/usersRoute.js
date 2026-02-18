@@ -4,6 +4,7 @@ import { pool } from "./db.js";
 import requireAuth from './authMiddleware.js';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import fs from 'fs';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY; // Prefer service role for admin actions
@@ -35,6 +36,16 @@ const router = express.Router();
     console.log('✅ Ensured users.mobile_number column exists (or table missing)');
   } catch (err) {
     console.warn('Could not ensure users.mobile_number column:', err?.message || err);
+  }
+})();
+
+// Log schema for debugging
+(async function debugSchema() {
+  try {
+    const res = await pool.query("SELECT column_name, data_type, column_default FROM information_schema.columns WHERE table_name = 'users'");
+    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Users Table Schema: ${JSON.stringify(res.rows)}\n`);
+  } catch (e) {
+    console.error("Schema dump failed", e);
   }
 })();
 
@@ -80,7 +91,8 @@ router.get("/", async (req, res) => {
         u.mobile_number,
         u.email,
         u.role,
-        u.leave_balance,
+        u.role,
+        COALESCE(u.leave_balance, 20) as leave_balance,
         
         COALESCE(
           json_agg(
@@ -265,8 +277,16 @@ router.post("/create", requireAuth, async (req, res) => {
     mobile_number,
   } = req.body;
 
+  console.log('[DEBUG] /create called. Body:', JSON.stringify(req.body));
+  try {
+    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Create Body: ${JSON.stringify(req.body)}\n`);
+  } catch (e) { }
+
   const leaveBal = Number(leave_balance ?? leaveBalance ?? 20);
-  const attendanceStat = attendanceStatus ?? "";
+  try {
+    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Computed leaveBal: ${leaveBal} (from ${leave_balance}/${leaveBalance})\n`);
+  } catch (e) { }
+  console.log('[DEBUG] Computed leaveBal:', leaveBal);
 
   if (!password) {
     return res.status(400).json({ success: false, message: "Password is required" });
@@ -275,49 +295,62 @@ router.post("/create", requireAuth, async (req, res) => {
   // store plain password directly (INSECURE)
   const hashedPassword = password;
 
+  let finalId = null; // Defined outside try block for error handling scope
+
   try {
-    console.error("[DEBUG] Starting user creation for:", email);
+    console.log(`[DEBUG] Creating user: ${email}, role=${role}`);
     let newUserId = null;
     let supabaseError = null;
 
     // 1. Create in Supabase Auth if credentials available
-    if (supabase) {
-      if (!supabase.auth || !supabase.auth.admin) {
-        console.error("[DEBUG] Supabase skipped: auth.admin not available.");
-      } else {
-        console.error("[DEBUG] Attempting Supabase creation...");
-        const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-          user_metadata: { name, role, mobile_number: mobile_number || null }
-        });
+    if (supabase && supabase.auth && supabase.auth.admin) {
+      console.log("[DEBUG] Attempting Supabase creation...");
+      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, role, mobile_number: mobile_number || null }
+      });
 
-        if (authErr) {
-          console.error('[DEBUG] Supabase Auth createUser failed:', authErr.message);
-          supabaseError = authErr.message;
-        } else if (authData && authData.user) {
-          console.error('[DEBUG] Created user in Supabase Auth:', authData.user.id);
-          newUserId = authData.user.id;
+      if (authErr) {
+        console.error('[DEBUG] Supabase Auth createUser failed:', authErr.message);
+        supabaseError = authErr.message;
+
+        // If user already exists in Supabase, fetch their ID to allow syncing with local DB
+        if (authErr.message?.includes("already been registered")) {
+          console.log("[DEBUG] User exists in Supabase. Attempting to match existing ID...");
+          // Listing users to find match by email (page size 1000 to be safe)
+          const { data: listData, error: listError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          if (!listError && listData?.users) {
+            const existingUser = listData.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+            if (existingUser) {
+              newUserId = existingUser.id;
+              console.log(`[DEBUG] Matched existing Supabase ID: ${newUserId}`);
+            }
+          }
         }
+      } else if (authData && authData.user) {
+        console.log('[DEBUG] Created user in Supabase Auth:', authData.user.id);
+        newUserId = authData.user.id;
       }
-    } else {
-      console.error('[DEBUG] Supabase client not initialized, skipping.');
     }
 
     // 2. Create in Local DB
-    // Use the Supabase ID if we have it, otherwise generate one locally
-    const finalId = newUserId || generateUUID();
-    // Ensure mobile_number is null if undefined/empty, unless you specifically want empty string
+    // Use the Supabase ID if we have it, otherwise generate one locally (or use helper)
+    finalId = newUserId || generateUUID();
     const finalMobile = mobile_number || null;
 
-    console.error(`[DEBUG] Inserting into DB: ID=${finalId}, Name=${name}, Email=${email}, Mobile=${finalMobile}`);
+    console.log(`[DEBUG] Inserting into DB: ID=${finalId}, Name=${name}, Email=${email}`);
 
     const result = await pool.query(
       `INSERT INTO users (id, name, email, role, leave_balance, password, mobile_number)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [finalId, name, email, role, leaveBal, hashedPassword, finalMobile]
     );
+
+    try {
+      fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Inserted User: ${JSON.stringify(result.rows[0])}\n`);
+    } catch (e) { }
 
     res.status(201).json({
       success: true,
@@ -326,7 +359,56 @@ router.post("/create", requireAuth, async (req, res) => {
       supabaseError
     });
   } catch (err) {
-    console.error("[DEBUG] Create User Error Stack:", err.stack);
+    console.error("[DEBUG] Create User Error:", err);
+
+    // Handle Unique Constraint Violations (Duplicate Email/Mobile/ID) - Postgres Code 23505
+    if (err.code === '23505') {
+      const detail = err.detail || '';
+
+      // Idempotency Check: If ID already exists, it might be a double-submit or sync issue.
+      // If the user exists (e.g. created by trigger from Supabase Auth), we MUST update it 
+      // to ensure fields like leave_balance and password are set correctly.
+      if (detail.includes('Key (id)') && finalId) {
+        console.log(`[DEBUG] Idempotency: User ID ${finalId} exists. Updating existing user.`);
+        try {
+          fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency Block Entered. ID: ${finalId}\n`);
+          // Perform UPDATE to ensure all fields are set
+          // Fix: finalMobile is scoped to try block, use mobile_number from outer scope
+          const updateRes = await pool.query(
+            `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, password=$5, mobile_number=$6 
+                 WHERE id=$7 RETURNING *`,
+            [name, email, role, leaveBal, hashedPassword, mobile_number || null, finalId]
+          );
+
+          if (updateRes.rows.length > 0) {
+            try {
+              fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Success: ${JSON.stringify(updateRes.rows[0])}\n`);
+            } catch (e) { }
+
+            return res.status(200).json({
+              success: true,
+              user: updateRes.rows[0],
+              message: "User synced and updated.",
+              supabaseSync: true
+            });
+          } else {
+            fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Rows=0\n`);
+          }
+        } catch (e) {
+          console.error("Idempotency update failed", e);
+          try {
+            fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Error: ${e.message}\n`);
+          } catch (ex) { }
+        }
+      }
+
+      let message = 'User already exists.';
+      if (detail.includes('email')) message = 'Email already exists.';
+      else if (detail.includes('mobile')) message = 'Mobile Number already exists.';
+
+      return res.status(409).json({ success: false, message: message, error: detail });
+    }
+
     res.status(500).json({ success: false, message: "Error creating user", error: err.message });
   }
 });
@@ -345,21 +427,27 @@ router.put("/update/:id", async (req, res) => {
     mobile_number,
   } = req.body;
 
-  const leaveBal = Number(leave_balance ?? leaveBalance ?? null);
-  const attendanceStat = attendanceStatus ?? null;
+  const leaveBal = Number(leave_balance ?? leaveBalance ?? 20);
+  const finalMobile = mobile_number || null;
 
   try {
     const result = await pool.query(
       `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, mobile_number=$5
        WHERE id=$6 RETURNING *`,
-      [name, email, role, leaveBal, mobile_number, id]
+      [name, email, role, leaveBal, finalMobile, id]
     );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
     res.json({ success: true, user: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error(`[DEBUG] Update User Error (ID: ${id}):`, err);
+    if (err.code === '23505') {
+      const detail = err.detail || '';
+      const field = detail.includes('email') ? 'Email' : (detail.includes('mobile') ? 'Mobile Number' : 'Field');
+      return res.status(409).json({ success: false, message: `${field} already exists.`, error: detail });
+    }
     res.status(500).json({ success: false, message: "Error updating user", error: err.message });
   }
 });
