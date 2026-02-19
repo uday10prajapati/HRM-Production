@@ -263,8 +263,11 @@ const generateUUID = () => {
 
 router.post("/create", requireAuth, async (req, res) => {
   // only admin allowed
-  const roleRequester = req.user?.role ?? null;
-  if (roleRequester !== 'admin') return res.status(403).json({ success: false, message: 'Forbidden: only admin may create users' });
+  // only admin/hr allowed
+  const roleRequester = (req.user?.role || '').toLowerCase();
+  if (roleRequester !== 'admin' && roleRequester !== 'hr') {
+    return res.status(403).json({ success: false, message: 'Forbidden: only admin/hr may create users' });
+  }
 
   const {
     name,

@@ -251,6 +251,13 @@ async function createAll() {
         UNIQUE(user_id, year, month)
       );
 
+      -- Society Master table
+      CREATE TABLE IF NOT EXISTS public.service_call_dairy_list (
+        "SOCCD" numeric null,
+        "SOCIETY" text null,
+        "TALUKA NAME" text null
+      ) TABLESPACE pg_default;
+
     `);
 
     console.log('Schema creation complete.');

@@ -101,6 +101,7 @@ async function startServer() {
   serviceCallsRoute = (await import('./serviceCallsRoute.js')).default;
   taskRoute = (await import('./taskRoute.js')).default;
   attendanceCorrectionRoute = (await import('./attendanceCorrectionRoute.js')).default;
+  const societyMasterRoute = (await import('./societyMasterRoute.js')).default;
 
 
   // mount task routes
@@ -128,6 +129,7 @@ async function startServer() {
   app.use('/api/service-calls', serviceCallsRoute);
   app.use('/api/tasks', taskRoute);
   app.use('/api/corrections', attendanceCorrectionRoute);
+  app.use('/api/society-master', societyMasterRoute);
 
 
   // --- Payroll scheduler: daily check, run on configured day of month ---
