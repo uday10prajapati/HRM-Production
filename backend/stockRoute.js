@@ -9,7 +9,7 @@ async function ensureTables() {
   await pool.query(`
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE TABLE IF NOT EXISTS stock_items (
-      id serial NOT NULL,
+      id serial NOT NULL PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
       quantity INTEGER NOT NULL DEFAULT 0,
@@ -20,7 +20,38 @@ async function ensureTables() {
       use_item NUMERIC
     );
 
-        
+    CREATE TABLE IF NOT EXISTS engineer_stock (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID NOT NULL,
+      stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      assigned_at TIMESTAMP DEFAULT now(),
+      last_reported_at TIMESTAMP,
+      last_reported_by TEXT,
+      UNIQUE(engineer_id, stock_item_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_consumption (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID,
+      stock_item_id INTEGER REFERENCES stock_items(id) ON DELETE SET NULL,
+      quantity INTEGER NOT NULL,
+      note TEXT,
+      consumed_at TIMESTAMP DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS wastage_stock (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID NOT NULL,
+      stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL,
+      reason TEXT,
+      reported_at TIMESTAMP DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS product_items (
+      "Product Name" text null
+    );
   `);
 }
 
