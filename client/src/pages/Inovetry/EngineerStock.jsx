@@ -4,6 +4,8 @@ import axios from 'axios';
 export default function EngineerStock({ engineerId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [wastageModalOpen, setWastageModalOpen] = useState(false);
 
   async function fetchItems() {
     setLoading(true);
@@ -20,10 +22,37 @@ export default function EngineerStock({ engineerId }) {
 
   // optimistic update handler: if child reports a new quantity, update local items immediately
   function handleReported(itemId, reportedQty) {
-  // compare ids as strings (avoid Number coercion which fails for UUIDs)
-  setItems(prev => prev.map(it => (String(it.id) === String(itemId) ? { ...it, engineer_quantity: Number(reportedQty) } : it)));
-    // also re-fetch in background to reconcile
+    setItems(prev => prev.map(it => (String(it.id) === String(itemId) ? { ...it, engineer_quantity: Number(reportedQty) } : it)));
     fetchItems();
+  }
+
+  function openWastageModal(item) {
+    setSelectedItem(item);
+    setWastageModalOpen(true);
+  }
+
+  async function handleWastageSubmit(itemId, qty, reason) {
+    try {
+      // get current user id
+      let userId = null;
+      try {
+        const u = JSON.parse(localStorage.getItem('user'));
+        if (u && u.id) userId = u.id;
+      } catch (e) { }
+      if (!userId) userId = engineerId;
+
+      await axios.post('/api/stock/wastage', {
+        engineerId: engineerId,
+        stockItemId: itemId,
+        quantity: qty,
+        reason: reason
+      });
+      alert('Wastage reported successfully');
+      fetchItems(); // refresh to show updated quantity
+    } catch (err) {
+      console.error('Failed to report wastage', err);
+      alert('Failed to report wastage');
+    }
   }
 
   return (
@@ -31,7 +60,7 @@ export default function EngineerStock({ engineerId }) {
       {/* Header Section */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-800">Engineer Stock Management</h2>
-        <button 
+        <button
           onClick={fetchItems}
           className="inline-flex items-center px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
         >
@@ -48,8 +77,8 @@ export default function EngineerStock({ engineerId }) {
           <div className="p-8 text-center">
             <div className="inline-flex items-center space-x-2">
               <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
               <span className="text-gray-600">Loading stock items...</span>
             </div>
@@ -68,7 +97,7 @@ export default function EngineerStock({ engineerId }) {
               <tr>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
                 <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -90,13 +119,25 @@ export default function EngineerStock({ engineerId }) {
                       {it.engineer_quantity} units
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <ReportRemaining 
-                      engineerId={engineerId} 
-                      itemId={it.id} 
-                      current={it.engineer_quantity} 
-                      onReported={(newQty) => handleReported(it.id, newQty)} 
-                    />
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center space-x-4">
+                      <ReportRemaining
+                        engineerId={engineerId}
+                        itemId={it.id}
+                        current={it.engineer_quantity}
+                        onReported={(newQty) => handleReported(it.id, newQty)}
+                      />
+                      <button
+                        onClick={() => openWastageModal(it)}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium flex items-center"
+                        title="Report Wastage"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Wastage
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -104,11 +145,18 @@ export default function EngineerStock({ engineerId }) {
           </table>
         )}
       </div>
+
+      <WastageModal
+        isOpen={wastageModalOpen}
+        onClose={() => setWastageModalOpen(false)}
+        item={selectedItem}
+        onSubmit={handleWastageSubmit}
+      />
     </div>
   );
 }
 
-function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => {} }) {
+function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => { } }) {
   const [val, setVal] = useState(current);
   const [saving, setSaving] = useState(false);
 
@@ -119,15 +167,15 @@ function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => {
     try {
       // try to include current user id as header for auditing
       let userId = null;
-  try {
+      try {
         const u = JSON.parse(localStorage.getItem('user'));
         if (u && u.id) userId = u.id;
       } catch (e) { /* ignore */ }
       if (!userId) userId = engineerId;
-  await axios.put(`/api/stock/engineer/${engineerId}/item/${itemId}`, { quantity: Number(val), reportedBy: userId }, { headers: { 'X-User-Id': userId } });
-  // optimistic UI: inform parent of new quantity
-  onReported(Number(val));
-  alert('Reported');
+      await axios.put(`/api/stock/engineer/${engineerId}/item/${itemId}`, { quantity: Number(val), reportedBy: userId }, { headers: { 'X-User-Id': userId } });
+      // optimistic UI: inform parent of new quantity
+      onReported(Number(val));
+      alert('Reported');
     } catch (err) {
       console.error(err);
       alert('Failed to report');
@@ -136,7 +184,7 @@ function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => {
 
   return (
     <div className="flex items-center justify-end space-x-2">
-      <input 
+      <input
         type="number"
         min="0"
         value={val}
@@ -150,8 +198,8 @@ function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => {
       >
         {saving ? (
           <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
         ) : (
           <>
@@ -162,6 +210,77 @@ function ReportRemaining({ engineerId, itemId, current = 0, onReported = () => {
           </>
         )}
       </button>
+    </div>
+  );
+}
+
+function WastageModal({ isOpen, onClose, item, onSubmit }) {
+  const [quantity, setQuantity] = useState(1);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuantity(1);
+      setReason('');
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    await onSubmit(item.id, quantity, reason);
+    setSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+        <h3 className="text-lg font-bold mb-4 text-gray-800">Report Wastage: {item?.name}</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Wasted</label>
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(Number(e.target.value))}
+              className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Current Stock: {item?.engineer_quantity}</p>
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full border rounded px-3 py-2 h-20 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              placeholder="e.g., Damaged during transit, Lost at site..."
+              required
+            ></textarea>
+          </div>
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              {submitting ? 'Submitting...' : 'Report Wastage'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

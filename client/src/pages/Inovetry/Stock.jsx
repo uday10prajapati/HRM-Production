@@ -4,18 +4,31 @@ import Sidebar from '../../components/Sidebar';
 import CentralStock from './CentralStock';
 import LowStockAlerts from './LowStockAlerts';
 import EngineerStockModal from '../../components/EngineerStockModal';
+import EngineerStock from './EngineerStock';
+import WastageList from './WastageList';
+import ManageStockModal from '../../components/ManageStockModal';
 import axios from 'axios';
 
 export default function Stock() {
-  // admin view – show central stock, alerts, and overview of engineer stocks
-  // for now engineerId can be selected later; using placeholder null to show both
-  const engineerId = null;
+  const [user, setUser] = useState(null);
   const [allocations, setAllocations] = useState([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [modalEngineer, setModalEngineer] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [manageModalOpen, setManageModalOpen] = useState(false);
 
   useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user'));
+      setUser(u);
+    } catch (e) { console.error('Failed to parse user', e); }
+  }, []);
+
+  const isEngineer = user?.role === 'engineer';
+  const engineerId = null;
+
+  useEffect(() => {
+    if (isEngineer) return; // Don't load admin data if engineer
     let mounted = true;
     async function load() {
       setOverviewLoading(true);
@@ -34,7 +47,7 @@ export default function Stock() {
     // polling every 30s
     const id = setInterval(load, 30_000);
     return () => { mounted = false; clearInterval(id); };
-  }, []);
+  }, [isEngineer]);
 
   const lowEngineersCount = useMemo(() => {
     try {
@@ -60,10 +73,32 @@ export default function Stock() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `allocations_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
+    a.download = `allocations_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  if (isEngineer) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex">
+          <Sidebar />
+          <main className="flex-1 p-8">
+            <div className="max-w-7xl mx-auto">
+              <h1 className="text-3xl font-bold text-gray-800 mb-6">My Inventory</h1>
+              <EngineerStock engineerId={user.id} />
+              <div className="mt-8">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">My Wastage Reports</h2>
+                <WastageList />
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -77,15 +112,26 @@ export default function Stock() {
                 <h1 className="text-3xl font-bold text-gray-800">Inventory & Stock Management</h1>
                 <p className="mt-2 text-gray-600">Overview of central stock, low-stock alerts and engineer allocations</p>
               </div>
-              <button 
-                onClick={exportCsv} 
-                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export CSV
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setManageModalOpen(true)}
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Manage Stock
+                </button>
+                <button
+                  onClick={exportCsv}
+                  className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export CSV
+                </button>
+              </div>
             </div>
 
             {/* Main Grid Layout */}
@@ -97,6 +143,9 @@ export default function Stock() {
                 <LowStockAlerts engineerId={engineerId} />
               </div>
             </div>
+
+            {/* Wastage Section (New) */}
+            <WastageList />
 
             {/* Engineer Allocations Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -118,8 +167,8 @@ export default function Stock() {
                 <div className="p-8 text-center">
                   <div className="inline-flex items-center space-x-3">
                     <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                     <span className="text-gray-600">Loading allocations...</span>
                   </div>
@@ -162,9 +211,9 @@ export default function Stock() {
                       {allocations.map(a => {
                         const isLow = Number(a.quantity) <= Number(a.item_threshold || 0);
                         return (
-                          <tr key={a.id} className={`hover:bg-gray-50 ${isLow ? 'bg-yellow-50' : ''}`}>
+                          <tr key={a.id || Math.random()} className={`hover:bg-gray-50 ${isLow ? 'bg-yellow-50' : ''}`}>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <button 
+                              <button
                                 onClick={() => openEngineerModal(a.engineer_id || a.engineer_name)}
                                 className="text-blue-600 hover:text-blue-800 font-medium"
                               >
@@ -202,10 +251,20 @@ export default function Stock() {
             </div>
           </div>
 
-          <EngineerStockModal 
-            engineerId={modalEngineer} 
-            open={modalOpen} 
-            onClose={() => setModalOpen(false)} 
+          <EngineerStockModal
+            engineerId={modalEngineer}
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+          />
+          <ManageStockModal
+            isOpen={manageModalOpen}
+            onClose={() => setManageModalOpen(false)}
+            onUpdated={() => {
+              // Close modal or refresh related data if separate from internal modal state
+              // CentralStock usually fetches on mount or specific signal, but here we can just close
+              // The main page might not reflect immediately without a refresh since CentralStock components encapsulate their own fetching.
+              // We could lift CentralState higher, but for now just close.
+            }}
           />
         </main>
       </div>

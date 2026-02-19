@@ -174,7 +174,7 @@ router.get('/alerts', async (req, res) => {
   try {
     const central = await pool.query('SELECT id, name, quantity, threshold FROM stock_items WHERE quantity <= threshold ORDER BY quantity');
     let engineer = [];
-      if (engineerId) {
+    if (engineerId) {
       engineer = await pool.query(`SELECT es.engineer_id, es.quantity, si.id as stock_item_id, si.name, si.threshold
         FROM engineer_stock es JOIN stock_items si ON si.id = es.stock_item_id
         WHERE es.engineer_id::text = $1 AND es.quantity <= si.threshold ORDER BY es.quantity`, [String(engineerId)]);
@@ -220,7 +220,7 @@ router.put('/engineer/:engineerId/item/:itemId', async (req, res) => {
 
     // Check threshold and optionally notify via webhook
     try {
-  const it = await pool.query('SELECT threshold, name FROM stock_items WHERE id=$1 LIMIT 1', [itemId]);
+      const it = await pool.query('SELECT threshold, name FROM stock_items WHERE id=$1 LIMIT 1', [itemId]);
       const threshold = it.rows && it.rows[0] ? Number(it.rows[0].threshold || 0) : null;
       const itemName = it.rows && it.rows[0] ? it.rows[0].name : null;
       if (threshold !== null && qQty <= threshold) {
@@ -244,7 +244,7 @@ router.put('/engineer/:engineerId/item/:itemId', async (req, res) => {
 });
 
 // Ensure schema changes are applied on startup (add columns if missing)
-;(async function ensureColumns() {
+; (async function ensureColumns() {
   try {
     await pool.query(`ALTER TABLE engineer_stock ADD COLUMN IF NOT EXISTS last_reported_at TIMESTAMP`);
     await pool.query(`ALTER TABLE engineer_stock ADD COLUMN IF NOT EXISTS last_reported_by TEXT`);
@@ -284,6 +284,141 @@ router.get('/product-items', async (req, res) => {
   } catch (err) {
     console.error('Error fetching product items:', err);
     res.status(500).json({ error: 'Failed to fetch product items' });
+  }
+});
+
+// Report wastage (engineer reports damaged/lost stock)
+router.post('/wastage', async (req, res) => {
+  const { engineerId, stockItemId, quantity = 1, reason } = req.body;
+  if (!stockItemId || !quantity || !engineerId) return res.status(400).json({ error: 'engineerId, stockItemId and quantity required' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Deduct from engineer stock similar to consumption
+    const es = await client.query(
+      'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2 FOR UPDATE',
+      [String(engineerId), String(stockItemId)]
+    );
+
+    if (es.rowCount > 0 && es.rows[0].quantity >= quantity) {
+      await client.query('UPDATE engineer_stock SET quantity = quantity - $1 WHERE id = $2', [quantity, es.rows[0].id]);
+    } else {
+      // If not enough engineer stock, we can either error or just deduct what is possible and record wastage.
+      // For now, let's treat it ensuring data integrity: if they report wastage, they should have it.
+      // But adhering to 'consume' logic: fail if not enough? 
+      // The consume logic falls back to central stock. Wastage usually implies the item was in possession.
+      // Let's just deduct what we can from engineer stock, and if 0, maybe it was already accounted for or central?
+      // Actually, let's just proceed to record wastage, and update engineer stock if it exists.
+      if (es.rowCount > 0 && es.rows[0].quantity > 0) {
+        const toDeduct = Math.min(es.rows[0].quantity, quantity);
+        await client.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [toDeduct, es.rows[0].id]);
+      }
+    }
+
+    // 2. Insert into wastage_stock
+    const ins = await client.query(
+      'INSERT INTO wastage_stock (engineer_id, stock_item_id, quantity, reason) VALUES ($1,$2,$3,$4) RETURNING *',
+      [String(engineerId), String(stockItemId), Number(quantity), reason || null]
+    );
+
+    await client.query('COMMIT');
+    res.json(ins.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Failed to report wastage:', err);
+    res.status(500).json({ error: 'Failed to report wastage' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get all wastage (Admin/HR view)
+router.get('/wastage', async (req, res) => {
+  try {
+    const q = await pool.query(`
+      SELECT w.*, u.name as engineer_name, si.name as item_name, si.sku
+      FROM wastage_stock w
+      JOIN users u ON u.id::text = w.engineer_id::text
+      JOIN stock_items si ON si.id = w.stock_item_id
+      ORDER BY w.reported_at DESC
+    `);
+    res.json(q.rows);
+  } catch (err) {
+    console.error('Failed to fetch wastage:', err);
+    res.status(500).json({ error: 'Failed to fetch wastage records' });
+  }
+});
+
+// Get wastage for specific engineer
+router.get('/wastage/engineer/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const q = await pool.query(`
+      SELECT w.*, si.name as item_name, si.sku
+      FROM wastage_stock w
+      JOIN stock_items si ON si.id = w.stock_item_id
+      WHERE w.engineer_id::text = $1
+      ORDER BY w.reported_at DESC
+    `, [String(id)]);
+    res.json(q.rows);
+  } catch (err) {
+    console.error('Failed to fetch engineer wastage:', err);
+    res.status(500).json({ error: 'Failed to fetch engineer wastage' });
+  }
+});
+
+// Update stock item
+router.put('/items/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, description, quantity, threshold, dairy_name, notes, use_item } = req.body;
+
+  try {
+    const q = await pool.query(
+      `UPDATE stock_items SET 
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        quantity = COALESCE($3, quantity), 
+        threshold = COALESCE($4, threshold),
+        dairy_name = COALESCE($5, dairy_name),
+        notes = COALESCE($6, notes),
+        use_item = COALESCE($7, use_item)
+       WHERE id = $8 RETURNING *`,
+      [name, description, quantity, threshold, dairy_name, notes, use_item, id]
+    );
+
+    if (q.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json(q.rows[0]);
+  } catch (err) {
+    console.error('Failed to update item:', err);
+    res.status(500).json({ error: 'Failed to update item' });
+  }
+});
+
+// Delete stock item
+router.delete('/items/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const q = await pool.query('DELETE FROM stock_items WHERE id = $1 RETURNING *', [id]);
+    if (q.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json({ message: 'Item deleted', item: q.rows[0] });
+  } catch (err) {
+    console.error('Failed to delete item:', err);
+    res.status(500).json({ error: 'Failed to delete item' });
+  }
+});
+
+// Add new product item (name) to standard list
+router.post('/product-items', async (req, res) => {
+  const { name } = req.body; // Expecting { "name": "Product Name" }
+  if (!name) return res.status(400).json({ error: 'Product Name is required' });
+  try {
+    const q = await pool.query('INSERT INTO product_items ("Product Name") VALUES ($1) RETURNING *', [name]);
+    res.json(q.rows[0]);
+  } catch (err) {
+    console.error('Failed to add product item:', err);
+    res.status(500).json({ error: 'Failed to add product item' });
   }
 });
 

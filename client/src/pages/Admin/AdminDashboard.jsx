@@ -12,6 +12,7 @@ const Admin = () => {
   const [docsCount, setDocsCount] = useState(0);
   const [user, setUser] = useState(null);
   const [assignedCallsCount, setAssignedCallsCount] = useState(0);
+  const [resolvedCallsCount, setResolvedCallsCount] = useState(0);
   const [isSocietyMasterOpen, setIsSocietyMasterOpen] = useState(false);
 
 
@@ -59,7 +60,12 @@ const Admin = () => {
       });
 
       if (response.data.success) {
-        setAssignedCallsCount(response.data.calls.length); // ← Only updates assigned calls count
+        setAssignedCallsCount(response.data.calls.length);
+        const resolved = response.data.calls.filter(c =>
+          (c.status || '').toLowerCase() === 'completed' ||
+          (c.status || '').toLowerCase() === 'resolved'
+        ).length;
+        setResolvedCallsCount(resolved);
       }
     } catch (err) {
       console.error("Failed to fetch assigned calls", err);
@@ -170,7 +176,27 @@ const Admin = () => {
                   </div>
                 </div>
                 <div className="mt-4 border-t border-gray-100 pt-4">
-                  <a href="/documents" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View all Assigned Calls →</a>
+                  <a href="/assign-call" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View all Assigned Calls →</a>
+                </div>
+              </div>
+
+              {/* Resolved Calls Card */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
+                <div className="flex items-center">
+                  <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4 flex-1">
+                    <h3 className="text-sm font-medium text-gray-500">Resolved Calls</h3>
+                    <div className="mt-2 flex items-baseline">
+                      <div className="text-2xl font-bold text-gray-900">{resolvedCallsCount}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  <a href="/assign-call" className="text-sm text-blue-600 hover:text-blue-800 font-medium">View detailed report →</a>
                 </div>
               </div>
 

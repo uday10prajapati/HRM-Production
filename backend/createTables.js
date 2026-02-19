@@ -136,7 +136,7 @@ async function createAll() {
 
       -- stock tables
       CREATE TABLE IF NOT EXISTS stock_items (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id SERIAL PRIMARY KEY,
         sku TEXT UNIQUE,
         name TEXT NOT NULL,
         description TEXT,
@@ -148,7 +148,7 @@ async function createAll() {
       CREATE TABLE IF NOT EXISTS engineer_stock (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         engineer_id UUID NOT NULL,
-        stock_item_id UUID NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+        stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
         quantity INTEGER NOT NULL DEFAULT 0,
         assigned_at TIMESTAMP DEFAULT now(),
         last_reported_at TIMESTAMP,
@@ -159,10 +159,19 @@ async function createAll() {
       CREATE TABLE IF NOT EXISTS stock_consumption (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         engineer_id UUID,
-        stock_item_id UUID REFERENCES stock_items(id) ON DELETE SET NULL,
+        stock_item_id INTEGER REFERENCES stock_items(id) ON DELETE SET NULL,
         quantity INTEGER NOT NULL,
         note TEXT,
         consumed_at TIMESTAMP DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS wastage_stock (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        engineer_id UUID NOT NULL,
+        stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+        quantity INTEGER NOT NULL,
+        reason TEXT,
+        reported_at TIMESTAMP DEFAULT now()
       );
 
       -- overtime / payroll (basic)
@@ -256,6 +265,10 @@ async function createAll() {
         "SOCCD" numeric null,
         "SOCIETY" text null,
         "TALUKA NAME" text null
+      ) TABLESPACE pg_default;
+
+      CREATE TABLE IF NOT EXISTS public.product_items (
+        "Product Name" text null
       ) TABLESPACE pg_default;
 
     `);
