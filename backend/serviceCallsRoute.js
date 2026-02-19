@@ -8,42 +8,42 @@ const router = express.Router();
 
 // Add route for assigned calls
 router.get('/assigned-calls', requireAuth, async (req, res) => {
-    try {
-        const query = `
+  try {
+    const query = `
             SELECT ac.*, u.name as engineer_name
             FROM assign_call ac
             LEFT JOIN users u ON ac.id = u.id
             ORDER BY ac.created_at DESC
         `;
-        const result = await pool.query(query);
-        
-        res.json({
-            success: true,
-            calls: result.rows
-        });
-    } catch (err) {
-        console.error('Fetch assigned calls error:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch assigned calls'
-        });
-    }
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      calls: result.rows
+    });
+  } catch (err) {
+    console.error('Fetch assigned calls error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch assigned calls'
+    });
+  }
 });
 
 // Route to create new assign call
 router.post('/assign', requireAuth, async (req, res) => {
-    try {
-        const {
-            id,
-            name,
-            role,
-            mobile_number,
-            dairy_name,
-            problem,
-            description
-        } = req.body;
+  try {
+    const {
+      id,
+      name,
+      role,
+      mobile_number,
+      dairy_name,
+      problem,
+      description
+    } = req.body;
 
-        const query = `
+    const query = `
             INSERT INTO assign_call (
                 id,
                 name,
@@ -56,55 +56,55 @@ router.post('/assign', requireAuth, async (req, res) => {
             RETURNING *
         `;
 
-        const values = [
-            id,
-            name,
-            role,
-            mobile_number,
-            dairy_name,
-            problem,
-            description
-        ];
+    const values = [
+      id,
+      name,
+      role,
+      mobile_number,
+      dairy_name,
+      problem,
+      description
+    ];
 
-        const result = await pool.query(query, values);
+    const result = await pool.query(query, values);
 
-        res.json({
-            success: true,
-            message: 'Call assigned successfully',
-            data: result.rows[0]
-        });
+    res.json({
+      success: true,
+      message: 'Call assigned successfully',
+      data: result.rows[0]
+    });
 
-    } catch (err) {
-        console.error('Error assigning call:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to assign call'
-        });
-    }
+  } catch (err) {
+    console.error('Error assigning call:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign call'
+    });
+  }
 });
 
 // Add assign-call route
 router.post('/assign-call', requireAuth, async (req, res) => {
-    try {
-        const {
-            id,
-            name,
-            role,
-            mobile_number,
-            dairy_name,
-            problem,
-            description
-        } = req.body;
+  try {
+    const {
+      id,
+      name,
+      role,
+      mobile_number,
+      dairy_name,
+      problem,
+      description
+    } = req.body;
 
-        // Validate required fields
-        if (!dairy_name || !problem) {
-            return res.status(400).json({
-                success: false,
-                message: 'Missing required fields'
-            });
-        }
+    // Validate required fields
+    if (!dairy_name || !problem) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
 
-        const query = `
+    const query = `
             INSERT INTO assign_call (
                 id,
                 name,
@@ -118,29 +118,29 @@ router.post('/assign-call', requireAuth, async (req, res) => {
             RETURNING *
         `;
 
-        const result = await pool.query(query, [
-            id,
-            name,
-            role,
-            mobile_number,
-            dairy_name,
-            problem,
-            description
-        ]);
+    const result = await pool.query(query, [
+      id,
+      name,
+      role,
+      mobile_number,
+      dairy_name,
+      problem,
+      description
+    ]);
 
-        res.json({
-            success: true,
-            message: 'Call assigned successfully',
-            data: result.rows[0]
-        });
+    res.json({
+      success: true,
+      message: 'Call assigned successfully',
+      data: result.rows[0]
+    });
 
-    } catch (err) {
-        console.error('Error assigning call:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to assign call'
-        });
-    }
+  } catch (err) {
+    console.error('Error assigning call:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign call'
+    });
+  }
 });
 
 // Ensure users table has optional fcm_token column (safe on startup)
@@ -393,9 +393,8 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
             : null;
 
         // ✅ Fixed template literal
-        const smsMessage = `New service call assigned: ${updatedCall.title}${
-          customerName ? ' for ' + customerName : ''
-        }. Please check your app.`;
+        const smsMessage = `New service call assigned: ${updatedCall.title}${customerName ? ' for ' + customerName : ''
+          }. Please check your app.`;
 
         // Fire-and-forget notifications
         sendSmsViaTwilio(eng.mobile_number, smsMessage).catch((e) =>
@@ -425,13 +424,13 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
 
 // Move this route to the top of your routes (before any :id routes)
 router.post('/search', async (req, res) => {
-    try {
-        const { soccd, society } = req.body || {};
-        console.log('=== SEARCH ROUTE CALLED ===');
-        console.log('Search params:', { soccd, society });
-        
-        // Query for engineers - this is the main query
-        const engineerQuery = `
+  try {
+    const { soccd, society } = req.body || {};
+    console.log('=== SEARCH ROUTE CALLED ===');
+    console.log('Search params:', { soccd, society });
+
+    // Query for engineers - this is the main query
+    const engineerQuery = `
             SELECT 
                 id,
                 name,
@@ -443,16 +442,16 @@ router.post('/search', async (req, res) => {
             ORDER BY name ASC
         `;
 
-        try {
-            console.log('Executing engineer query...');
-            const engineerResult = await pool.query(engineerQuery);
-            console.log('✓ Engineer query successful, found:', engineerResult.rows.length, 'engineers');
+    try {
+      console.log('Executing engineer query...');
+      const engineerResult = await pool.query(engineerQuery);
+      console.log('✓ Engineer query successful, found:', engineerResult.rows.length, 'engineers');
 
-            // Try to query societies if needed
-            let societyResult = { rows: [] };
-            try {
-                if (soccd || society) {
-                    const societyQuery = `
+      // Try to query societies if needed
+      let societyResult = { rows: [] };
+      try {
+        if (soccd || society) {
+          const societyQuery = `
                       SELECT 
                         'Dairy'::text AS source,
                         "SOCCD"::text AS code,
@@ -464,70 +463,70 @@ router.post('/search', async (req, res) => {
                       ORDER BY society
                       LIMIT 200000
                     `;
-                    
-                    console.log('Executing society query...');
-                    societyResult = await pool.query(societyQuery, [
-                        soccd ? String(soccd).trim() : null,
-                        society ? String(society).trim().toUpperCase() : null
-                    ]);
-                    console.log('✓ Society query successful, found:', societyResult.rows.length, 'societies');
-                }
-            } catch (tableErr) {
-                console.warn('⚠ Society table query failed (this is ok):', tableErr.message);
-            }
-            
-            console.log('✓ Returning response with', engineerResult.rows.length, 'engineers and', societyResult.rows.length, 'societies');
-            
-            return res.json({
-                success: true,
-                data: {
-                    societies: societyResult.rows || [],
-                    engineers: engineerResult.rows || []
-                }
-            });
-        } catch (queryErr) {
-            console.error('✗ Query execution error:', queryErr.message);
-            throw queryErr;
+
+          console.log('Executing society query...');
+          societyResult = await pool.query(societyQuery, [
+            soccd ? String(soccd).trim() : null,
+            society ? String(society).trim().toUpperCase() : null
+          ]);
+          console.log('✓ Society query successful, found:', societyResult.rows.length, 'societies');
         }
-        
-    } catch (err) {
-        console.error('✗ Search route error:', err.message);
-        console.error('Error details:', err);
-        return res.status(500).json({
-            success: false,
-            error: 'Search failed',
-            message: err.message
-        });
+      } catch (tableErr) {
+        console.warn('⚠ Society table query failed (this is ok):', tableErr.message);
+      }
+
+      console.log('✓ Returning response with', engineerResult.rows.length, 'engineers and', societyResult.rows.length, 'societies');
+
+      return res.json({
+        success: true,
+        data: {
+          societies: societyResult.rows || [],
+          engineers: engineerResult.rows || []
+        }
+      });
+    } catch (queryErr) {
+      console.error('✗ Query execution error:', queryErr.message);
+      throw queryErr;
     }
+
+  } catch (err) {
+    console.error('✗ Search route error:', err.message);
+    console.error('Error details:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Search failed',
+      message: err.message
+    });
+  }
 });
 
 // Add this new route
 router.post('/send-sms', async (req, res) => {
-    try {
-        const { mobileNumber, message } = req.body;
+  try {
+    const { mobileNumber, message } = req.body;
 
-        if (!mobileNumber || !message) {
-            return res.status(400).json({
-                success: false,
-                message: 'Mobile number and message are required'
-            });
-        }
-
-        // Use your SMS service here (Twilio, etc.)
-        // For example with Twilio:
-        const messageResponse = await sendSmsViaTwilio(mobileNumber, message);
-
-        res.json({
-            success: true,
-            message: 'SMS sent successfully'
-        });
-    } catch (err) {
-        console.error('SMS error:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to send SMS'
-        });
+    if (!mobileNumber || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number and message are required'
+      });
     }
+
+    // Use your SMS service here (Twilio, etc.)
+    // For example with Twilio:
+    const messageResponse = await sendSmsViaTwilio(mobileNumber, message);
+
+    res.json({
+      success: true,
+      message: 'SMS sent successfully'
+    });
+  } catch (err) {
+    console.error('SMS error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send SMS'
+    });
+  }
 });
 
 export default router;
@@ -548,6 +547,62 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('update-status error', err);
     return res.status(500).json({ success: false, message: 'Failed to update status' });
+  }
+});
+
+// Ensure assign_call table has resolution columns
+(async function ensureAssignCallColumns() {
+  try {
+    const queries = [
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem1 TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem2 TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS solutions TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS part_used TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS quantity_used TEXT`
+    ];
+    for (const q of queries) {
+      await pool.query(q);
+    }
+    console.log('serviceCallsRoute: ensured assign_call resolution columns exist');
+  } catch (err) {
+    console.warn('serviceCallsRoute: could not ensure assign_call columns:', err?.message || err);
+  }
+})();
+
+// Update resolved details (problem1, problem2, solutions)
+router.put('/assign-call/:callId/resolved-details', requireAuth, async (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const { problem1, problem2, solutions, status } = req.body;
+
+    // Build dynamic update query
+    let fields = [];
+    let values = [];
+    let idx = 1;
+
+    if (problem1 !== undefined) { fields.push(`problem1 = $${idx++}`); values.push(problem1); }
+    if (problem2 !== undefined) { fields.push(`problem2 = $${idx++}`); values.push(problem2); }
+    if (solutions !== undefined) { fields.push(`solutions = $${idx++}`); values.push(solutions); }
+    if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, message: "No fields to update" });
+    }
+
+    values.push(String(callId));
+    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} RETURNING *`;
+
+    const result = await pool.query(q, values);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    res.json({ success: true, call: result.rows[0] });
+
+  } catch (err) {
+    console.error('Error updating resolved details:', err);
+    res.status(500).json({ success: false, message: 'Failed to update call details' });
   }
 });
 

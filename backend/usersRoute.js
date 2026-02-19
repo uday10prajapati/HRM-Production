@@ -4,7 +4,7 @@ import { pool } from "./db.js";
 import requireAuth from './authMiddleware.js';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import fs from 'fs';
+
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY; // Prefer service role for admin actions
@@ -39,15 +39,8 @@ const router = express.Router();
   }
 })();
 
-// Log schema for debugging
-(async function debugSchema() {
-  try {
-    const res = await pool.query("SELECT column_name, data_type, column_default FROM information_schema.columns WHERE table_name = 'users'");
-    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Users Table Schema: ${JSON.stringify(res.rows)}\n`);
-  } catch (e) {
-    console.error("Schema dump failed", e);
-  }
-})();
+// Log schema for debugging - REMOVED
+
 
 // Ensure pgcrypto extension exists so gen_random_uuid() is available for inserts
 (async function ensurePgcrypto() {
@@ -281,14 +274,10 @@ router.post("/create", requireAuth, async (req, res) => {
   } = req.body;
 
   console.log('[DEBUG] /create called. Body:', JSON.stringify(req.body));
-  try {
-    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Create Body: ${JSON.stringify(req.body)}\n`);
-  } catch (e) { }
+
 
   const leaveBal = Number(leave_balance ?? leaveBalance ?? 20);
-  try {
-    fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Computed leaveBal: ${leaveBal} (from ${leave_balance}/${leaveBalance})\n`);
-  } catch (e) { }
+
   console.log('[DEBUG] Computed leaveBal:', leaveBal);
 
   if (!password) {
@@ -351,9 +340,7 @@ router.post("/create", requireAuth, async (req, res) => {
       [finalId, name, email, role, leaveBal, hashedPassword, finalMobile]
     );
 
-    try {
-      fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Inserted User: ${JSON.stringify(result.rows[0])}\n`);
-    } catch (e) { }
+
 
     res.status(201).json({
       success: true,
@@ -374,47 +361,38 @@ router.post("/create", requireAuth, async (req, res) => {
       if (detail.includes('Key (id)') && finalId) {
         console.log(`[DEBUG] Idempotency: User ID ${finalId} exists. Updating existing user.`);
         try {
-          fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency Block Entered. ID: ${finalId}\n`);
-          // Perform UPDATE to ensure all fields are set
           // Fix: finalMobile is scoped to try block, use mobile_number from outer scope
           const updateRes = await pool.query(
             `UPDATE users SET name=$1, email=$2, role=$3, leave_balance=$4, password=$5, mobile_number=$6 
-                 WHERE id=$7 RETURNING *`,
+                   WHERE id=$7 RETURNING *`,
             [name, email, role, leaveBal, hashedPassword, mobile_number || null, finalId]
           );
 
           if (updateRes.rows.length > 0) {
-            try {
-              fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Success: ${JSON.stringify(updateRes.rows[0])}\n`);
-            } catch (e) { }
-
             return res.status(200).json({
               success: true,
               user: updateRes.rows[0],
               message: "User synced and updated.",
               supabaseSync: true
             });
-          } else {
-            fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Rows=0\n`);
           }
         } catch (e) {
           console.error("Idempotency update failed", e);
-          try {
-            fs.appendFileSync('backend_debug_log.txt', `[${new Date().toISOString()}] Idempotency UPDATE Error: ${e.message}\n`);
-          } catch (ex) { }
         }
       }
-
-      let message = 'User already exists.';
-      if (detail.includes('email')) message = 'Email already exists.';
-      else if (detail.includes('mobile')) message = 'Mobile Number already exists.';
-
-      return res.status(409).json({ success: false, message: message, error: detail });
     }
 
-    res.status(500).json({ success: false, message: "Error creating user", error: err.message });
+    let message = 'User already exists.';
+    if (detail.includes('email')) message = 'Email already exists.';
+    else if (detail.includes('mobile')) message = 'Mobile Number already exists.';
+
+    return res.status(409).json({ success: false, message: message, error: detail });
   }
-});
+
+  console.error("[DEBUG] Create User Error:", err);
+  res.status(500).json({ success: false, message: "Error creating user", error: err.message });
+}
+);
 
 // PUT update a user by ID
 router.put("/update/:id", async (req, res) => {

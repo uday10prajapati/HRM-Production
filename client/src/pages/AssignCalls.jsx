@@ -234,7 +234,8 @@ const AssignCalls = () => {
                 {
                     problem1: editProblem1,
                     problem2: editProblem2,
-                    solutions: editSolutions
+                    solutions: editSolutions,
+                    status: 'resolved' // Ensure status is set to resolved
                 }
             );
 
@@ -566,26 +567,24 @@ const AssignCalls = () => {
                                                                 }`}>
                                                                 {call.status}
                                                             </span>
-                                                            {call.status === 'resolved' && isHrOrAdmin(userRole) && (
+                                                            {(isHrOrAdmin(userRole)) && (
                                                                 <button
                                                                     onClick={() => openResolvedEditModal(call)}
-                                                                    className="mt-2 px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
+                                                                    className="mt-2 text-xs text-purple-600 hover:text-purple-800 underline"
                                                                 >
-                                                                    Edit Details
+                                                                    {call.status === 'resolved' ? 'Edit Resolution Details' : 'Add Resolution Details'}
                                                                 </button>
                                                             )}
-                                                            {!isHrOrAdmin(userRole) && (
-                                                                <select
-                                                                    className="mt-2 border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                                    value={call.status}
-                                                                    onChange={(e) => updateCallStatus(call.call_id || call.id, e.target.value)}
-                                                                >
-                                                                    <option value="pending">Pending</option>
-                                                                    <option value="in_progress">In Progress</option>
-                                                                    <option value="completed">Completed</option>
-                                                                    <option value="resolved">Resolved</option>
-                                                                </select>
-                                                            )}
+                                                            <select
+                                                                className="mt-2 border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                                value={call.status}
+                                                                onChange={(e) => updateCallStatus(call.call_id || call.id, e.target.value)}
+                                                            >
+                                                                <option value="pending">Pending</option>
+                                                                <option value="in_progress">In Progress</option>
+                                                                <option value="completed">Completed</option>
+                                                                <option value="resolved">Resolved</option>
+                                                            </select>
 
                                                             {/* Letterhead status & actions */}
                                                             <div className="mt-2 text-right space-y-2">
