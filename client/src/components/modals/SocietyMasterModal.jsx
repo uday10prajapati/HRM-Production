@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import axios from 'axios';
 
 const SocietyMasterModal = ({ isOpen, onClose }) => {
@@ -72,8 +72,8 @@ const SocietyMasterModal = ({ isOpen, onClose }) => {
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-sm">
+    return ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
                 {/* Header */}
                 <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 flex justify-between items-center shrink-0">
@@ -214,7 +214,8 @@ const SocietyMasterModal = ({ isOpen, onClose }) => {
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

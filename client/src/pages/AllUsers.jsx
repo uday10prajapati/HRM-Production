@@ -23,6 +23,7 @@ axios.defaults.baseURL = API_CONFIG.BASE_URL;
 const AllUsers = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,6 +73,10 @@ const AllUsers = () => {
           (u) =>
             u.role?.toLowerCase() === "employee" ||
             u.role?.toLowerCase() === "engineer"
+        );
+      } else if (user && user.role?.toLowerCase() === "admin") {
+        allUsers = allUsers.filter(
+          (u) => u.role?.toLowerCase() !== "admin"
         );
       }
 
@@ -293,15 +298,23 @@ const AllUsers = () => {
             )
           }
 
-          <div className="max-w-7xl mx-auto">
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h2 className="text-3xl font-bold text-gray-800">All Users</h2>
-                <p className="text-gray-500 mt-1">Manage your organization's users</p>
+          <div className="max-w-7xl mx-auto animate-fade-in-up">
+            {/* Page Header */}
+            <div className="bg-white rounded-2xl p-6 mb-8 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 w-12 h-12 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800 tracking-tight">User Management</h2>
+                  <p className="text-gray-500 text-sm mt-0.5">View, manage, and assign roles to your team members</p>
+                </div>
               </div>
               <button
                 onClick={openAddModal}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg shadow-sm flex items-center gap-2 transition-colors"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow-sm shadow-indigo-200 flex items-center gap-2 transition-all font-medium text-sm"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
@@ -310,121 +323,159 @@ const AllUsers = () => {
               </button>
             </div>
 
-            {users.length === 0 ? (
-              <div className="text-center py-12">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No users found</h3>
-                <p className="mt-1 text-sm text-gray-500">Get started by creating a new user.</p>
+            {/* Tools Bar (Search filtering) */}
+            <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="relative w-full sm:w-96">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search users by name, email, or role..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm shadow-sm transition-all"
+                />
               </div>
-            ) : (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leave Balance</th>
-                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tasks</th>
-                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {users.map((u) => (
-                        <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className="h-10 w-10 flex-shrink-0">
-                                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                  <span className="text-blue-600 font-medium text-sm">
+              <div className="text-sm text-gray-500 bg-white px-4 py-2 border border-gray-200 rounded-lg shadow-sm">
+                Total Users: <span className="font-semibold text-gray-700">{users.length}</span>
+              </div>
+            </div>
+
+            {(() => {
+              const filteredUsers = users.filter((u) => {
+                const search = searchQuery.toLowerCase();
+                return (
+                  (u.name && u.name.toLowerCase().includes(search)) ||
+                  (u.email && u.email.toLowerCase().includes(search)) ||
+                  (u.role && u.role.toLowerCase().includes(search)) ||
+                  (u.mobile_number && u.mobile_number.includes(search)) ||
+                  (u.mobile && u.mobile.includes(search))
+                );
+              });
+
+              if (filteredUsers.length === 0) {
+                return (
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 text-center py-16">
+                    <svg className="mx-auto h-16 w-16 text-indigo-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <h3 className="text-lg font-semibold text-gray-900">No users found</h3>
+                    <p className="mt-1 flex justify-center text-sm text-gray-500">
+                      {users.length === 0
+                        ? "Get started by creating a new user."
+                        : "No users matched your search criteria."}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-100">
+                      <thead>
+                        <tr className="bg-gray-50/50">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">User Profile</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">System Role</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Leave Bal.</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Mobile Number</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filteredUsers.map((u, i) => (
+                          <tr key={u.id} className="hover:bg-indigo-50/40 transition-colors duration-200">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-4">
+                                <div className={`h-10 w-10 flex-shrink-0 rounded-full flex items-center justify-center shadow-sm ${i % 4 === 0 ? 'bg-indigo-100 text-indigo-700' :
+                                    i % 4 === 1 ? 'bg-emerald-100 text-emerald-700' :
+                                      i % 4 === 2 ? 'bg-amber-100 text-amber-700' :
+                                        'bg-rose-100 text-rose-700'
+                                  }`}>
+                                  <span className="font-bold text-sm">
                                     {u.name.charAt(0).toUpperCase()}
                                   </span>
                                 </div>
+                                <div>
+                                  <div className="text-sm font-semibold text-gray-900">{u.name}</div>
+                                  <div className="text-xs text-gray-500 tracking-wide mt-0.5">{u.email}</div>
+                                </div>
                               </div>
-                              <div className="ml-4">
-                                <div className="text-sm font-medium text-gray-900">{u.name}</div>
-                                <div className="text-sm text-gray-500">{u.email}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 capitalize">
-                              {u.role}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {u.leave_balance ?? "N/A"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {((user?.role || '').toString().toLowerCase() === 'hr' ||
-                              (user?.role || '').toString().toLowerCase() === 'admin') ? (
-                              <button
-                                onClick={() => openTaskStatusModal(u)}
-                                className="text-blue-600 hover:text-blue-900 font-medium"
-                              >
-                                View Tasks
-                              </button>
-                            ) : (
-                              <span className="text-gray-500">
-                                {(u.tasks && u.tasks.length > 0) ?
-                                  `${u.tasks.length} task${u.tasks.length > 1 ? 's' : ''}` :
-                                  'No tasks'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide capitalize ${u.role?.toLowerCase() === 'admin' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                                  u.role?.toLowerCase() === 'hr' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                    u.role?.toLowerCase() === 'engineer' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                      'bg-gray-100 text-gray-700 border border-gray-200'
+                                }`}>
+                                {u.role}
                               </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <div className="flex items-center gap-4">
-                              {user?.id !== u.id && (
-                                <button
-                                  onClick={() => openEditModal(u)}
-                                  className="text-gray-600 hover:text-blue-600 transition-colors"
-                                >
-                                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
-                                </button>
-                              )}
-                              <button
-                                onClick={() => openDeleteModal(u)}
-                                className="text-gray-600 hover:text-red-600 transition-colors"
-                              >
-                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                              {(((user?.role || '').toString().toLowerCase() === 'hr') ||
-                                ((user?.role || '').toString().toLowerCase() === 'admin')) &&
-                                ((u.role || '').toString().toLowerCase() === 'engineer') && (
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium tracking-tight">
+                              {u.leave_balance ?? "N/A"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium tracking-tight">
+                              {u.mobile_number || u.mobile || "N/A"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <div className="flex items-center gap-3">
+                                {user?.id !== u.id && (
                                   <button
-                                    onClick={() => openTaskModal(u)}
-                                    className="text-gray-600 hover:text-indigo-600 transition-colors"
+                                    onClick={() => openEditModal(u)}
+                                    title="Edit User"
+                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
                                   >
                                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
                                   </button>
                                 )}
-                              {(user?.role || '').toString().toLowerCase() === 'admin' && (
                                 <button
-                                  onClick={() => openDocumentsModal(u)}
-                                  className="text-gray-600 hover:text-yellow-600 transition-colors"
+                                  onClick={() => openDeleteModal(u)}
+                                  title="Delete User"
+                                  className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                                 >
                                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                {(((user?.role || '').toString().toLowerCase() === 'hr') ||
+                                  ((user?.role || '').toString().toLowerCase() === 'admin')) &&
+                                  ((u.role || '').toString().toLowerCase() === 'engineer') && (
+                                    <button
+                                      onClick={() => openTaskStatusModal(u)}
+                                      title="View Pending Calls"
+                                      className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                    >
+                                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                {(user?.role || '').toString().toLowerCase() === 'admin' && (
+                                  <button
+                                    onClick={() => openDocumentsModal(u)}
+                                    title="View Documents"
+                                    className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                                  >
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </main>
       </div>

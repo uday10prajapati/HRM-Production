@@ -36,7 +36,7 @@ export default function LeaveManagement() {
         // If HR/Admin and no pending rows returned, try admin "all" endpoint to help debugging
         const canAct = user && (String(user.role || '').toLowerCase() === 'admin' || String(user.role || '').toLowerCase() === 'hr');
         if ((canAct) && (!leavesArr || leavesArr.length === 0)) {
-            try {
+          try {
             const allRes = await axios.get('/api/leave/all', { headers });
             if (allRes?.data?.success) {
               setLeaves(allRes.data.leaves || []);
@@ -112,136 +112,149 @@ export default function LeaveManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-8">
-          <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen flex flex-col bg-slate-50/50">
+      <div className="fixed top-0 w-full z-50"><Navbar /></div>
+      <div className="flex flex-1 pt-16 overflow-hidden">
+        <div className="fixed left-0 h-full w-64 hidden md:block"><Sidebar /></div>
+        <main className="flex-1 md:ml-64 p-4 sm:p-8 relative overflow-y-auto w-full custom-scrollbar">
+
+          {/* Background Pattern */}
+          <div className="absolute inset-x-0 top-0 h-96 bg-gradient-to-b from-indigo-50/80 to-transparent pointer-events-none -z-10" />
+
+          <div className="max-w-7xl mx-auto space-y-8 animate-[fadeIn_0.3s_ease-out]">
             {/* Header Section */}
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2 mb-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-800">Leave Requests</h1>
-                <p className="mt-1 text-gray-600">Manage and approve employee leave requests</p>
+                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Leave Requests</h1>
+                <p className="text-sm font-medium text-slate-500 mt-2">Manage and monitor employee absence Leaves.</p>
               </div>
-              <button 
-                onClick={fetchLeaves} 
-                className="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+              <button
+                onClick={fetchLeaves}
+                className="inline-flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5"
               >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg className="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Refresh
+                Sync Data
               </button>
             </div>
 
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-center text-red-700">
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {error}
-                </div>
+              <div className="bg-red-50/80 border border-red-200 p-4 rounded-xl flex items-center text-red-700 font-bold text-sm shadow-sm animate-pulse">
+                <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                {error}
               </div>
             )}
 
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-3xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden">
+              <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                <h2 className="text-lg font-bold text-slate-800">Pending Leaves</h2>
+              </div>
+
               {loading ? (
-                <div className="p-8 text-center">
-                  <div className="inline-flex items-center">
-                    <svg className="animate-spin h-5 w-5 text-indigo-600 mr-2" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                <div className="p-16 text-center flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4">
+                    <svg className="animate-spin h-8 w-8 text-indigo-500" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    Loading leave requests...
                   </div>
+                  <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Compiling Requests...</span>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
+                <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Day Type</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
-                        {canAct && <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>}
+                      <tr className="bg-slate-50/50 border-b border-slate-100">
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">User Identity</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Day Type</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Duration</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Reason</th>
+                        {canAct && <th className="px-6 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-wider">Actions</th>}
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="divide-y divide-slate-50">
                       {(!leaves || leaves.length === 0) ? (
                         <tr>
-                          <td colSpan={canAct ? 7 : 6} className="px-6 py-8 text-center text-gray-500">
-                            <p className="text-base">No pending leave requests</p>
+                          <td colSpan={canAct ? 7 : 6} className="px-6 py-16 text-center text-slate-400">
+                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200/50">
+                              <svg className="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <p className="text-sm font-bold uppercase tracking-widest">No pending leave requests</p>
                           </td>
                         </tr>
                       ) : (
                         leaves.map(l => (
-                          <tr key={l.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={l.id} className="hover:bg-indigo-50/30 transition-colors group">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
-                                <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                                  <span className="text-indigo-600 font-medium">
+                                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-600 transition-colors">
+                                  <span className="text-indigo-600 font-bold group-hover:text-white transition-colors">
                                     {(l.user_name?.[0] || 'U').toUpperCase()}
                                   </span>
                                 </div>
-                                <div className="ml-3">
-                                  <div className="text-sm font-medium text-gray-900">{l.user_name}</div>
-                                  <div className="text-xs text-gray-500">ID: {l.user_id}</div>
+                                <div className="ml-4">
+                                  <div className="text-sm font-bold text-slate-900">{l.user_name}</div>
+                                  <div className="text-xs font-medium text-slate-500">ID: {l.user_id}</div>
                                 </div>
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <span className="px-3 py-1 inline-flex text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100">
                                 {l.type || 'N/A'}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDayTypeBadgeClass(l.day_type)}`}>
+                              <span className={`px-3 py-1 inline-flex text-xs font-bold rounded-lg border 
+                                ${String(l.day_type).toLowerCase().includes('half') ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'}`}>
                                 {formatDayType(l.day_type)}
                               </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div>{l.start_date || '-'}</div>
-                              <div className="text-xs text-gray-400">to</div>
-                              <div>{l.end_date || '-'}</div>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex flex-col gap-1 text-sm font-bold text-slate-700">
+                                <div>{l.start_date || '-'}</div>
+                                <div className="text-[10px] text-slate-400 uppercase tracking-wider">UNTIL</div>
+                                <div>{l.end_date || '-'}</div>
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                ${l.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                  l.status?.toLowerCase() === 'approved' ? 'bg-green-100 text-green-800' :
-                                  l.status?.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-800' :
-                                  'bg-gray-100 text-gray-800'}`}>
-                                {l.status || 'Unknown'}
+                              <span className={`px-3 py-1 inline-flex text-xs font-bold rounded-lg border
+                                ${l.status?.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                  l.status?.toLowerCase() === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    l.status?.toLowerCase() === 'rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                      'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                {(l.status || 'Unknown').toUpperCase()}
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="text-sm text-gray-900 max-w-xs truncate">
+                              <div className="text-sm font-medium text-slate-600 max-w-[200px] truncate" title={l.reason || ''}>
                                 {l.reason || '-'}
                               </div>
                             </td>
                             {canAct && (
                               <td className="px-6 py-4 whitespace-nowrap text-right">
                                 {(l.status || '').toLowerCase() === 'pending' ? (
-                                  <div className="flex justify-end gap-2">
+                                  <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
                                       onClick={() => takeAction(l.id, 'approve')}
-                                      className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors"
+                                      className="inline-flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-lg transition-all shadow-sm"
                                     >
                                       Approve
                                     </button>
                                     <button
                                       onClick={() => takeAction(l.id, 'reject')}
-                                      className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-md transition-colors"
+                                      className="inline-flex items-center px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-500 hover:text-white text-xs font-bold rounded-lg transition-all shadow-sm"
                                     >
-                                      Reject
+                                      Deny
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-500">No actions available</span>
+                                  <span className="text-xs font-bold text-slate-400 italic">LOCKED</span>
                                 )}
                               </td>
                             )}

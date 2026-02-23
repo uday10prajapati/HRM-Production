@@ -532,6 +532,32 @@ router.post('/send-sms', async (req, res) => {
 export default router;
 
 // --- New endpoints: update status and letterhead workflow ---
+
+// Delete call
+router.delete('/assign-call/:callId', requireAuth, async (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const requesterRole = req.user?.role ?? '';
+
+    // Only HR and Admin can delete calls
+    if (!isHrOrAdmin(requesterRole)) {
+      return res.status(403).json({ success: false, message: 'Only HR/Admin can delete calls' });
+    }
+
+    const q = `DELETE FROM assign_call WHERE call_id::text = $1 RETURNING *`;
+    const result = await pool.query(q, [String(callId)]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    return res.json({ success: true, message: 'Call deleted successfully', call: result.rows[0] });
+  } catch (err) {
+    console.error('delete call error', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete call' });
+  }
+});
+
 // Update call status (used by client)
 router.put('/update-status/:callId', requireAuth, async (req, res) => {
   try {

@@ -1,49 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-export default function ManageStockModal({ isOpen, onClose, onUpdated }) {
-    const [items, setItems] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [isAdding, setIsAdding] = useState(false);
-    const [editItem, setEditItem] = useState(null);
-
-    // Form State
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        quantity: 0,
-        threshold: 5,
-        dairy_name: '',
-        notes: '',
-        use_item: 0
-    });
-
-    // Product List (names) for dropdown
+export default function ManageStockModal({ isOpen, onClose }) {
     const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [newItemName, setNewItemName] = useState('');
+    const [isAdding, setIsAdding] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
-            fetchItems();
             fetchProducts();
             setIsAdding(false);
-            setEditItem(null);
-            resetForm();
+            setNewItemName('');
         }
     }, [isOpen]);
 
-    async function fetchItems() {
-        setLoading(true);
-        try {
-            const res = await axios.get('/api/stock/items');
-            setItems(res.data || []);
-        } catch (err) {
-            console.error('Failed to load items', err);
-        } finally {
-            setLoading(false);
-        }
-    }
-
     async function fetchProducts() {
+        setLoading(true);
         try {
             const res = await axios.get('/api/stock/product-items');
             // product-items returns list of objects with "Product Name"
@@ -51,211 +24,170 @@ export default function ManageStockModal({ isOpen, onClose, onUpdated }) {
             setProducts(list);
         } catch (err) {
             console.error('Failed to load product names', err);
+        } finally {
+            setLoading(false);
         }
     }
 
-    function resetForm() {
-        setFormData({
-            name: '',
-            description: '',
-            quantity: 0,
-            threshold: 5,
-            dairy_name: '',
-            notes: '',
-            use_item: 0
-        });
-    }
-
-    function startAdd() {
-        setIsAdding(true);
-        setEditItem(null);
-        resetForm();
-    }
-
-    function startEdit(item) {
-        setIsAdding(true);
-        setEditItem(item);
-        setFormData({
-            name: item.name || '',
-            description: item.description || '',
-            quantity: item.quantity || 0,
-            threshold: item.threshold || 5,
-            dairy_name: item.dairy_name || '',
-            notes: item.notes || '',
-            use_item: item.use_item || 0
-        });
-    }
-
-    async function handleSubmit(e) {
+    async function handleAdd(e) {
         e.preventDefault();
+        if (!newItemName.trim()) return;
         try {
-            if (editItem) {
-                await axios.put(`/api/stock/items/${editItem.id}`, formData);
-                alert('Item updated successfully');
-            } else {
-                await axios.post('/api/stock/items', formData);
-                alert('Item created successfully');
-            }
+            await axios.post('/api/stock/product-items', { name: newItemName.trim() });
+            setNewItemName('');
             setIsAdding(false);
-            fetchItems();
-            if (onUpdated) onUpdated();
-        } catch (err) {
-            console.error('Failed to save item', err);
-            alert('Failed to save item');
-        }
-    }
-
-    async function handleDelete(id) {
-        if (!window.confirm('Are you sure you want to delete this item?')) return;
-        try {
-            await axios.delete(`/api/stock/items/${id}`);
-            fetchItems();
-            if (onUpdated) onUpdated();
-        } catch (err) {
-            console.error('Failed to delete item', err);
-            alert('Failed to delete item');
-        }
-    }
-
-    async function handleAddProductName() {
-        const newName = prompt("Enter new Product Name:");
-        if (!newName) return;
-        try {
-            await axios.post('/api/stock/product-items', { name: newName });
             fetchProducts();
-            setFormData({ ...formData, name: newName });
-        } catch (e) {
-            alert('Failed to add product name');
+        } catch (err) {
+            console.error('Failed to add product name', err);
+            alert('Failed to add new asset identity.');
+        }
+    }
+
+    async function handleDelete(name) {
+        if (!window.confirm(`Are you sure you want to permanently delete "${name}" from the systemic list?`)) return;
+        try {
+            // Need to pass the name properly. encodeURIComponent helps if there are spaces.
+            await axios.delete(`/api/stock/product-items/${encodeURIComponent(name)}`);
+            fetchProducts();
+        } catch (err) {
+            console.error('Failed to delete product item', err);
+            alert('Failed to delete asset identity.');
         }
     }
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 bg-opacity-50 overflow-y-auto">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm overflow-y-auto p-4 sm:p-6 animate-[fadeIn_0.2s_ease-out]">
+            <div className="bg-white rounded-3xl shadow-[0_8px_32px_-8px_rgba(0,0,0,0.15)] w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden border border-slate-100 animate-[slideIn_0.2s_ease-out_forwards]">
 
                 {/* Header */}
-                <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                    <h2 className="text-xl font-bold text-gray-800">Manage Stock Items</h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+                <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center relative">
+                    <div className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-indigo-50/50 to-transparent pointer-events-none" />
+                    <div className="flex items-center gap-3 relative z-10">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                            <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Systemic Asset Dictionary</h2>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-0.5">Global Nomenclature Catalog</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors relative z-10">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-4">
-
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50/20 custom-scrollbar">
                     {isAdding ? (
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-700">{editItem ? 'Edit Item' : 'Add New Item'}</h3>
-                                <button onClick={() => setIsAdding(false)} className="text-sm text-blue-600 hover:text-blue-800">
-                                    &larr; Back to List
+                        <div className="bg-white p-6 rounded-2xl border border-indigo-100 shadow-lg shadow-indigo-100/50">
+                            <div className="flex justify-between items-center mb-6 border-b border-slate-50 pb-4">
+                                <h3 className="text-lg font-bold text-slate-800">Register New Identity</h3>
+                                <button onClick={() => setIsAdding(false)} className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">
+                                    &larr; Cancel Provision
                                 </button>
                             </div>
 
-                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="col-span-2 md:col-span-1">
-                                    <label className="block text-sm font-medium text-gray-700">Name</label>
-                                    <div className="flex space-x-2">
-                                        <select
-                                            value={formData.name}
-                                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2"
-                                            required
-                                        >
-                                            <option value="">Select Product...</option>
-                                            {products.map((p, i) => <option key={i} value={p}>{p}</option>)}
-                                        </select>
-                                        <button type="button" onClick={handleAddProductName} className="mt-1 px-3 py-2 bg-gray-200 rounded text-gray-700 hover:bg-gray-300">+</button>
-                                    </div>
-                                    {/* Fallback text input if needed, or if user wants custom name not in list? user said 'can add a stock name'. assuming list management. */}
-                                </div>
-
-                                <div className="col-span-2 md:col-span-1">
-                                    <label className="block text-sm font-medium text-gray-700">Dairy Name (Optional)</label>
-                                    <input type="text" value={formData.dairy_name} onChange={e => setFormData({ ...formData, dairy_name: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" />
-                                </div>
-
+                            <form onSubmit={handleAdd} className="space-y-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                                    <input type="number" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" required />
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Asset Identity (Name)</label>
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        value={newItemName}
+                                        onChange={e => setNewItemName(e.target.value)}
+                                        placeholder="e.g. Ethernet Cable 10m"
+                                        className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 placeholder-slate-300 font-medium text-slate-900 transition-all px-4 py-3"
+                                        required
+                                    />
                                 </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Threshold (Low Stock Alert)</label>
-                                    <input type="number" value={formData.threshold} onChange={e => setFormData({ ...formData, threshold: Number(e.target.value) })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" required />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Use Item (Consumption Rate?)</label>
-                                    <input type="number" step="0.01" value={formData.use_item} onChange={e => setFormData({ ...formData, use_item: Number(e.target.value) })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" />
-                                </div>
-
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700">Description</label>
-                                    <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" rows="2"></textarea>
-                                </div>
-
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700">Notes</label>
-                                    <textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" rows="2"></textarea>
-                                </div>
-
-                                <div className="col-span-2 flex justify-end space-x-3 pt-4 border-t">
-                                    <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Item</button>
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button type="button" onClick={() => setIsAdding(false)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">
+                                        Abort
+                                    </button>
+                                    <button type="submit" className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                                        Commit Identity
+                                    </button>
                                 </div>
                             </form>
                         </div>
                     ) : (
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center mb-4">
-                                <p className="text-sm text-gray-600">Current Stock Items: {items.length}</p>
-                                <button onClick={startAdd} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
-                                    <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
-                                    New Item
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">
+                                    Total Registered: <span className="text-indigo-600 ml-1">{products.length}</span>
+                                </span>
+                                <button onClick={() => setIsAdding(true)} className="px-5 py-2.5 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-500 hover:text-white font-bold rounded-xl transition-all shadow-sm shadow-emerald-500/10 flex items-center gap-2 group">
+                                    <svg className="w-5 h-5 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
+                                    Register Stock
                                 </button>
                             </div>
 
                             {loading ? (
-                                <div className="text-center py-8">Loading...</div>
+                                <div className="p-16 text-center flex flex-col items-center justify-center">
+                                    <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4">
+                                        <svg className="animate-spin h-8 w-8 text-indigo-500" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Scanning Dictionary...</span>
+                                </div>
                             ) : (
-                                <div className="overflow-x-auto border rounded-lg">
-                                    <table className="min-w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
-                                            <tr>
-                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Threshold</th>
-                                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-white divide-y divide-gray-200">
-                                            {items.map(item => (
-                                                <tr key={item.id} className="hover:bg-gray-50">
-                                                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.name}</td>
-                                                    <td className="px-4 py-3 text-sm text-gray-900">{item.quantity}</td>
-                                                    <td className="px-4 py-3 text-sm text-gray-500">{item.threshold}</td>
-                                                    <td className="px-4 py-3 text-right text-sm font-medium space-x-2">
-                                                        <button onClick={() => startEdit(item)} className="text-blue-600 hover:text-blue-900">Edit</button>
-                                                        <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900">Delete</button>
-                                                    </td>
+                                <div className="bg-white border text-left border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-slate-50/50 border-b border-slate-100">
+                                                <tr>
+                                                    <th className="px-6 py-4 text-xs font-bold text-slate-400 text-left uppercase tracking-wider">Asset Identity Structure</th>
+                                                    <th className="px-6 py-4 text-right text-xs font-bold text-slate-400 uppercase tracking-wider">Actions</th>
                                                 </tr>
-                                            ))}
-                                            {items.length === 0 && (
-                                                <tr><td colSpan="4" className="px-4 py-8 text-center text-gray-500">No items found.</td></tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {products.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan="2" className="px-6 py-12 text-center">
+                                                            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-slate-200">
+                                                                <svg className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4" /></svg>
+                                                            </div>
+                                                            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Dictionary is empty</p>
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    products.map((item, idx) => (
+                                                        <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
+                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                                                                        {idx + 1}
+                                                                    </div>
+                                                                    <span className="text-sm font-bold text-slate-800">{item}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                                <button
+                                                                    onClick={() => handleDelete(item)}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-500 hover:text-white text-xs font-bold rounded-lg transition-all shadow-sm"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                                    Delete
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             )}
                         </div>
                     )}
-
                 </div>
             </div>
         </div>

@@ -453,4 +453,17 @@ router.post('/product-items', async (req, res) => {
   }
 });
 
+// Delete product item from standard list
+router.delete('/product-items/:name', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const q = await pool.query('DELETE FROM product_items WHERE "Product Name" = $1 RETURNING *', [name]);
+    if (q.rowCount === 0) return res.status(404).json({ error: 'Product name not found' });
+    res.json({ message: 'Product name deleted', item: q.rows[0] });
+  } catch (err) {
+    console.error('Failed to delete product item:', err);
+    res.status(500).json({ error: 'Failed to delete product item' });
+  }
+});
+
 export default router;

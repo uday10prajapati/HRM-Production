@@ -306,27 +306,27 @@ const HrDashboard = () => {
         <Sidebar />
         <main className="flex-1 p-8">
           <div className="max-w-7xl mx-auto space-y-8">
-            {/* Header & Actions */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">HR Dashboard</h1>
-                <p className="mt-1 text-sm text-gray-500">Overview of workforce and assignments</p>
+            {/* Header & Actions (Welcome Banner) */}
+            <div className="bg-white rounded border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-center gap-4 mb-2">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden border border-gray-100 bg-orange-50 flex items-center justify-center">
+                  <span className="text-2xl font-bold text-orange-600">{currentUser?.name?.[0]?.toUpperCase() || 'H'}</span>
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    Welcome Back, {currentUser?.name || 'HR Team'} <span className="text-xl">👋</span>
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Overview of workforce and assignments. <span className="text-orange-500 font-medium">{pendingCallsCount}</span> Pending Calls.
+                  </p>
+                </div>
               </div>
               <div className="flex gap-3">
-                {/* <button
-                  onClick={() => setIsCreateOpen(true)}
-                  className="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all text-sm font-medium"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Create Shift
-                </button> */}
                 <button
                   onClick={() => navigate('/assign-call')}
-                  className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition-all text-sm font-medium"
+                  className="inline-flex items-center px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded text-sm font-medium transition-colors shadow-sm"
                 >
-                  <svg className="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                   Assign Call
@@ -335,107 +335,74 @@ const HrDashboard = () => {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Total Employees Card */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-blue-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Total Employees</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{users.length}</div>
-                    </div>
-                  </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+              {/* Total Employees */}
+              <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-orange-50 mb-3 group-hover:bg-orange-100 transition-colors">
+                  <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Total Employees</h3>
+                <div className="text-xl font-bold text-gray-900 mb-3">{users.length}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                  <a href="/all-users" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View Details</a>
                 </div>
               </div>
 
-              {/* Tomorrow's Shifts Card - Commented out as requested
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Tomorrow's Shifts</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{assignments.length}</div>
-                    </div>
-                  </div>
+              {/* Active Engineers */}
+              <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-900 mb-3 group-hover:bg-blue-800 transition-colors">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
                 </div>
-              </div>
-              */}
-
-              {/* Active Engineers Card */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-purple-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Active Engineers</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{engineers.length}</div>
-                    </div>
-                  </div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Active Engineers</h3>
+                <div className="text-xl font-bold text-gray-900 mb-3">{engineers.length}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                  <a href="/all-users" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
 
-              {/* Assigned Calls Card */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-indigo-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h1.28a2 2 0 011.94 1.47l.7 2.49a2 2 0 01-.57 2.01l-1.1 1.1a16 16 0 006.58 6.58l1.1-1.1a2 2 0 012.01-.57l2.49.7A2 2 0 0121 17.72V19a2 2 0 01-2 2h-1C9.82 21 3 14.18 3 6V5z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Assigned Calls</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{assignedCallsCount}</div>
-                    </div>
-                  </div>
+              {/* Assigned Calls */}
+              <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-500 mb-3 group-hover:bg-blue-600 transition-colors">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h1.28a2 2 0 011.94 1.47l.7 2.49a2 2 0 01-.57 2.01l-1.1 1.1a16 16 0 006.58 6.58l1.1-1.1a2 2 0 012.01-.57l2.49.7A2 2 0 0121 17.72V19a2 2 0 01-2 2h-1C9.82 21 3 14.18 3 6V5z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Assigned Calls</h3>
+                <div className="text-xl font-bold text-gray-900 mb-3">{assignedCallsCount}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                  <a href="/assign-call" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
 
-              {/* Resolved Calls Card */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Resolved Calls</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{resolvedCallsCount}</div>
-                    </div>
-                  </div>
+              {/* Resolved Calls */}
+              <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-pink-500 mb-3 group-hover:bg-pink-600 transition-colors">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Resolved Calls</h3>
+                <div className="text-xl font-bold text-gray-900 mb-3">{resolvedCallsCount}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                  <a href="/assign-call" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
 
-              {/* Pending Calls Card */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all group">
-                <div className="flex items-center">
-                  <div className="p-3 bg-yellow-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <h3 className="text-sm font-medium text-gray-500">Pending Calls</h3>
-                    <div className="mt-2 flex items-baseline">
-                      <div className="text-2xl font-bold text-gray-900">{pendingCallsCount}</div>
-                    </div>
-                  </div>
+              {/* Pending Calls */}
+              <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-500 mb-3 group-hover:bg-purple-600 transition-colors">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Pending Calls</h3>
+                <div className="text-xl font-bold text-gray-900 mb-3">{pendingCallsCount}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                  <a href="/assign-call" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
             </div>

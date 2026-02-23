@@ -129,10 +129,9 @@ router.get('/report', requireAuth, async (req, res) => {
     // Aggregates per date: earliest 'in' and latest 'out' using created_at
     const q = `
       SELECT
-        DATE(created_at) AS date,
-        (MIN(created_at) FILTER (WHERE punch_type = 'in')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS punch_in,
-(MAX(created_at) FILTER (WHERE punch_type = 'out')) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS punch_out
-
+        to_char(DATE(created_at), 'YYYY-MM-DD') AS date,
+        to_char((MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
+        to_char((MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
       FROM attendance
       WHERE user_id = $1
         AND DATE(created_at) BETWEEN $2 AND $3
@@ -141,14 +140,9 @@ router.get('/report', requireAuth, async (req, res) => {
     `;
 
     const { rows } = await pool.query(q, [userId, start, end]);
-    // convert timestamps to ISO strings (optional) to keep client parsing consistent
-    const result = rows.map(r => ({
-      date: r.date,
-      punch_in: r.punch_in ? r.punch_in.toISOString() : null,
-      punch_out: r.punch_out ? r.punch_out.toISOString() : null
-    }));
 
-    res.json({ success: true, rows: result });
+    // Rows are already perfectly formatted strings thanks to to_char, just pass directly
+    res.json({ success: true, rows: rows });
   } catch (err) {
     console.error('Error fetching attendance report:', err);
     res.status(500).json({ success: false, message: 'Failed to fetch report', error: err?.message ?? String(err) });
@@ -192,14 +186,14 @@ router.get("/report", async (req, res) => {
     const q = `
       SELECT per.user_id, u.name AS user_name, u.role AS user_role,
              to_char(per.day, 'YYYY-MM-DD') AS day,
-             to_char((per.punch_in) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
-             to_char((per.punch_out) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+             to_char((per.punch_in) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
+             to_char((per.punch_out) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
 
       FROM (
         SELECT user_id,
                created_at::date AS day,
-               MIN(created_at) FILTER (WHERE type = 'in') AS punch_in,
-               MAX(created_at) FILTER (WHERE type = 'out') AS punch_out
+               MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in') AS punch_in,
+               MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out') AS punch_out
   FROM attendance
         ${whereClause}
         GROUP BY user_id, created_at::date
@@ -239,7 +233,7 @@ router.get("/summary", async (req, res) => {
     const workedQ = `
   SELECT COUNT(DISTINCT (created_at::date)) AS worked_days
   FROM attendance
-  WHERE user_id::text=$1 AND type='in' AND created_at::date BETWEEN $2 AND $3
+  WHERE user_id::text=$1 AND (type='in' OR punch_type='in') AND created_at::date BETWEEN $2 AND $3
     `;
     const workedRes = await pool.query(workedQ, [userId, start, end]);
     const workedDays = Number(workedRes.rows[0]?.worked_days ?? 0);
@@ -327,13 +321,12 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         GROUP BY user_id
       ) l ON l.user_id = u.id::text
       LEFT JOIN (
-        -- Fetch TODAY'S punch_in (first created_at) and punch_out (last created_at)
         SELECT 
           user_id::text AS user_id,
-          to_char(MIN(created_at), 'YYYY-MM-DD HH24:MI:SS') AS punch_in,
-          to_char(MAX(created_at), 'YYYY-MM-DD HH24:MI:SS') AS punch_out
+          to_char((MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
+          to_char((MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
         FROM attendance
-        WHERE DATE(created_at) = CURRENT_DATE
+        WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
           AND user_id IS NOT NULL
         GROUP BY user_id
       ) td ON td.user_id = u.id::text
@@ -367,17 +360,17 @@ router.get('/summary/all', requireAuth, async (req, res) => {
       console.log('Filtered for user:', rows.length);
     }
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       data: rows,
-      count: rows.length 
+      count: rows.length
     });
   } catch (err) {
     console.error('/attendance/summary/all error:', err);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching attendance summary', 
-      error: err?.message ?? String(err) 
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching attendance summary',
+      error: err?.message ?? String(err)
     });
   }
 });
@@ -429,7 +422,7 @@ router.get('/records', requireAuth, async (req, res) => {
     const q = `
         SELECT a.id, a.user_id, u.name AS user_name, u.role AS user_role, a.notes,
                a.latitude, a.longitude,
-               to_char(a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI:SS') AS created_at
+               to_char(a.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS created_at
   FROM attendance a
         LEFT JOIN users u ON u.id::text = a.user_id::text
         WHERE ${where}
@@ -683,7 +676,7 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
             SELECT 
   id,
   punch_type,
-  (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') AS created_at,
+  (created_at AT TIME ZONE 'Asia/Kolkata') AS created_at,
   latitude,
   longitude,
   notes
