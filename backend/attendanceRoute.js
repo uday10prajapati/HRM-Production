@@ -130,8 +130,8 @@ router.get('/report', requireAuth, async (req, res) => {
     const q = `
       SELECT
         to_char(DATE(created_at), 'YYYY-MM-DD') AS date,
-        to_char((MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
-        to_char((MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
+        to_char((MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
+        to_char((MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
       FROM attendance
       WHERE user_id = $1
         AND DATE(created_at) BETWEEN $2 AND $3
@@ -192,8 +192,8 @@ router.get("/report", async (req, res) => {
       FROM (
         SELECT user_id,
                created_at::date AS day,
-               MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in') AS punch_in,
-               MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out') AS punch_out
+               MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS punch_in,
+               MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out')) AS punch_out
   FROM attendance
         ${whereClause}
         GROUP BY user_id, created_at::date
@@ -233,7 +233,7 @@ router.get("/summary", async (req, res) => {
     const workedQ = `
   SELECT COUNT(DISTINCT (created_at::date)) AS worked_days
   FROM attendance
-  WHERE user_id::text=$1 AND (type='in' OR punch_type='in') AND created_at::date BETWEEN $2 AND $3
+  WHERE user_id::text=$1 AND (type IN ('in', 'punch_in') OR punch_type IN ('in', 'punch_in')) AND created_at::date BETWEEN $2 AND $3
     `;
     const workedRes = await pool.query(workedQ, [userId, start, end]);
     const workedDays = Number(workedRes.rows[0]?.worked_days ?? 0);
@@ -323,8 +323,8 @@ router.get('/summary/all', requireAuth, async (req, res) => {
       LEFT JOIN (
         SELECT 
           user_id::text AS user_id,
-          to_char((MIN(created_at) FILTER (WHERE punch_type = 'in' OR type = 'in')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
-          to_char((MAX(created_at) FILTER (WHERE punch_type = 'out' OR type = 'out')) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
+          to_char((MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
+          to_char((MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
         FROM attendance
         WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
           AND user_id IS NOT NULL
@@ -540,7 +540,7 @@ router.get('/engineers', requireAuth, async (req, res) => {
                 'created_at', created_at
               )
               FROM last_attendance
-              WHERE type = 'in' AND rn = 1
+              WHERE type IN ('in', 'punch_in') AND rn = 1
             ),
             'punch_out', (
               SELECT json_build_object(
@@ -549,7 +549,7 @@ router.get('/engineers', requireAuth, async (req, res) => {
                 'created_at', created_at
               )
               FROM last_attendance
-              WHERE type = 'out' AND rn = 1
+              WHERE type IN ('out', 'punch_out') AND rn = 1
             )
           )
         ) as locations

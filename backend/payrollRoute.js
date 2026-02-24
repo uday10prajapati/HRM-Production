@@ -63,38 +63,38 @@ async function resolveDbUserId(identifier) {
 }
 
 function handlePgError(err, res, ctx = '') {
-  if (err && err.code === '22P02') {
-    console.error(ctx, 'Postgres invalid input (22P02):', err.message);
-    return res.status(400).json({ error: 'Invalid input syntax for numeric field' });
-  }
-  console.error(ctx, err);
-  return res.status(500).json({ error: 'Internal server error' });
+    if (err && err.code === '22P02') {
+        console.error(ctx, 'Postgres invalid input (22P02):', err.message);
+        return res.status(400).json({ error: 'Invalid input syntax for numeric field' });
+    }
+    console.error(ctx, err);
+    return res.status(500).json({ error: 'Internal server error' });
 }
 
 // Core compute function (no DB writes)
 async function computePayrollFromConfig(cfg, ctx = {}) {
-  const basic = Number(cfg.basic || 0);
-  const hra = Number(cfg.hra || 0);
-  const allowances = cfg.allowances || {};
-  const allowancesSum = Object.values(allowances).reduce((s, v) => s + Number(v || 0), 0);
+    const basic = Number(cfg.basic || 0);
+    const hra = Number(cfg.hra || 0);
+    const allowances = cfg.allowances || {};
+    const allowancesSum = Object.values(allowances).reduce((s, v) => s + Number(v || 0), 0);
 
-  const year = Number(ctx.year || new Date().getFullYear());
-  const month = Number(ctx.month || (new Date().getMonth() + 1));
-  const start = `${year}-${String(month).padStart(2, '0')}-01`;
-  const end = new Date(year, month, 0).toISOString().slice(0, 10);
+    const year = Number(ctx.year || new Date().getFullYear());
+    const month = Number(ctx.month || (new Date().getMonth() + 1));
+    const start = `${year}-${String(month).padStart(2, '0')}-01`;
+    const end = new Date(year, month, 0).toISOString().slice(0, 10);
 
-  // Rule 1: Total working days = total days in the month (INCLUDING weekends/Sundays)
-  const totalWorkingDays = new Date(year, month, 0).getDate();
+    // Rule 1: Total working days = total days in the month (INCLUDING weekends/Sundays)
+    const totalWorkingDays = new Date(year, month, 0).getDate();
 
-  const userId = cfg.user_id || cfg.userId || null;
-  let workedDays = 0;
-  let totalAttendanceSeconds = 0;
+    const userId = cfg.user_id || cfg.userId || null;
+    let workedDays = 0;
+    let totalAttendanceSeconds = 0;
 
-  const wdQ = `SELECT COUNT(DISTINCT (created_at::date)) AS worked_days FROM attendance WHERE user_id::text=$1 AND type='in' AND created_at::date BETWEEN $2 AND $3`;
-  const attQ = `
+    const wdQ = `SELECT COUNT(DISTINCT (created_at::date)) AS worked_days FROM attendance WHERE user_id::text=$1 AND type IN ('in', 'punch_in') AND created_at::date BETWEEN $2 AND $3`;
+    const attQ = `
     SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (p.punch_out - p.punch_in))),0) AS worked_seconds
     FROM (
-      SELECT MIN(created_at) FILTER (WHERE type='in') AS punch_in, MAX(created_at) FILTER (WHERE type='out') AS punch_out
+      SELECT MIN(created_at) FILTER (WHERE type IN ('in', 'punch_in')) AS punch_in, MAX(created_at) FILTER (WHERE type IN ('out', 'punch_out')) AS punch_out
       FROM attendance
       WHERE user_id::text=$1 AND created_at::date BETWEEN $2 AND $3
       GROUP BY created_at::date
@@ -102,27 +102,27 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
     WHERE p.punch_in IS NOT NULL AND p.punch_out IS NOT NULL
   `;
 
-  try {
-    const [wdR, attR] = await Promise.all([
-      pool.query(wdQ, [userId, start, end]),
-      pool.query(attQ, [userId, start, end]).catch(() => ({ rows: [{ worked_seconds: 0 }] })),
-    ]);
-    workedDays = Number(wdR.rows[0]?.worked_days ?? 0);
-    totalAttendanceSeconds = Number(attR.rows[0]?.worked_seconds ?? 0);
-  } catch (err) {
-    throw err;
-  }
+    try {
+        const [wdR, attR] = await Promise.all([
+            pool.query(wdQ, [userId, start, end]),
+            pool.query(attQ, [userId, start, end]).catch(() => ({ rows: [{ worked_seconds: 0 }] })),
+        ]);
+        workedDays = Number(wdR.rows[0]?.worked_days ?? 0);
+        totalAttendanceSeconds = Number(attR.rows[0]?.worked_seconds ?? 0);
+    } catch (err) {
+        throw err;
+    }
 
-  const attendanceHours = Number((totalAttendanceSeconds / 3600) || 0);
-  const useHourly = (cfg.salary_mode && String(cfg.salary_mode).toLowerCase() === 'hourly') || cfg.hourly === true;
-  
-  // Rule 5: Salary Mode
-  let monthlyGross = basic + hra + allowancesSum;
-  if (useHourly) monthlyGross = Number((attendanceHours * (Number(cfg.hourly_rate || HOURLY_RATE))).toFixed(2));
+    const attendanceHours = Number((totalAttendanceSeconds / 3600) || 0);
+    const useHourly = (cfg.salary_mode && String(cfg.salary_mode).toLowerCase() === 'hourly') || cfg.hourly === true;
 
-  // Rule 2 & 3: Get leaves with day_type (full=1, half=0.5)
-  // Updated to use day_type instead of leave_type
-  const leaveQuery = `
+    // Rule 5: Salary Mode
+    let monthlyGross = basic + hra + allowancesSum;
+    if (useHourly) monthlyGross = Number((attendanceHours * (Number(cfg.hourly_rate || HOURLY_RATE))).toFixed(2));
+
+    // Rule 2 & 3: Get leaves with day_type (full=1, half=0.5)
+    // Updated to use day_type instead of leave_type
+    const leaveQuery = `
     SELECT 
       day_type,
       COUNT(*) as count,
@@ -147,251 +147,251 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
     GROUP BY day_type
   `;
 
-  let leave_full_days = 0;
-  let leave_half_days = 0;
+    let leave_full_days = 0;
+    let leave_half_days = 0;
 
-  try {
-    const leaveResult = await pool.query(leaveQuery, [userId, start, end]);
-    
-    leaveResult.rows.forEach(row => {
-      if (row.day_type === 'full') {
-        leave_full_days = Number(row.total_days || 0);
-      } else if (row.day_type === 'half') {
-        leave_half_days = Number(row.total_days || 0);
-      }
-    });
-  } catch (err) {
-    console.error('Error calculating leaves:', err);
-    throw err;
-  }
+    try {
+        const leaveResult = await pool.query(leaveQuery, [userId, start, end]);
 
-  // Rule 3: Free Leave Policy
-  const FREE_FULL_DAY = 1;
-  const FREE_HALF_DAY = 1;
+        leaveResult.rows.forEach(row => {
+            if (row.day_type === 'full') {
+                leave_full_days = Number(row.total_days || 0);
+            } else if (row.day_type === 'half') {
+                leave_half_days = Number(row.total_days || 0);
+            }
+        });
+    } catch (err) {
+        console.error('Error calculating leaves:', err);
+        throw err;
+    }
 
-  const chargeable_full_days = Math.max(0, leave_full_days - FREE_FULL_DAY);
-  const chargeable_half_days = Math.max(0, leave_half_days - FREE_HALF_DAY);
+    // Rule 3: Free Leave Policy
+    const FREE_FULL_DAY = 1;
+    const FREE_HALF_DAY = 1;
 
-  // Rule 4: Leave Deduction Calculation
-  const per_day_salary = Number((monthlyGross / totalWorkingDays).toFixed(2));
-  const leave_deduction = Number(
-    (chargeable_full_days * per_day_salary) + (chargeable_half_days * (per_day_salary / 2))
-  ).toFixed(2);
+    const chargeable_full_days = Math.max(0, leave_full_days - FREE_FULL_DAY);
+    const chargeable_half_days = Math.max(0, leave_half_days - FREE_HALF_DAY);
 
-  // Deductions
-  const pf = Number((basic * PF_RATE).toFixed(2));
-  const esi_employee = Number((monthlyGross * ESI_EMP_RATE).toFixed(2));
-  const esi_employer = Number((monthlyGross * ESI_EMPLOYER_RATE).toFixed(2));
-  const professional_tax = Number(PROFESSIONAL_TAX);
-  const tds = Number((monthlyGross * TDS_RATE).toFixed(2));
-  const otherDeductions = cfg.deductions || {};
-  const otherSum = Object.values(otherDeductions).reduce((s, v) => s + Number(v || 0), 0);
+    // Rule 4: Leave Deduction Calculation
+    const per_day_salary = Number((monthlyGross / totalWorkingDays).toFixed(2));
+    const leave_deduction = Number(
+        (chargeable_full_days * per_day_salary) + (chargeable_half_days * (per_day_salary / 2))
+    ).toFixed(2);
 
-  // Rule 7: Net Pay Calculation
-  const gross_pay = monthlyGross;
-  const net_pay = Number(
-    (gross_pay - (pf + esi_employee + professional_tax + tds + otherSum + Number(leave_deduction)))
-  ).toFixed(2);
-
-  // Rule 8: Return object with all required fields
-  return {
-    // Rule 1: Total working days
-    total_working_days: totalWorkingDays,
-    
-    // Rule 2 & 3: Leave breakdown
-    leave_full_days: Number(leave_full_days.toFixed(2)),
-    leave_half_days: Number(leave_half_days.toFixed(2)),
-    chargeable_full_days: Number(chargeable_full_days.toFixed(2)),
-    chargeable_half_days: Number(chargeable_half_days.toFixed(2)),
-    
-    // Rule 4: Leave deduction
-    leave_deduction: Number(leave_deduction),
-    per_day_salary: per_day_salary,
-    
-    // Attendance
-    worked_days: workedDays,
-    attendance_hours: Number(attendanceHours.toFixed(2)),
-    
-    // Rule 5: Earnings
-    basic: basic,
-    hra: hra,
-    allowances: allowances,
-    allowancesSum: allowancesSum,
-    gross_pay: Number(gross_pay.toFixed(2)),
-    
     // Deductions
-    pf: pf,
-    esi_employee: esi_employee,
-    esi_employer: esi_employer,
-    professional_tax: professional_tax,
-    tds: tds,
-    other_deductions: otherDeductions,
-    otherSum: otherSum,
-    
-    // Rule 7: Net Pay
-    net_pay: Number(net_pay),
-    
-    // Additional fields for compatibility
-    gross: Number(gross_pay.toFixed(2)),
-    overtime_hours: 0,
-    overtime_pay: 0,
-    month: month,
-    year: year
-  };
+    const pf = Number((basic * PF_RATE).toFixed(2));
+    const esi_employee = Number((monthlyGross * ESI_EMP_RATE).toFixed(2));
+    const esi_employer = Number((monthlyGross * ESI_EMPLOYER_RATE).toFixed(2));
+    const professional_tax = Number(PROFESSIONAL_TAX);
+    const tds = Number((monthlyGross * TDS_RATE).toFixed(2));
+    const otherDeductions = cfg.deductions || {};
+    const otherSum = Object.values(otherDeductions).reduce((s, v) => s + Number(v || 0), 0);
+
+    // Rule 7: Net Pay Calculation
+    const gross_pay = monthlyGross;
+    const net_pay = Number(
+        (gross_pay - (pf + esi_employee + professional_tax + tds + otherSum + Number(leave_deduction)))
+    ).toFixed(2);
+
+    // Rule 8: Return object with all required fields
+    return {
+        // Rule 1: Total working days
+        total_working_days: totalWorkingDays,
+
+        // Rule 2 & 3: Leave breakdown
+        leave_full_days: Number(leave_full_days.toFixed(2)),
+        leave_half_days: Number(leave_half_days.toFixed(2)),
+        chargeable_full_days: Number(chargeable_full_days.toFixed(2)),
+        chargeable_half_days: Number(chargeable_half_days.toFixed(2)),
+
+        // Rule 4: Leave deduction
+        leave_deduction: Number(leave_deduction),
+        per_day_salary: per_day_salary,
+
+        // Attendance
+        worked_days: workedDays,
+        attendance_hours: Number(attendanceHours.toFixed(2)),
+
+        // Rule 5: Earnings
+        basic: basic,
+        hra: hra,
+        allowances: allowances,
+        allowancesSum: allowancesSum,
+        gross_pay: Number(gross_pay.toFixed(2)),
+
+        // Deductions
+        pf: pf,
+        esi_employee: esi_employee,
+        esi_employer: esi_employer,
+        professional_tax: professional_tax,
+        tds: tds,
+        other_deductions: otherDeductions,
+        otherSum: otherSum,
+
+        // Rule 7: Net Pay
+        net_pay: Number(net_pay),
+
+        // Additional fields for compatibility
+        gross: Number(gross_pay.toFixed(2)),
+        overtime_hours: 0,
+        overtime_pay: 0,
+        month: month,
+        year: year
+    };
 }
 
 // GET /compute/:userId/:year/:month - compute on the fly (no DB writes)
 router.get('/compute/:userId/:year/:month', async (req, res) => {
-  const { userId, year, month } = req.params;
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
-    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
-    const isSelf = String(requester) === String(userId);
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
+    const { userId, year, month } = req.params;
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
+        const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+        const isSelf = String(requester) === String(userId);
+        if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
 
-    const dbUserId = await resolveDbUserId(userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        const dbUserId = await resolveDbUserId(userId);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
 
-    let cfg = null;
-    try { const qc = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 LIMIT 1', [dbUserId]); cfg = qc.rows[0] || null; } catch (e) { /* continue */ }
-    if (!cfg) {
-      const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
-      const role = (ures.rows[0]?.role || '').toString().toLowerCase();
-      
-      // Adjusted salaries to achieve net pay of ~10000 after deductions
-      let basicSalary = 6000;  // Default
-      let hraSalary = 2400;    // Default
-      let otherAllowance = 1600;  // Default
-      
-      if (role === 'engineer') {
-          basicSalary = 6000;  // 60% of gross
-          hraSalary = 2400;    // 24% of gross
-          otherAllowance = 1600;  // 16% of gross
-      } else if (role === 'hr') {
-          basicSalary = 7500;  // 60% of gross
-          hraSalary = 3000;    // 24% of gross
-          otherAllowance = 2000;  // 16% of gross
-      } else if (role === 'admin') {
-          basicSalary = 9000;  // 60% of gross
-          hraSalary = 3600;    // 24% of gross
-          otherAllowance = 2400;  // 16% of gross
-      }
-      
-      const basic = Number(basicSalary.toFixed(2));
-      const hra = Number(hraSalary.toFixed(2));
-      const allowances = { other: Number(otherAllowance.toFixed(2)) };
-      cfg = { user_id: dbUserId, basic, hra, allowances, deductions: {} };
+        let cfg = null;
+        try { const qc = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 LIMIT 1', [dbUserId]); cfg = qc.rows[0] || null; } catch (e) { /* continue */ }
+        if (!cfg) {
+            const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
+            const role = (ures.rows[0]?.role || '').toString().toLowerCase();
+
+            // Adjusted salaries to achieve net pay of ~10000 after deductions
+            let basicSalary = 6000;  // Default
+            let hraSalary = 2400;    // Default
+            let otherAllowance = 1600;  // Default
+
+            if (role === 'engineer') {
+                basicSalary = 6000;  // 60% of gross
+                hraSalary = 2400;    // 24% of gross
+                otherAllowance = 1600;  // 16% of gross
+            } else if (role === 'hr') {
+                basicSalary = 7500;  // 60% of gross
+                hraSalary = 3000;    // 24% of gross
+                otherAllowance = 2000;  // 16% of gross
+            } else if (role === 'admin') {
+                basicSalary = 9000;  // 60% of gross
+                hraSalary = 3600;    // 24% of gross
+                otherAllowance = 2400;  // 16% of gross
+            }
+
+            const basic = Number(basicSalary.toFixed(2));
+            const hra = Number(hraSalary.toFixed(2));
+            const allowances = { other: Number(otherAllowance.toFixed(2)) };
+            cfg = { user_id: dbUserId, basic, hra, allowances, deductions: {} };
+        }
+        if ((req.query.mode || '').toString().toLowerCase() === 'hourly') cfg.hourly = true;
+        const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
+        return res.json({ success: true, computed: true, year: Number(year), month: Number(month), slip });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/compute');
     }
-    if ((req.query.mode || '').toString().toLowerCase() === 'hourly') cfg.hourly = true;
-    const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
-    return res.json({ success: true, computed: true, year: Number(year), month: Number(month), slip });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/compute');
-  }
 });
 
 // POST /config - save or update salary config for a user
 router.post('/config', async (req, res) => {
-  const payload = req.body || {};
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const targetUserIdRaw = payload.userId || payload.user_id;
-    if (!targetUserIdRaw) return res.status(400).json({ error: 'missing userId in payload' });
-    const dbUserId = await resolveDbUserId(targetUserIdRaw);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-    const isSelf = String(requester) === String(targetUserIdRaw) || String(requester) === String(dbUserId);
-    if (requesterRole !== 'admin' && requesterRole !== 'hr' && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
+    const payload = req.body || {};
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const targetUserIdRaw = payload.userId || payload.user_id;
+        if (!targetUserIdRaw) return res.status(400).json({ error: 'missing userId in payload' });
+        const dbUserId = await resolveDbUserId(targetUserIdRaw);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        const isSelf = String(requester) === String(targetUserIdRaw) || String(requester) === String(dbUserId);
+        if (requesterRole !== 'admin' && requesterRole !== 'hr' && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
 
-    const basic = Number(payload.basic || 0);
-    const hra = Number(payload.hra || 0);
-    const allowances = payload.allowances || {};
-    const deductions = payload.deductions || {};
-    const salary_mode = payload.salary_mode || (payload.hourly ? 'hourly' : 'monthly');
-    const hourly_rate = Number(payload.hourly_rate || payload.rate || payload.hourlyRate || process.env.HOURLY_RATE || 72.12);
+        const basic = Number(payload.basic || 0);
+        const hra = Number(payload.hra || 0);
+        const allowances = payload.allowances || {};
+        const deductions = payload.deductions || {};
+        const salary_mode = payload.salary_mode || (payload.hourly ? 'hourly' : 'monthly');
+        const hourly_rate = Number(payload.hourly_rate || payload.rate || payload.hourlyRate || process.env.HOURLY_RATE || 72.12);
 
-    await pool.query(`
+        await pool.query(`
       INSERT INTO employee_salary_config (user_id, basic, hra, allowances, deductions, salary_mode, hourly_rate)
       VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)
       ON CONFLICT (user_id) DO UPDATE SET basic=EXCLUDED.basic, hra=EXCLUDED.hra, allowances=EXCLUDED.allowances, deductions=EXCLUDED.deductions, salary_mode=EXCLUDED.salary_mode, hourly_rate=EXCLUDED.hourly_rate
     `, [dbUserId, basic, hra, JSON.stringify(allowances), JSON.stringify(deductions), salary_mode, hourly_rate]);
 
-    return res.json({ success: true, user_id: dbUserId });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/config-post');
-  }
+        return res.json({ success: true, user_id: dbUserId });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/config-post');
+    }
 });
 
 // GET /config/:userId - fetch saved salary config
 router.get('/config/:userId', async (req, res) => {
-  const raw = req.params.userId;
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const dbUserId = await resolveDbUserId(raw);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(raw || '')]);
-    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
-    const isSelf = String(requester) === String(raw) || String(requester) === String(dbUserId);
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
+    const raw = req.params.userId;
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const dbUserId = await resolveDbUserId(raw);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(raw || '')]);
+        const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+        const isSelf = String(requester) === String(raw) || String(requester) === String(dbUserId);
+        if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) return res.status(403).json({ error: 'Unauthorized' });
 
-    const q = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
-    if (q.rows.length === 0) return res.status(404).json({ error: 'config not found' });
-    res.json({ config: q.rows[0] });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/config-get');
-  }
+        const q = await pool.query('SELECT * FROM employee_salary_config WHERE user_id::text=$1 LIMIT 1', [dbUserId]);
+        if (q.rows.length === 0) return res.status(404).json({ error: 'config not found' });
+        res.json({ config: q.rows[0] });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/config-get');
+    }
 });
 
 // GET /slip/:userId/:year/:month - return stored payroll record if present
 router.get('/slip/:userId/:year/:month', async (req, res) => {
-  try {
-    const { userId, year, month } = req.params;
-    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const { userId, year, month } = req.params;
+        const requester = req.header('x-user-id') || req.query.requesterId || null;
 
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
-    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
-    const isSelf = String(requester) === String(userId);
-    
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
-      return res.status(403).json({ error: 'Unauthorized' });
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
+        const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+        const isSelf = String(requester) === String(userId);
+
+        if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const dbUserId = await resolveDbUserId(userId);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        const q = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 AND year=$2 AND month=$3 LIMIT 1', [dbUserId, Number(year), Number(month)]);
+        if (q.rows.length === 0) return res.status(404).json({ error: 'Payroll not found' });
+        res.json(q.rows[0]);
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/slip');
     }
-
-    const dbUserId = await resolveDbUserId(userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-    const q = await pool.query('SELECT * FROM payroll_records WHERE user_id::text=$1 AND year=$2 AND month=$3 LIMIT 1', [dbUserId, Number(year), Number(month)]);
-    if (q.rows.length === 0) return res.status(404).json({ error: 'Payroll not found' });
-    res.json(q.rows[0]);
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/slip');
-  }
 });
 
 // GET /records/:userId - list stored payroll records for a user
 router.get('/records/:userId', async (req, res) => {
-  const userId = req.params.userId;
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
-    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && String(requester) !== String(userId)) return res.status(403).json({ error: 'Unauthorized' });
+    const userId = req.params.userId;
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
+        const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+        if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && String(requester) !== String(userId)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const dbUserId = await resolveDbUserId(userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-    const q = await pool.query('SELECT id, year, month, gross, net_pay, created_at FROM payroll_records WHERE user_id::text=$1 ORDER BY year DESC, month DESC', [dbUserId]);
-    res.json({ records: q.rows });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/records');
-  }
+        const dbUserId = await resolveDbUserId(userId);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        const q = await pool.query('SELECT id, year, month, gross, net_pay, created_at FROM payroll_records WHERE user_id::text=$1 ORDER BY year DESC, month DESC', [dbUserId]);
+        res.json({ records: q.rows });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/records');
+    }
 });
 
 // GET /pdf/:userId/:year/:month - compute and stream PDF (no save)
@@ -420,7 +420,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
             if (role === 'engineer') monthlyGross = 40000;
             else if (role === 'hr') monthlyGross = 50000;
             else if (role === 'admin') monthlyGross = 60000;
-            
+
             const basic = Number((monthlyGross * 0.5).toFixed(2));
             const hra = Number((monthlyGross * 0.2).toFixed(2));
             const allowances = { other: Number((monthlyGross * 0.3).toFixed(2)) };
@@ -471,7 +471,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         doc.fontSize(10);
         doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
         doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
-        
+
         if (slip.allowancesSum > 0) {
             Object.entries(slip.allowances).forEach(([key, value]) => {
                 doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
@@ -497,7 +497,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
         doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
         doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
-        
+
         if (slip.otherSum > 0) {
             Object.entries(slip.other_deductions).forEach(([key, value]) => {
                 doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
@@ -517,7 +517,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
         doc.moveDown(0.3);
         doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
-        
+
         doc.moveDown();
         doc.fontSize(8);
         doc.text('This is a computer-generated payslip and does not require signature.', {
@@ -542,57 +542,57 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
 
 // POST /generate-payslip/:userId/:year/:month - admin or self: generate payslip for specific user
 router.post('/generate-payslip/:userId/:year/:month', async (req, res) => {
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    if (requesterRole !== 'admin' && requesterRole !== 'hr' && String(requester) !== String(req.params.userId)) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        if (requesterRole !== 'admin' && requesterRole !== 'hr' && String(requester) !== String(req.params.userId)) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const dbUserId = await resolveDbUserId(req.params.userId);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+
+        const year = Number(req.params.year);
+        const month = Number(req.params.month);
+        const result = await generatePayslipForUser(dbUserId, year, month, { savePdf: true });
+        return res.json({ success: true, result });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/generate-payslip');
     }
-
-    const dbUserId = await resolveDbUserId(req.params.userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
-
-    const year = Number(req.params.year);
-    const month = Number(req.params.month);
-    const result = await generatePayslipForUser(dbUserId, year, month, { savePdf: true });
-    return res.json({ success: true, result });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/generate-payslip');
-  }
 });
 
 // POST /run - admin-only: generate payslips for all users for given year/month (body optional)
 router.post('/run', async (req, res) => {
-  const payload = req.body || {};
-  const requester = req.header('x-user-id') || req.query.requesterId || null;
-  try {
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    if (requesterRole !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+    const payload = req.body || {};
+    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        if (requesterRole !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
-    const year = Number(payload.year || payload.y || (new Date()).getFullYear());
-    const month = Number(payload.month || payload.m || (new Date()).getMonth() + 1);
-    const savePdf = payload.savePdf !== undefined ? !!payload.savePdf : true;
+        const year = Number(payload.year || payload.y || (new Date()).getFullYear());
+        const month = Number(payload.month || payload.m || (new Date()).getMonth() + 1);
+        const savePdf = payload.savePdf !== undefined ? !!payload.savePdf : true;
 
-    const summary = await generatePayslipsForAll(year, month, { savePdf });
-    return res.json({ success: true, year, month, summary });
-  } catch (err) {
-    return handlePgError(err, res, '/payroll/run');
-  }
+        const summary = await generatePayslipsForAll(year, month, { savePdf });
+        return res.json({ success: true, year, month, summary });
+    } catch (err) {
+        return handlePgError(err, res, '/payroll/run');
+    }
 });
 
 // GET /payslips/:userId - fetch all payslips and salary config for a user
 router.get('/payslips/:userId', async (req, res) => {
     const { userId } = req.params;
     const requester = req.header('x-user-id') || req.query.requesterId || null;
-    
+
     try {
         // Check authorization
         const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
         const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
         const isSelf = String(requester) === String(userId);
-        
+
         // Only allow admin, HR, or self to view payslips
         if (requesterRole !== 'admin' && requesterRole !== 'hr' && !isSelf) {
             return res.status(403).json({ error: 'Unauthorized' });
@@ -644,11 +644,11 @@ router.get('/payslips/:userId', async (req, res) => {
             basic: Number(configQuery.rows[0].basic || 0).toFixed(2),
             hra: Number(configQuery.rows[0].hra || 0).toFixed(2),
             hourly_rate: Number(configQuery.rows[0].hourly_rate || 0).toFixed(2),
-            allowances: typeof configQuery.rows[0].allowances === 'string' 
-                ? JSON.parse(configQuery.rows[0].allowances) 
+            allowances: typeof configQuery.rows[0].allowances === 'string'
+                ? JSON.parse(configQuery.rows[0].allowances)
                 : (configQuery.rows[0].allowances || {}),
-            deductions: typeof configQuery.rows[0].deductions === 'string' 
-                ? JSON.parse(configQuery.rows[0].deductions) 
+            deductions: typeof configQuery.rows[0].deductions === 'string'
+                ? JSON.parse(configQuery.rows[0].deductions)
                 : (configQuery.rows[0].deductions || {})
         } : null;
 
@@ -678,11 +678,11 @@ router.get('/payslips/:userId', async (req, res) => {
                 created_at: new Date(row.created_at).toISOString(),
                 path: row.path,
                 has_pdf: !!row.path,
-                allowances: typeof row.allowances === 'string' 
-                    ? JSON.parse(row.allowances) 
+                allowances: typeof row.allowances === 'string'
+                    ? JSON.parse(row.allowances)
                     : (row.allowances || {}),
-                deductions: typeof row.deductions === 'string' 
-                    ? JSON.parse(row.deductions) 
+                deductions: typeof row.deductions === 'string'
+                    ? JSON.parse(row.deductions)
                     : (row.deductions || {})
             }))
         });
@@ -695,13 +695,13 @@ router.get('/payslips/:userId', async (req, res) => {
 router.get('/payslip-details/:userId', async (req, res) => {
     const { userId } = req.params;
     const requester = req.header('x-user-id') || req.query.requesterId || null;
-    
+
     try {
         // Check authorization
         const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
         const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
         const isSelf = String(requester) === String(userId);
-        
+
         if (requesterRole !== 'admin' && requesterRole !== 'hr' && !isSelf) {
             return res.status(403).json({ error: 'Unauthorized' });
         }
@@ -761,11 +761,11 @@ router.get('/payslip-details/:userId', async (req, res) => {
             salary_config: {
                 basic: Number(row.config_basic || 0).toFixed(2),
                 hra: Number(row.config_hra || 0).toFixed(2),
-                allowances: typeof row.config_allowances === 'string' 
-                    ? JSON.parse(row.config_allowances) 
+                allowances: typeof row.config_allowances === 'string'
+                    ? JSON.parse(row.config_allowances)
                     : (row.config_allowances || {}),
-                deductions: typeof row.config_deductions === 'string' 
-                    ? JSON.parse(row.config_deductions) 
+                deductions: typeof row.config_deductions === 'string'
+                    ? JSON.parse(row.config_deductions)
                     : (row.config_deductions || {}),
                 salary_mode: row.salary_mode,
                 hourly_rate: Number(row.hourly_rate || 0).toFixed(2)
@@ -858,11 +858,11 @@ router.get('/payslip-details', async (req, res) => {
                     salary_config: {
                         basic: Number(row.config_basic || 0).toFixed(2),
                         hra: Number(row.config_hra || 0).toFixed(2),
-                        allowances: typeof row.config_allowances === 'string' 
-                            ? JSON.parse(row.config_allowances) 
+                        allowances: typeof row.config_allowances === 'string'
+                            ? JSON.parse(row.config_allowances)
                             : (row.config_allowances || {}),
-                        deductions: typeof row.config_deductions === 'string' 
-                            ? JSON.parse(row.config_deductions) 
+                        deductions: typeof row.config_deductions === 'string'
+                            ? JSON.parse(row.config_deductions)
                             : (row.config_deductions || {}),
                         salary_mode: row.salary_mode,
                         hourly_rate: Number(row.hourly_rate || 0).toFixed(2)
@@ -930,12 +930,12 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
     if (!cfg) {
         const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
         const role = (ures.rows[0]?.role || '').toString().toLowerCase();
-        
+
         // Adjusted salaries to achieve net pay of ~10000 after deductions
         let basicSalary = 6000;  // Default
         let hraSalary = 2400;    // Default
         let otherAllowance = 1600;  // Default
-        
+
         if (role === 'engineer') {
             basicSalary = 6000;  // 60% of gross
             hraSalary = 2400;    // 24% of gross
@@ -952,7 +952,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             otherAllowance = 2400;  // 16% of gross
             // Gross: 15000, Deductions: ~1500, Net: ~13500
         }
-        
+
         const basic = Number(basicSalary.toFixed(2));
         const hra = Number(hraSalary.toFixed(2));
         const allowances = { other: Number(otherAllowance.toFixed(2)) };
@@ -1018,7 +1018,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.fontSize(10);
             doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
             doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
-            
+
             if (slip.allowancesSum > 0) {
                 Object.entries(slip.allowances).forEach(([key, value]) => {
                     doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
@@ -1044,7 +1044,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
             doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
             doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
-            
+
             if (slip.otherSum > 0) {
                 Object.entries(slip.other_deductions).forEach(([key, value]) => {
                     doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
@@ -1064,7 +1064,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
             doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
             doc.moveDown(0.3);
             doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
-            
+
             doc.moveDown();
             doc.fontSize(8);
             doc.text('This is a computer-generated payslip and does not require signature.', {
@@ -1215,7 +1215,7 @@ router.get('/payslip-details', async (req, res) => {
             JOIN users u ON p.user_id = u.id
             ORDER BY p.year DESC, p.month DESC, u.name ASC
         `);
-        
+
         res.json(result.rows);
     } catch (err) {
         console.error('Error fetching payslip details:', err);
@@ -1229,7 +1229,7 @@ router.get('/payslip-details', async (req, res) => {
 router.get('/pdf-file/:userId/:year/:month', async (req, res) => {
     try {
         const { userId, year, month } = req.params;
-        
+
         // First get the file path
         const query = `
             SELECT pdf_path, file_name
@@ -1240,9 +1240,9 @@ router.get('/pdf-file/:userId/:year/:month', async (req, res) => {
             ORDER BY created_at DESC 
             LIMIT 1
         `;
-        
+
         const result = await pool.query(query, [userId, year, month]);
-        
+
         if (!result.rows[0]?.pdf_path) {
             return res.status(404).json({
                 success: false,
@@ -1293,39 +1293,39 @@ router.get('/pdf-file/:userId/:year/:month', async (req, res) => {
     }
 });
 router.get('/download/:filename', (req, res) => {
-  try {
-    const { filename } = req.params;
-    const filePath = path.join(__dirname, 'storage', 'uploads', 'payslips', filename);
+    try {
+        const { filename } = req.params;
+        const filePath = path.join(__dirname, 'storage', 'uploads', 'payslips', filename);
 
-    // Security check to prevent directory traversal
-    if (!filePath.startsWith(path.join(__dirname, 'storage', 'uploads', 'payslips'))) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access denied' 
-      });
+        // Security check to prevent directory traversal
+        if (!filePath.startsWith(path.join(__dirname, 'storage', 'uploads', 'payslips'))) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
+        }
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'File not found'
+            });
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+    } catch (err) {
+        console.error('Error serving payslip:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to serve payslip'
+        });
     }
-
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'File not found' 
-      });
-    }
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-
-  } catch (err) {
-    console.error('Error serving payslip:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to serve payslip' 
-    });
-  }
 });
 
 // Add this new route handler
@@ -1416,9 +1416,9 @@ async function viewSlip(user) {
         doc.setFontSize(12);
         doc.text(`Salary Slip - ${month}/${year}`, 14, 20);
         doc.text(`Employee: ${user.name} (${user.email})`, 14, 30);
-        
+
         let y = 40;
-        
+
         // Use fetched slip data if available, otherwise use default values
         const slip = slipData || {
             total_working_days: 0,
@@ -1466,9 +1466,9 @@ async function viewSlip(user) {
             ['HRA', `₹${Number(slip.hra || 0).toFixed(2)}`],
             ['Allowances', `₹${Number(slip.allowancesSum || 0).toFixed(2)}`],
         ];
-        doc.autoTable({ 
-            startY: y, 
-            head: [['Earning', 'Amount']], 
+        doc.autoTable({
+            startY: y,
+            head: [['Earning', 'Amount']],
             body: earningData,
             theme: 'grid',
             headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
@@ -1515,9 +1515,9 @@ async function viewSlip(user) {
             ['TDS', `₹${Number(slip.tds || 0).toFixed(2)}`],
         ];
 
-        doc.autoTable({ 
-            startY: y, 
-            head: [['Deduction', 'Amount']], 
+        doc.autoTable({
+            startY: y,
+            head: [['Deduction', 'Amount']],
             body: deductions,
             theme: 'grid',
             headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0] },
@@ -1525,7 +1525,7 @@ async function viewSlip(user) {
         });
 
         y = doc.lastAutoTable.finalY + 10;
-        
+
         // Summary with proper calculations
         const pf = Number(slip.pf || 0);
         const esi = Number(slip.esi_employee || 0);
@@ -1533,12 +1533,12 @@ async function viewSlip(user) {
         const tds = Number(slip.tds || 0);
         const otherDed = Number(slip.otherSum || 0);
         const leaveDed = Number(slip.leave_deduction || 0);
-        
+
         const totalStatutoryDeductions = pf + esi + pt + tds + otherDed;
         const totalDeductions = totalStatutoryDeductions + leaveDed;
         const grossSalary = Number(slip.gross_pay || slip.gross || 0);
         const netPay = grossSalary - totalDeductions;
-        
+
         doc.setFontSize(10);
         doc.text('SUMMARY:', 14, y);
         y += 6;
@@ -1550,11 +1550,11 @@ async function viewSlip(user) {
         y += 5;
         doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`, 14, y);
         y += 8;
-        
+
         doc.setFontSize(12);
         doc.setFont(undefined, 'bold');
         doc.text(`NET PAY: ₹${netPay.toFixed(2)}`, 14, y);
-        
+
         doc.setFont(undefined, 'normal');
         doc.setFontSize(8);
         doc.text('This is a computer-generated payslip and does not require signature.', 14, doc.internal.pageSize.height - 10, { align: 'left' });
@@ -1582,25 +1582,25 @@ async function viewSlip(user) {
 
 // GET /slip/:userId/:year/:month - fetch saved slip data from database
 router.get('/slip/:userId/:year/:month', async (req, res) => {
-  try {
-    const { userId, year, month } = req.params;
-    const requester = req.header('x-user-id') || req.query.requesterId || null;
+    try {
+        const { userId, year, month } = req.params;
+        const requester = req.header('x-user-id') || req.query.requesterId || null;
 
-    const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
-    const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
-    const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
-    const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
-    const isSelf = String(requester) === String(userId);
-    
-    if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+        const rr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(requester || '')]);
+        const requesterRole = (rr.rows[0]?.role || '').toString().toLowerCase();
+        const tr = await pool.query('SELECT role FROM users WHERE id::text=$1 OR email=$1 LIMIT 1', [String(userId || '')]);
+        const targetRole = (tr.rows[0]?.role || '').toString().toLowerCase();
+        const isSelf = String(requester) === String(userId);
 
-    const dbUserId = await resolveDbUserId(userId);
-    if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+        if (requesterRole !== 'admin' && !(requesterRole === 'hr' && targetRole !== 'admin') && !isSelf) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
 
-    // Fetch saved payroll record from database
-    const result = await pool.query(`
+        const dbUserId = await resolveDbUserId(userId);
+        if (!dbUserId) return res.status(404).json({ error: 'user not found' });
+
+        // Fetch saved payroll record from database
+        const result = await pool.query(`
       SELECT 
         user_id, year, month,
         basic, hra, allowances, pf, esi_employee,
@@ -1617,46 +1617,46 @@ router.get('/slip/:userId/:year/:month', async (req, res) => {
       LIMIT 1
     `, [dbUserId, Number(year), Number(month)]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Payslip not found' });
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Payslip not found' });
+        }
+
+        const record = result.rows[0];
+        const slip = {
+            basic: Number(record.basic || 0),
+            hra: Number(record.hra || 0),
+            allowances: record.allowances || {},
+            allowancesSum: Object.values(record.allowances || {}).reduce((s, v) => s + Number(v || 0), 0),
+            pf: Number(record.pf || 0),
+            esi_employee: Number(record.esi_employee || 0),
+            professional_tax: Number(record.professional_tax || 0),
+            tds: Number(record.tds || 0),
+            other_deductions: record.deductions || {},
+            otherSum: Object.values(record.deductions || {}).reduce((s, v) => s + Number(v || 0), 0),
+            gross_pay: Number(record.gross || 0),
+            net_pay: Number(record.net_pay || 0),
+            leave_full_days: Number(record.leave_full_days || 0),
+            leave_half_days: Number(record.leave_half_days || 0),
+            chargeable_full_days: Number(record.chargeable_full_days || 0),
+            chargeable_half_days: Number(record.chargeable_half_days || 0),
+            leave_deduction: Number(record.leave_deduction || 0),
+            per_day_salary: Number(record.per_day_salary || 0),
+            total_working_days: 30, // Assuming 30 days per month
+            worked_days: 0 // Would need to calculate from attendance
+        };
+
+        return res.json({
+            success: true,
+            slip: slip
+        });
+
+    } catch (err) {
+        console.error('Error fetching slip:', err);
+        return res.status(500).json({
+            error: 'Failed to fetch payslip',
+            message: err.message
+        });
     }
-
-    const record = result.rows[0];
-    const slip = {
-      basic: Number(record.basic || 0),
-      hra: Number(record.hra || 0),
-      allowances: record.allowances || {},
-      allowancesSum: Object.values(record.allowances || {}).reduce((s, v) => s + Number(v || 0), 0),
-      pf: Number(record.pf || 0),
-      esi_employee: Number(record.esi_employee || 0),
-      professional_tax: Number(record.professional_tax || 0),
-      tds: Number(record.tds || 0),
-      other_deductions: record.deductions || {},
-      otherSum: Object.values(record.deductions || {}).reduce((s, v) => s + Number(v || 0), 0),
-      gross_pay: Number(record.gross || 0),
-      net_pay: Number(record.net_pay || 0),
-      leave_full_days: Number(record.leave_full_days || 0),
-      leave_half_days: Number(record.leave_half_days || 0),
-      chargeable_full_days: Number(record.chargeable_full_days || 0),
-      chargeable_half_days: Number(record.chargeable_half_days || 0),
-      leave_deduction: Number(record.leave_deduction || 0),
-      per_day_salary: Number(record.per_day_salary || 0),
-      total_working_days: 30, // Assuming 30 days per month
-      worked_days: 0 // Would need to calculate from attendance
-    };
-
-    return res.json({
-      success: true,
-      slip: slip
-    });
-
-  } catch (err) {
-    console.error('Error fetching slip:', err);
-    return res.status(500).json({
-      error: 'Failed to fetch payslip',
-      message: err.message
-    });
-  }
 });
 
 export default router;
