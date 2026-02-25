@@ -564,7 +564,64 @@ const AssignCalls = () => {
                                                                 <div className="bg-fuchsia-50/50 border border-fuchsia-100 p-3 rounded-xl mt-3">
                                                                     <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-1">Resolution Summary</p>
                                                                     {call.problem1 && <p className="text-xs font-medium text-fuchsia-800 mb-1"><span className="font-bold">Prob 1:</span> {call.problem1}</p>}
+                                                                    {call.problem2 && <p className="text-xs font-medium text-fuchsia-800 mb-1"><span className="font-bold">Prob 2:</span> {call.problem2}</p>}
                                                                     {call.solutions && <p className="text-xs font-medium text-fuchsia-800"><span className="font-bold">Sol:</span> {call.solutions}</p>}
+                                                                </div>
+                                                            )}
+
+                                                            {(call.visit_start_date || call.kms_traveled || call.places_visited) && (
+                                                                <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl mt-3">
+                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-900/50 mb-2">Visit Details</p>
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        {call.visit_start_date && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Visit Start</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.visit_start_date}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.visit_end_date && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Visit End</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.visit_end_date}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.places_visited && (
+                                                                            <div className="col-span-2">
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Places Visited</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.places_visited}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.kms_traveled && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">KMs Traveled</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.kms_traveled} km</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.call_closed_date && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Call Closed</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.call_closed_date}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.part_used && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Part Used</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.part_used}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.quantity_used && (
+                                                                            <div>
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Quantity</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.quantity_used}</p>
+                                                                            </div>
+                                                                        )}
+                                                                        {call.return_to_home !== null && call.return_to_home !== undefined && (
+                                                                            <div className="col-span-2">
+                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Return to Home</p>
+                                                                                <p className="text-xs font-semibold text-indigo-800">{call.return_to_home ? 'Yes' : 'No'}</p>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>
