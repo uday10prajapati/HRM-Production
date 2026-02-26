@@ -10,11 +10,11 @@ const getApiUrl = () => {
     return 'https://hrms.sandjglobaltech.com';
   }
 
-  if (typeof window !== 'undefined') {
-    // 2. Local development on user's PC (e.g., npm run dev from browser)
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:5001';
-    }
+  // if (typeof window !== 'undefined') {
+  //   // 2. Local development on user's PC (e.g., npm run dev from browser)
+  //   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  //     return 'http://localhost:5001';
+  //   }
 
     // 3. Web application (Live server in standard browsers)
     // This dynamically returns exactly what the browser sees (e.g., https://hrms.sandjglobaltech.com)
