@@ -21,7 +21,7 @@ import { ensureDbConnection } from './db.js';
 
 // We'll dynamically import route modules after DB is confirmed to avoid many
 // parallel startup queries that can exhaust the DB connection pool.
-let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute, taskRoute, attendanceCorrectionRoute;
+let authRoutes, usersRoutes, documentsRoutes, attendanceRoutes, leaveRoutes, shiftsRoute, overtimeRoute, stockRoute, payrollRoute, liveLocationsRoute, serviceCallsRoute, taskRoute, attendanceCorrectionRoute, engineerRoute;
 
 
 dotenv.config();
@@ -29,9 +29,13 @@ const app = express();
 
 // Enable CORS with allowed origins
 const allowedOrigins = [
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://192.168.0.123',
   'http://hrms.sandjglobaltech.com',
   'https://hrms.sandjglobaltech.com'
 ];
@@ -102,6 +106,7 @@ async function startServer() {
   taskRoute = (await import('./taskRoute.js')).default;
   attendanceCorrectionRoute = (await import('./attendanceCorrectionRoute.js')).default;
   const societyMasterRoute = (await import('./societyMasterRoute.js')).default;
+  engineerRoute = (await import('./engineerRoute.js')).default;
 
 
   // mount task routes
@@ -130,6 +135,7 @@ async function startServer() {
   app.use('/api/tasks', taskRoute);
   app.use('/api/corrections', attendanceCorrectionRoute);
   app.use('/api/society-master', societyMasterRoute);
+  app.use('/api/engineer', engineerRoute);
 
 
   // --- Payroll scheduler: daily check, run on configured day of month ---

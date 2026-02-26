@@ -21,6 +21,36 @@ const punchOutIcon = new L.Icon({
     popupAnchor: [1, -34],
 });
 
+const LocationName = ({ lat, lon }) => {
+    const [addr, setAddr] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetchPlace = async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+            setAddr(res.data?.display_name?.split(', ').slice(0, 3).join(', ') || 'Unknown Area');
+        } catch (e) {
+            setAddr('Address unavailable');
+        }
+        setLoading(false);
+    };
+
+    if (addr) return (
+        <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-100 p-2.5 rounded-lg border border-slate-200 flex items-start gap-2 shadow-sm text-left animate-[fadeIn_0.3s_ease-out]">
+            <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            <span>{addr}</span>
+        </div>
+    );
+
+    return (
+        <button onClick={fetchPlace} disabled={loading} className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider bg-indigo-50/80 hover:bg-indigo-100 px-2.5 py-1.5 rounded-md w-fit border border-indigo-100 disabled:opacity-50">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+            {loading ? 'Finding place...' : 'Reveal Physical Address'}
+        </button>
+    );
+};
+
 export default function MapView() {
     const [engineers, setEngineers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -239,9 +269,10 @@ export default function MapView() {
                                         {startPoint && (
                                             <Marker position={[startPoint.latitude, startPoint.longitude]} icon={punchInIcon}>
                                                 <Popup className="custom-popup">
-                                                    <div className="text-center font-sans">
+                                                    <div className="text-center font-sans min-w-[160px]">
                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 mb-1">Punch In Location</p>
                                                         <p className="text-xs font-semibold text-slate-700">{startPoint.updated_at}</p>
+                                                        <LocationName lat={startPoint.latitude} lon={startPoint.longitude} />
                                                     </div>
                                                 </Popup>
                                             </Marker>
@@ -251,9 +282,10 @@ export default function MapView() {
                                         {endPoint && (
                                             <Marker position={[endPoint.latitude, endPoint.longitude]} icon={punchOutIcon}>
                                                 <Popup className="custom-popup">
-                                                    <div className="text-center font-sans">
+                                                    <div className="text-center font-sans min-w-[160px]">
                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-red-500 mb-1">Punch Out Location</p>
                                                         <p className="text-xs font-semibold text-slate-700">{endPoint.updated_at}</p>
+                                                        <LocationName lat={endPoint.latitude} lon={endPoint.longitude} />
                                                     </div>
                                                 </Popup>
                                             </Marker>
@@ -320,6 +352,8 @@ export default function MapView() {
                                                         {point.point_type === 'END' && "Ended Day / Punched Out"}
                                                         {!['START', 'END'].includes(point.point_type) && "Location recorded by device"}
                                                     </p>
+
+                                                    <LocationName lat={point.latitude} lon={point.longitude} />
 
                                                     {durationText && (
                                                         <div className={`mt-3 pt-3 border-t flex items-start gap-2 ${highlight ? 'border-amber-100' : 'border-slate-100'}`}>

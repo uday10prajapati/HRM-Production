@@ -26,6 +26,9 @@ const router = express.Router();
       await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS notes TEXT`);
       await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`);
       await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`);
+      await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS delay_time TEXT`);
+      await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS is_half_day BOOLEAN DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'approved'`);
       await pool.query(`ALTER TABLE IF EXISTS attendance ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`);
     } catch (e) {
       console.warn('Could not ensure attendance optional columns exist:', e?.message || e);
@@ -79,7 +82,9 @@ router.post('/punch', requireAuth, async (req, res) => {
       type,             // legacy name
       latitude,
       longitude,
-      notes
+      notes,
+      delay_time,
+      is_half_day
     } = req.body;
 
     const finalType = (punch_type ?? type) || 'in';
@@ -91,11 +96,11 @@ router.post('/punch', requireAuth, async (req, res) => {
 
     // Insert attendance row (uses created_at)
     const insertAttendance = `
-      INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes, created_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      INSERT INTO attendance (user_id, punch_type, latitude, longitude, notes, delay_time, is_half_day, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
       RETURNING id, created_at, punch_type
     `;
-    const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes]);
+    const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes, delay_time || null, is_half_day || false]);
     const attendance = rows[0];
 
     // Only insert live_locations if coords are present AND requester is NOT hr/admin
@@ -115,6 +120,88 @@ router.post('/punch', requireAuth, async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to record attendance', error: err?.message ?? String(err) });
   } finally {
     client.release();
+  }
+});
+
+// POST /api/attendance/request - For Missed Punch Reporting
+router.post('/request', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { userId, type, punch_time, notes } = req.body;
+
+    // Validate
+    if (!userId || !type || !punch_time || !notes) {
+      return res.status(400).json({ success: false, message: 'Missing required fields for punch request' });
+    }
+
+    await client.query('BEGIN');
+
+    // Insert as pending
+    const insertQuery = `
+      INSERT INTO attendance (user_id, punch_type, notes, status, created_at)
+      VALUES ($1, $2, $3, 'pending', $4)
+      RETURNING id, created_at, punch_type, status, notes
+    `;
+    const { rows } = await client.query(insertQuery, [userId, type, notes, punch_time]);
+
+    await client.query('COMMIT');
+    res.json({ success: true, attendance: rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    console.error('Missed punch request error:', err);
+    res.status(500).json({ success: false, message: 'Failed to submit missed punch request' });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/attendance/requests - Get all pending requests for HR/Admin
+router.get('/requests', requireAuth, async (req, res) => {
+  try {
+    const q = `
+      SELECT a.id, a.user_id, u.name as user_name, u.role, a.punch_type, a.notes, a.status,
+             to_char(a.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') as requested_time,
+             a.created_at as raw_created_at
+      FROM attendance a
+      JOIN users u ON a.user_id = u.id
+      WHERE a.status = 'pending'
+      ORDER BY a.created_at DESC
+    `;
+    const result = await pool.query(q);
+    res.json({ success: true, rows: result.rows });
+  } catch (err) {
+    console.error('Fetch requests error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch requests' });
+  }
+});
+
+// POST /api/attendance/requests/:id/resolve
+router.post('/requests/:id/resolve', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, edited_time } = req.body; // action: 'approve' or 'reject'
+
+    if (action === 'approve') {
+      const timeToSet = edited_time ? edited_time : undefined;
+
+      let updateQ = `UPDATE attendance SET status = 'approved'`;
+      let vals = [id];
+      if (timeToSet) {
+        updateQ += `, created_at = $2`;
+        vals.push(timeToSet);
+      }
+      updateQ += ` WHERE id = $1 RETURNING *`;
+
+      const r = await pool.query(updateQ, vals);
+      res.json({ success: true, request: r.rows[0] });
+    } else {
+      // Reject
+      const r = await pool.query(`UPDATE attendance SET status = 'rejected' WHERE id = $1 RETURNING *`, [id]);
+      res.json({ success: true, request: r.rows[0] });
+    }
+  } catch (err) {
+    console.error('Resolve request error:', err);
+    res.status(500).json({ success: false, message: 'Failed to resolve request' });
   }
 });
 
@@ -284,6 +371,8 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         COALESCE(l.leave_days, 0) AS leave_days,
         COALESCE(td.punch_in, '-') AS punch_in,
         COALESCE(td.punch_out, '-') AS punch_out,
+        td.delay_time,
+        td.is_half_day,
         (td.punch_in IS NOT NULL) AS present_today,
         CASE 
           WHEN td.punch_in IS NOT NULL THEN 'Present'
@@ -324,7 +413,9 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         SELECT 
           user_id::text AS user_id,
           to_char((MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
-          to_char((MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out
+          to_char((MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out,
+          MAX(delay_time) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS delay_time,
+          BOOL_OR(is_half_day) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS is_half_day
         FROM attendance
         WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
           AND user_id IS NOT NULL
@@ -394,7 +485,7 @@ router.get('/records', requireAuth, async (req, res) => {
     const requesterId = req.user?.id ?? null;
 
     const vals = [start, end];
-    let where = `created_at::date BETWEEN $1 AND $2`;
+    let where = `a.created_at::date BETWEEN $1 AND $2`;
 
     if (req.query.userId) {
       // Only admin or hr may query arbitrary userId; others must not
@@ -421,7 +512,8 @@ router.get('/records', requireAuth, async (req, res) => {
 
     const q = `
         SELECT a.id, a.user_id, u.name AS user_name, u.role AS user_role, a.notes,
-               a.latitude, a.longitude,
+               a.latitude, a.longitude, COALESCE(a.punch_type, a.type) AS type,
+               a.delay_time, a.is_half_day,
                to_char(a.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS created_at
   FROM attendance a
         LEFT JOIN users u ON u.id::text = a.user_id::text

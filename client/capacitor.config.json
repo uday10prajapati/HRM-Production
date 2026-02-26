@@ -1,0 +1,12 @@
+{
+  "appId": "com.hrm.app",
+  "appName": "HRM App",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "http",
+    "allowNavigation": [
+      "hrms.sandjglobaltech.com"
+    ]
+  }
+}

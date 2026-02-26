@@ -22,6 +22,11 @@ function AttendancePage() {
   const [punchLoading, setPunchLoading] = useState(false);
   const [latestPunch, setLatestPunch] = useState(null);
 
+  // Requests modal state
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [editingTime, setEditingTime] = useState({});
+
   // Use relative API paths (requests target /api/...)
 
   const getAuthHeaders = () => {
@@ -163,6 +168,45 @@ function AttendancePage() {
     } catch (err) {
       console.error('Failed to fetch raw attendance records', err?.response?.data ?? err);
       setRawRecords([]);
+    }
+  };
+
+  const fetchRequests = async () => {
+    try {
+      const { id, headers } = getAuthHeaders();
+      const res = await axios.get('/api/attendance/requests', { headers });
+      setPendingRequests(res.data.rows || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showRequestsModal) fetchRequests();
+  }, [showRequestsModal]);
+
+  const handleResolveRequest = async (reqId, action) => {
+    try {
+      const { headers } = getAuthHeaders();
+      const payload = { action };
+      if (action === 'approve' && editingTime[reqId]) {
+        // use specific time if HR edited it
+        const reqObj = pendingRequests.find(r => r.id === reqId);
+        // build ISO from reqObj.raw_created_at date part + editingTime[reqId]
+        if (reqObj) {
+          const ymd = new Date(reqObj.raw_created_at || reqObj.requested_time).toISOString().split('T')[0];
+          payload.edited_time = new Date(`${ymd}T${editingTime[reqId]}`).toISOString();
+        }
+      }
+
+      const res = await axios.post(`/api/attendance/requests/${reqId}/resolve`, payload, { headers });
+      if (res.data.success) {
+        alert(`Request ${action}d successfully`);
+        fetchRequests();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to resolve request');
     }
   };
 
@@ -352,7 +396,7 @@ function AttendancePage() {
                   Punch Out
                 </button>
                 <button
-                  onClick={() => navigate('/corrections')}
+                  onClick={() => setShowRequestsModal(true)}
                   className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-md shadow-amber-500/20 hover:shadow-lg hover:shadow-amber-500/40 hover:-translate-y-0.5"
                 >
                   <svg className="w-5 h-5 -ml-1" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -527,7 +571,6 @@ function AttendancePage() {
                               </div>
                               <div>
                                 <div className="text-sm font-bold text-slate-900">{r.name}</div>
-                                <div className="text-xs font-medium text-slate-500">ID: {r.user_id}</div>
                               </div>
                             </div>
                           </td>
@@ -541,12 +584,24 @@ function AttendancePage() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.punch_in ?? '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.punch_out ?? '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border ${r.status === 'Present'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
-                              }`}>
-                              {r.status ?? 'Absent'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border ${r.status === 'Present'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}>
+                                {r.status ?? 'Absent'}
+                              </span>
+                              {r.is_half_day && (
+                                <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200">
+                                  Half Day
+                                </span>
+                              )}
+                              {r.delay_time && (
+                                <span className="px-3 py-1 inline-flex text-[10px] leading-5 font-bold rounded-lg border bg-red-50 text-red-600 border-red-200 truncate max-w-[120px]" title={r.delay_time}>
+                                  {r.delay_time}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -559,6 +614,86 @@ function AttendancePage() {
           </div>
         </main>
       </div>
+
+      {/* Missed Punch Requests Modal */}
+      {showRequestsModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-center items-center px-4 overflow-y-auto">
+          <div className="bg-white max-w-3xl w-full rounded-3xl p-6 md:p-8 shadow-2xl relative my-8">
+            <button onClick={() => setShowRequestsModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+
+            <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+              <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              Pending Missed Punch Reports
+            </h2>
+            <p className="text-sm font-medium text-slate-500 mb-6">Review and resolve forgotten punch-in requests from personnel.</p>
+
+            <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+              {pendingRequests.length === 0 ? (
+                <div className="py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <p className="text-slate-400 font-bold">No pending reports found.</p>
+                </div>
+              ) : pendingRequests.map(req => {
+                // Extract time for edit input
+                const reqTimeIso = new Date(req.raw_created_at || req.requested_time).toISOString();
+                const defaultTimeStr = reqTimeIso.substring(11, 16);
+
+                return (
+                  <div key={req.id} className="bg-white border text-sm border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-full font-bold flex items-center justify-center">
+                          {(req.user_name?.[0] || 'U').toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800">{req.user_name}</div>
+                          <div className="text-xs text-slate-500 font-semibold uppercase">{req.role}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 text-[11px] font-extrabold uppercase rounded-lg ${req.punch_type === 'in' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                          PUNCH {req.punch_type}
+                        </span>
+                        <span className="text-slate-400 font-medium text-xs">
+                          {new Date(req.raw_created_at || req.requested_time).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-4 mb-4 border border-slate-100">
+                      <div className="mb-3">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reason/Note</div>
+                        <div className="text-slate-700 italic font-medium text-sm">"{req.notes}"</div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Requested Time:</div>
+                        <input
+                          type="time"
+                          value={editingTime[req.id] !== undefined ? editingTime[req.id] : defaultTimeStr}
+                          onChange={(e) => setEditingTime({ ...editingTime, [req.id]: e.target.value })}
+                          className="bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-3 py-1.5 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => handleResolveRequest(req.id, 'reject')} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-xs">
+                        Reject
+                      </button>
+                      <button onClick={() => handleResolveRequest(req.id, 'approve')} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors text-xs shadow-md shadow-emerald-500/20">
+                        Approve Punch
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
