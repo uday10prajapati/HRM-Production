@@ -110,19 +110,6 @@ async function createAll() {
         assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- service calls
-      CREATE TABLE IF NOT EXISTS service_calls (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        title TEXT,
-        description TEXT,
-        customer_id UUID,
-        engineer_id UUID,
-        status VARCHAR(32) DEFAULT 'open',
-        scheduled_at TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-
       -- live locations
       CREATE TABLE IF NOT EXISTS live_locations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

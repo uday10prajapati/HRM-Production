@@ -51,8 +51,9 @@ router.post('/assign', requireAuth, async (req, res) => {
                 mobile_number,
                 dairy_name,
                 problem,
-                description
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                description,
+                status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
             RETURNING *
         `;
 
@@ -114,7 +115,7 @@ router.post('/assign-call', requireAuth, async (req, res) => {
                 problem,
                 description,
                 status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
             RETURNING *
         `;
 
@@ -241,7 +242,7 @@ function isHrOrAdmin(role) {
   return r === 'admin' || r === 'hr';
 }
 
-// POST /api/service_calls
+// POST /api/assign_call
 // Body: { title, description, customerId, engineerId?, scheduled_at? }
 // Only admin/manager/hr may assign engineer; others cannot set engineer_id
 router.post('/', requireAuth, async (req, res) => {
@@ -300,7 +301,7 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/service_calls/:id
+// GET /api/assign_call/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id;
@@ -311,7 +312,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         sc.*, 
         u_e.name AS engineer_name, 
         u_c.name AS customer_name
-      FROM service_calls sc
+      FROM assign_call sc
       LEFT JOIN users u_e ON u_e.id::text = sc.engineer_id::text
       LEFT JOIN users u_c ON u_c.id::text = sc.customer_id::text
       WHERE sc.id::text = $1
@@ -326,7 +327,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 
     return res.json({ success: true, call: row });
   } catch (err) {
-    console.error('/service_calls/:id GET error', err);
+    console.error('/assign_call/:id GET error', err);
     return res.status(500).json({
       success: false,
       message: 'Error fetching service call',
@@ -336,7 +337,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 
-// PUT /api/service_calls/:id/assign
+// PUT /api/assign_call/:id/assign
 // Body: { engineerId }
 router.put('/:id/assign', requireAuth, async (req, res) => {
   try {
@@ -355,7 +356,7 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
 
     // ✅ Corrected SQL update query
     const q = `
-      UPDATE service_calls 
+      UPDATE assign_call 
       SET engineer_id = $1, updated_at = NOW()
       WHERE id::text = $2 
       RETURNING *
@@ -413,7 +414,7 @@ router.put('/:id/assign', requireAuth, async (req, res) => {
 
     return res.json({ success: true, call: updatedCall });
   } catch (err) {
-    console.error('/service_calls/:id/assign PUT error', err);
+    console.error('/assign_call/:id/assign PUT error', err);
     return res.status(500).json({
       success: false,
       message: 'Error assigning engineer',

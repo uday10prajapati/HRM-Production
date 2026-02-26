@@ -55,7 +55,7 @@ export const API_ENDPOINTS = {
   TASKS: '/api/tasks',
 
   // Service Calls
-  SERVICE_CALLS: '/api/service-calls',
+  assign_call: '/api/service-calls',
   ASSIGNED_CALLS: '/api/service-calls/assigned-calls',
 
   // Payroll

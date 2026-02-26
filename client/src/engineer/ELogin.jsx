@@ -11,6 +11,14 @@ const ELogin = () => {
 
     const navigate = useNavigate();
 
+    // Check if user is already logged in on initial load
+    React.useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            navigate('/engineer-dashboard', { replace: true });
+        }
+    }, [navigate]);
+
     const handleLogin = async (e) => {
         e.preventDefault();
         if (!identifier || !password) {
@@ -44,9 +52,9 @@ const ELogin = () => {
 
                 // Store user and token
                 localStorage.setItem("user", JSON.stringify(userData));
+                localStorage.setItem("token", data.token || "authenticated"); // Provide dummy token if backend skipped JWT
                 axios.defaults.headers.common['x-user-id'] = String(userData.id);
                 if (data.token) {
-                    localStorage.setItem("token", data.token);
                     axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
                 }
 

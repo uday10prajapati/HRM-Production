@@ -13,7 +13,7 @@ export default function EngineerTasks() {
     setLoading(true);
     try {
       const [callsRes, usersRes] = await Promise.all([
-        axios.get('/api/service_calls'),
+        axios.get('/api/assign_call'),
         axios.get('/api/users')
       ]);
       const allCalls = callsRes.data.calls || [];
@@ -38,7 +38,7 @@ export default function EngineerTasks() {
   async function assign(callId, engineerId) {
     setAssigning(callId);
     try {
-      const res = await axios.put(`/api/service_calls/${callId}/assign`, { engineerId });
+      const res = await axios.put(`/api/assign_call/${callId}/assign`, { engineerId });
       // update local list: remove assigned call
       setCalls(curr => curr.filter(c => String(c.id) !== String(callId)));
     } catch (err) {

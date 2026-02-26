@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const EDashboard = () => {
-    const [activeTab, setActiveTab] = useState('pending');
-    // Initialize with dummy dates matching your screenshot roughly or current
-    const [fromDate, setFromDate] = useState('2026-02-01');
-    const [toDate, setToDate] = useState('2026-02-26');
+    const [activeTab, setActiveTab] = useState('new');
+
+    // Set default dates to current month to be useful
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [fromDate, setFromDate] = useState(firstDay.toISOString().split('T')[0]);
+    const [toDate, setToDate] = useState(today.toISOString().split('T')[0]);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [user, setUser] = useState({ name: 'Engineer Name', email: 'engineer@example.com' });
+    const [user, setUser] = useState({});
+    const [allCalls, setAllCalls] = useState([]);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -19,29 +25,85 @@ const EDashboard = () => {
         }
     }, []);
 
+    const fetchCalls = async () => {
+        if (!user.id) return;
+        try {
+            const res = await axios.get('/api/service-calls/assigned-calls');
+            if (res.data.success) {
+                // Calculate DDMMYY/sequence for ALL calls before filtering
+                const sorted = [...res.data.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const dateCounts = {};
+                const callsWithId = sorted.map(c => {
+                    const d = new Date(c.created_at);
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const yy = String(d.getFullYear()).slice(-2);
+                    const dateKey = `${dd}${mm}${yy}`;
+
+                    if (!dateCounts[dateKey]) dateCounts[dateKey] = 0;
+                    dateCounts[dateKey]++;
+                    return { ...c, sequence_id: `${dateKey}/${dateCounts[dateKey]}` };
+                });
+
+                const engineerCalls = callsWithId.filter(c => String(c.id) === String(user.id));
+                setAllCalls(engineerCalls);
+            }
+        } catch (err) {
+            console.error('Error fetching assigned calls:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (user.id) {
+            // Fetch immediately
+            fetchCalls();
+
+            // Poll every 10 seconds to auto-refresh when they leave the app open or reopen it
+            const interval = setInterval(fetchCalls, 10000);
+            return () => clearInterval(interval);
+        }
+    }, [user.id]);
+
     const handleLogout = () => {
         localStorage.removeItem('user');
         localStorage.removeItem('token');
         navigate('/');
     };
 
-    // Dummy data modeled after your screenshot
-    const pendingCalls = [
-        {
-            id: 1,
-            date: '25/02/2026',
-            dairyName: 'SHERDI B.C.U.',
-            problem: 't yo j',
-            complaint: 'vg',
-            solution: 'h',
-            notes: 'vy',
-            assignedTo: 'ud',
-            phone: '1234512345',
-            status: 'pending'
-        }
-    ];
+    const formattedCalls = allCalls.filter(call => {
+        const callDate = new Date(call.created_at);
+        const from = new Date(fromDate);
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        return callDate >= from && callDate <= to;
+    }).map(call => ({
+        id: call.call_id,
+        sequenceId: call.sequence_id,
+        date: new Date(call.created_at).toLocaleDateString('en-GB'),
+        dairyName: call.dairy_name || 'Unknown',
+        problem: call.problem || 'N/A',
+        complaint: call.description || 'N/A',
+        solution: call.solutions || 'N/A',
+        phone: call.mobile_number || 'N/A',
+        notes: call.part_used ? `Used ${call.quantity_used || 0}x ${call.part_used}` : 'No parts used',
+        assignedTo: call.engineer_name || user.name || 'Unknown',
+        status: (call.status || 'new').toLowerCase(),
+    }));
 
-    const resolvedCalls = [];
+    const newCalls = formattedCalls.filter(c => c.status === 'new');
+    const pendingCalls = formattedCalls.filter(c => c.status === 'pending');
+    const resolvedCalls = formattedCalls.filter(c => c.status === 'resolved');
+
+    const handleStatusChange = async (callId, newStatus) => {
+        try {
+            const res = await axios.put(`/api/service-calls/update-status/${callId}`, { status: newStatus });
+            if (res.data.success) {
+                fetchCalls(); // Re-fetch to update the UI
+            }
+        } catch (err) {
+            console.error('Error updating status:', err);
+        }
+    };
 
     const handleMenuToggle = () => {
         setIsSidebarOpen(!isSidebarOpen);
@@ -143,11 +205,27 @@ const EDashboard = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
                     </svg>
                 </button>
-                <h1 className="text-xl font-medium tracking-wide flex-1 text-center pr-10">Dashboard</h1>
+                <h1 className="text-xl font-medium tracking-wide flex-1 text-center">Dashboard</h1>
+                {/* Refresh Button */}
+                <button
+                    onClick={() => fetchCalls()}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors cursor-pointer active:scale-95"
+                    title="Refresh Calls"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                </button>
             </div>
 
             {/* Tabs */}
             <div className="flex bg-white shadow-sm font-medium z-0">
+                <button
+                    onClick={() => setActiveTab('new')}
+                    className={`flex-1 py-3.5 text-center transition-all duration-200 border-b-2 relative ${activeTab === 'new' ? 'text-[#2a8bf2] border-[#2a8bf2]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+                >
+                    New ({newCalls.length})
+                </button>
                 <button
                     onClick={() => setActiveTab('pending')}
                     className={`flex-1 py-3.5 text-center transition-all duration-200 border-b-2 relative ${activeTab === 'pending' ? 'text-[#2a8bf2] border-[#2a8bf2]' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
@@ -214,74 +292,68 @@ const EDashboard = () => {
                     </div>
                 </div>
 
-                {/* Premium Cards List */}
+                {/* Basic List View */}
                 <div className="flex flex-col gap-4 mt-1">
-                    {(activeTab === 'pending' ? pendingCalls : resolvedCalls).map(call => (
-                        <div key={call.id} className="bg-white rounded-2xl p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100/80 flex flex-col gap-4 relative overflow-hidden group">
-                            {/* Premium Accent line top */}
-                            <div className={`absolute top-0 left-0 right-0 h-1.5 ${call.status === 'pending' ? 'bg-amber-400' : 'bg-emerald-400'}`}></div>
+                    {(activeTab === 'new' ? newCalls : activeTab === 'pending' ? pendingCalls : resolvedCalls).map(call => (
+                        <div key={call.id} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex flex-col gap-3 group relative overflow-hidden">
+                            <div className={`absolute top-0 left-0 right-0 h-1 md:h-1.5 ${call.status === 'new' ? 'bg-blue-400' : call.status === 'pending' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
 
                             <div className="flex justify-between items-start mt-1">
-                                <div className="flex flex-col gap-0.5">
-                                    <h3 className="text-[17px] font-bold text-gray-800 leading-tight">{call.dairyName}</h3>
-                                    <p className="text-[15px] font-medium text-gray-500">{call.problem}</p>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-800 tracking-tight">{call.dairyName}</h3>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-sm font-bold text-[#2a8bf2]">ID: {call.sequenceId}</p>
+                                        <span className="text-gray-300">•</span>
+                                        <p className="text-sm text-gray-500">{call.date}</p>
+                                    </div>
                                 </div>
-                                <div className="text-xs font-semibold text-gray-400 flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5 px-0">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                                    </svg>
-                                    {call.date}
-                                </div>
+                                <select
+                                    value={call.status}
+                                    onChange={(e) => handleStatusChange(call.id, e.target.value)}
+                                    className={`px-2 py-1 text-xs font-bold rounded-md outline-none cursor-pointer border text-center ${call.status === 'new' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                        call.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                            'bg-green-100 text-green-800 border-green-200'
+                                        }`}
+                                    style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
+                                >
+                                    <option value="new">NEW</option>
+                                    <option value="pending">PENDING</option>
+                                    {/* Prevent accidental complete resolution from basic dropdown, they should use a modal ideally, but allow it for now */}
+                                    <option value="resolved">RESOLVED</option>
+                                </select>
                             </div>
 
-                            {/* Data Grid */}
-                            <div className="grid grid-cols-2 gap-y-4 gap-x-6 mt-1 bg-blue-50/40 p-4 rounded-xl border border-blue-50/50">
-                                <div className="flex flex-col">
-                                    <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">Complaint</span>
-                                    <span className="text-sm text-gray-700 font-medium">{call.complaint}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">Solution</span>
-                                    <span className="text-sm text-gray-700 font-medium">{call.solution}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">Notes</span>
-                                    <span className="text-sm text-gray-700 font-medium">{call.notes}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">Assigned To</span>
-                                    <span className="text-sm text-gray-700 font-medium flex items-center gap-1.5">
-                                        <div className="w-5 h-5 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center text-xs font-bold">
-                                            {call.assignedTo.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        {call.assignedTo}
-                                    </span>
-                                </div>
+                            <div className="text-[14px] text-gray-600 flex flex-col gap-2 border-t border-gray-100 pt-3 mt-1">
+                                <p className="flex gap-2">
+                                    <span className="font-semibold text-gray-800 min-w-[80px]">Problem:</span>
+                                    <span>{call.problem}</span>
+                                </p>
+                                <p className="flex gap-2">
+                                    <span className="font-semibold text-gray-800 min-w-[80px]">Details:</span>
+                                    <span>{call.complaint}</span>
+                                </p>
+                                {call.status === 'resolved' && (
+                                    <>
+                                        <p className="flex gap-2">
+                                            <span className="font-semibold text-gray-800 min-w-[80px]">Solution:</span>
+                                            <span className="text-green-700 font-medium">{call.solution}</span>
+                                        </p>
+                                        <p className="flex gap-2">
+                                            <span className="font-semibold text-gray-800 min-w-[80px]">Parts:</span>
+                                            <span>{call.notes}</span>
+                                        </p>
+                                    </>
+                                )}
                             </div>
 
-                            {/* Footer Actions */}
-                            <div className="flex items-center justify-between mt-1">
-                                {/* Phone Chip */}
-                                <div className="bg-[#4facfe] text-white px-3.5 py-2 rounded-lg font-bold text-sm tracking-wide flex items-center gap-2 shadow-sm shadow-blue-200 hover:bg-[#3d98f0] transition-colors cursor-pointer active:scale-95">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                        <path fillRule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clipRule="evenodd" />
-                                    </svg>
-                                    {call.phone}
-                                </div>
-
-                                {/* Status Dropdown Indicator */}
-                                <button className="flex items-center gap-2 bg-gray-50 border border-gray-200 pl-3 pr-2 py-1.5 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 transition-colors">
-                                    <div className={`w-2 h-2 rounded-full ${call.status === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
-                                    {call.status.charAt(0).toUpperCase() + call.status.slice(1)}
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                        <path fillRule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
+                            <div className="mt-2 text-xs font-medium text-gray-400 uppercase tracking-wide flex flex-col gap-1">
+                                <span>Phone: <a href={`tel:${call.phone}`} className="text-[#2a8bf2] hover:underline normal-case text-sm font-bold ml-1">{call.phone}</a></span>
+                                <span>Assigned To: <span className="text-gray-600 font-bold ml-1">{call.assignedTo}</span></span>
                             </div>
                         </div>
                     ))}
 
-                    {(activeTab === 'pending' ? pendingCalls : resolvedCalls).length === 0 && (
+                    {(activeTab === 'new' ? newCalls : activeTab === 'pending' ? pendingCalls : resolvedCalls).length === 0 && (
                         <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                             <div className="bg-gray-100 p-4 rounded-full mb-4">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 text-gray-300">

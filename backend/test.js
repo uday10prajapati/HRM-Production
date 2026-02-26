@@ -1,0 +1,1 @@
+import { pool } from './db.js'; async function test() { try { const res = await pool.query('SELECT status FROM assign_call ORDER BY created_at DESC LIMIT 1'); console.log('Latest call status:', res.rows[0]); } catch (e) { console.error(e); } finally { await pool.end(); } }; test();

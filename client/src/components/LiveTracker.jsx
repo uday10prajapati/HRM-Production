@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { Geolocation } from '@capacitor/geolocation';
+import { registerPlugin } from '@capacitor/core';
 import axios from 'axios';
+
+const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 
 const LiveTracker = () => {
     const watchIdRef = useRef(null);
@@ -49,14 +51,18 @@ const LiveTracker = () => {
         const startTracking = async (userId) => {
             if (watchIdRef.current) return;
             try {
-                watchIdRef.current = await Geolocation.watchPosition({
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 5000
-                }, async (position, err) => {
-                    if (err || !position) return;
+                // Initialize the background watcher with a sticky notification
+                const watcherId = await BackgroundGeolocation.addWatcher({
+                    backgroundMessage: "Tracking your movement for attendance verification.",
+                    backgroundTitle: "HRM Live Routing",
+                    requestPermissions: true,
+                    stale: false,
+                    distanceFilter: 30 // Will ping every 30 meters
+                }, async (location, err) => {
+                    if (err || !location) return;
 
-                    const { latitude, longitude } = position.coords;
+                    const latitude = location.latitude;
+                    const longitude = location.longitude;
 
                     // Only send if moved more than 50 meters (0.05 km) or if it's the first reading
                     let shouldSend = true;
@@ -82,14 +88,15 @@ const LiveTracker = () => {
                         }
                     }
                 });
+                watchIdRef.current = watcherId;
             } catch (e) {
                 console.error("Watch position failed", e);
             }
         };
 
-        const stopTracking = () => {
+        const stopTracking = async () => {
             if (watchIdRef.current) {
-                Geolocation.clearWatch({ id: watchIdRef.current });
+                await BackgroundGeolocation.removeWatcher({ id: watchIdRef.current });
                 watchIdRef.current = null;
                 lastPosRef.current = null;
             }

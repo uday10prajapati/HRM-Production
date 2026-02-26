@@ -30,8 +30,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Drop existing trigger if any and create a new one
-DROP TRIGGER IF EXISTS trg_notify_service_call_assignment ON service_calls;
+DROP TRIGGER IF EXISTS trg_notify_service_call_assignment ON assign_call;
 CREATE TRIGGER trg_notify_service_call_assignment
-AFTER INSERT OR UPDATE ON service_calls
+AFTER INSERT OR UPDATE ON assign_call
 FOR EACH ROW
 EXECUTE FUNCTION notify_service_call_assignment();

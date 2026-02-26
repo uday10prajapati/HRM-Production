@@ -513,7 +513,7 @@ const AssignCalls = () => {
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                             {assignedCalls.map(call => (
                                                 <div key={call.id} className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] p-6 hover:shadow-md transition-all group overflow-hidden relative">
-
+                                                    {call.status === 'new' && <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-400" />}
                                                     {call.status === 'pending' && <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400" />}
                                                     {call.status === 'in_progress' && <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500" />}
                                                     {call.status === 'resolved' && <div className="absolute top-0 left-0 w-1.5 h-full bg-fuchsia-500" />}
@@ -541,9 +541,10 @@ const AssignCalls = () => {
                                                                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Active Status</p>
                                                                     <select
                                                                         className="w-full sm:w-auto mt-0.5 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold bg-slate-50 text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-colors uppercase tracking-wide cursor-pointer"
-                                                                        value={call.status}
+                                                                        value={call.status || 'new'}
                                                                         onChange={(e) => updateCallStatus(call.call_id || call.id, e.target.value)}
                                                                     >
+                                                                        <option value="new">NEW</option>
                                                                         <option value="pending">PENDING</option>
                                                                         <option value="in_progress">IN PROGRESS</option>
                                                                         <option value="completed">COMPLETED</option>

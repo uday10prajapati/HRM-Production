@@ -109,7 +109,7 @@ export default async function startAssignmentListener() {
         if (!callId || !engineerId) return;
 
         // Fetch call and engineer info
-        const callR = await pool.query('SELECT id, title, customer_id FROM service_calls WHERE id::text = $1 LIMIT 1', [String(callId)]);
+        const callR = await pool.query('SELECT id, title, customer_id FROM assign_call WHERE id::text = $1 LIMIT 1', [String(callId)]);
         const call = callR.rows && callR.rows[0] ? callR.rows[0] : null;
         const engR = await pool.query('SELECT id, name, mobile_number, fcm_token, email FROM users WHERE id::text = $1 LIMIT 1', [String(engineerId)]);
         const eng = engR.rows && engR.rows[0] ? engR.rows[0] : null;
