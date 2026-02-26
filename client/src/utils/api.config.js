@@ -5,26 +5,23 @@
 import { Capacitor } from "@capacitor/core";
 
 const getApiUrl = () => {
-  // Priority: 1. Native Mobile > 2. env var > 3. localhost dev > 4. production domain
+  // 1. Native Mobile App (Capacitor)
   if (Capacitor.isNativePlatform()) {
     return 'https://hrms.sandjglobaltech.com';
   }
 
-  if (import.meta?.env?.VITE_API_URL) {
-    let url = import.meta.env.VITE_API_URL;
-    // Remove /api suffix if present (endpoints include it)
-    url = url.replace(/\/api\/?$/, '');
-    return url || 'http://localhost:5001';
+  if (typeof window !== 'undefined') {
+    // 2. Local development on user's PC (e.g., npm run dev from browser)
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:5001';
+    }
+
+    // 3. Web application (Live server in standard browsers)
+    // This dynamically returns exactly what the browser sees (e.g., https://hrms.sandjglobaltech.com)
+    return window.location.origin;
   }
 
-  // Development
-  if (import.meta?.env?.MODE === 'development' || !import.meta?.env?.PROD) {
-    return 'http://localhost:5001';
-  }
-
-  // Production: Web Use current page's protocol (http or https)
-  const protocol = typeof window !== 'undefined' ? window.location.protocol : 'https:';
-  return `${protocol}//hrms.sandjglobaltech.com`;
+  return 'https://hrms.sandjglobaltech.com';
 };
 
 export const API_CONFIG = {
