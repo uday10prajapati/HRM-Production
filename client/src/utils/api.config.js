@@ -22,7 +22,7 @@ const getApiUrl = () => {
   }
 
   return 'https://hrms.sandjglobaltech.com';
-};
+
 
 export const API_CONFIG = {
   BASE_URL: getApiUrl(),
