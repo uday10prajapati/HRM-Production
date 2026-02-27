@@ -172,7 +172,37 @@ const EAssignCall = () => {
 
         try {
             const callId = callData?.call_id || callData?.id;
-            const payload = { status: callStatus };
+
+            // Calculate total km from places
+            const totalKm = places.reduce((sum, p) => sum + (parseFloat(p.distance) || 0), 0);
+
+            // Generate places string/JSON
+            const placesJson = JSON.stringify(places);
+
+            // Map Boolean for returnHome
+            const isReturnHome = returnHome === 'Yes';
+
+            const payload = {
+                status: callStatus,
+                appointment_date: appointmentDate || null,
+                visit_start_date: startDate || null,
+                visit_end_date: endDate || null,
+                places_visited: placesJson,
+                kms_traveled: totalKm || null,
+                return_to_home: isReturnHome,
+                return_place: returnPlace,
+                return_km: returnKm ? parseFloat(returnKm) : null,
+                problem1: problem1,
+                problem2: problem2,
+                solutions: solution,
+                part_used: itemName,
+                quantity_used: quantity ? parseInt(quantity) : null,
+                serial_number: serialNumber,
+                remarks: remarks,
+                under_warranty: underWarranty,
+                return_part_name: returnPartName,
+                return_serial_number: returnSerialNumber
+            };
 
             const res = await axios.put(`/api/service-calls/update-status/${callId}`, payload);
 
@@ -317,8 +347,8 @@ const EAssignCall = () => {
                     {activeSection === 'RESOLUTION' && (
                         <div className={`flex flex-col gap-4 animate-fadeIn ${readOnlyClasses}`}>
                             <div className="flex flex-col gap-1">
-                                <label className="text-sm font-semibold text-gray-600">Problem 1 {!isResolved && <span className="text-red-500">*</span>}</label>
-                                <textarea value={problem1} onChange={e => setProblem1(e.target.value)} disabled={isResolved} rows="2" className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Describe the primary issue..."></textarea>
+                                <label className="text-sm font-semibold text-gray-600">Problem 1 (From Admin) {!isResolved && <span className="text-red-500">*</span>}</label>
+                                <textarea value={problem1} readOnly rows="2" className="p-2.5 rounded-xl border border-gray-300 bg-gray-100 text-gray-600 focus:outline-none cursor-not-allowed" placeholder="Describe the primary issue..."></textarea>
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="text-sm font-semibold text-gray-600">Problem 2 (Optional)</label>

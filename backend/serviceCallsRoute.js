@@ -563,11 +563,37 @@ router.delete('/assign-call/:callId', requireAuth, async (req, res) => {
 router.put('/update-status/:callId', requireAuth, async (req, res) => {
   try {
     const callId = req.params.callId;
-    const newStatus = req.body.status;
-    if (!newStatus) return res.status(400).json({ success: false, message: 'Missing status' });
+    const body = req.body;
 
-    const q = `UPDATE assign_call SET status = $1 WHERE call_id::text = $2 RETURNING *`;
-    const result = await pool.query(q, [newStatus, String(callId)]);
+    if (!body.status) return res.status(400).json({ success: false, message: 'Missing status' });
+
+    let fields = [];
+    let values = [];
+    let idx = 1;
+
+    const allowedFields = [
+      'status', 'appointment_date', 'visit_start_date', 'visit_end_date',
+      'places_visited', 'kms_traveled', 'return_to_home', 'return_place',
+      'return_km', 'problem1', 'problem2', 'solutions', 'part_used',
+      'quantity_used', 'serial_number', 'remarks', 'under_warranty',
+      'return_part_name', 'return_serial_number'
+    ];
+
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(body[key]);
+      }
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields to update' });
+    }
+
+    values.push(String(callId));
+    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} RETURNING *`;
+
+    const result = await pool.query(q, values);
     if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
 
     return res.json({ success: true, call: result.rows[0] });
@@ -585,7 +611,15 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem2 TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS solutions TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS part_used TEXT`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS quantity_used TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS quantity_used TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS appointment_date DATE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_place TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_km NUMERIC`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS serial_number TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS remarks TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS under_warranty TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_part_name TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_serial_number TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);

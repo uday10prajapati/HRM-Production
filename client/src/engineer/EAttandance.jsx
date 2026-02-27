@@ -20,15 +20,10 @@ const EAttandance = () => {
     // Confirm punch modal state
     const [showConfirmPunch, setShowConfirmPunch] = useState(false);
 
-    // Default dates for filter
-    const [fromDate, setFromDate] = useState(() => {
-        const d = new Date();
-        d.setDate(1);
-        return d.toISOString().split('T')[0];
-    });
-    const [toDate, setToDate] = useState(() => {
-        return new Date().toISOString().split('T')[0];
-    });
+    // Default dates for today's filter
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [fromDate] = useState(todayStr);
+    const [toDate] = useState(todayStr);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -172,11 +167,6 @@ const EAttandance = () => {
         }
     };
 
-    const handleFilterDate = () => {
-        if (user) {
-            fetchHistory(user.id, fromDate, toDate);
-        }
-    };
 
     const submitMissedPunch = async () => {
         if (!missedForm.date || !missedForm.time || !missedForm.reason) {
@@ -268,36 +258,18 @@ const EAttandance = () => {
                 </div>
 
                 {/* History Section */}
-                <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100">
-                    <div className="p-5 border-b border-gray-100">
-                        <h3 className="text-lg font-bold text-gray-800 mb-3">Attendance History</h3>
-
-                        <div className="flex bg-[#3a3b3c] rounded-xl overflow-hidden shadow-sm">
-                            <div className="flex-1 bg-transparent p-2.5 relative flex flex-col justify-center">
-                                <span className="text-gray-400 text-[10px] font-bold uppercase mb-0.5 ml-1">From</span>
-                                <input
-                                    type="date"
-                                    value={fromDate}
-                                    onChange={(e) => setFromDate(e.target.value)}
-                                    className="bg-transparent text-gray-50 text-xs font-medium outline-none w-full cursor-pointer 
-                                    [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full"
-                                />
-                            </div>
-                            <div className="w-[1px] bg-gray-600/50 my-2"></div>
-                            <div className="flex-1 bg-transparent p-2.5 relative flex flex-col justify-center">
-                                <span className="text-gray-400 text-[10px] font-bold uppercase mb-0.5 ml-1">To</span>
-                                <input
-                                    type="date"
-                                    value={toDate}
-                                    onChange={(e) => setToDate(e.target.value)}
-                                    className="bg-transparent text-gray-50 text-xs font-medium outline-none w-full cursor-pointer 
-                                    [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full"
-                                />
-                            </div>
-                            <button onClick={handleFilterDate} className="bg-blue-500 text-white px-4 font-bold text-sm hover:bg-blue-600 transition-colors">
-                                Filter
-                            </button>
-                        </div>
+                <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 mt-2">
+                    <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-gray-800">Today's Attendance</h3>
+                        <button
+                            onClick={() => navigate('/engineer-attendance-report')}
+                            className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                            </svg>
+                            View Reports
+                        </button>
                     </div>
 
                     <div className="flex flex-col">
