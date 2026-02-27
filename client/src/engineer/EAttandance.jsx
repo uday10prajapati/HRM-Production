@@ -17,6 +17,9 @@ const EAttandance = () => {
     const [showMissedPunch, setShowMissedPunch] = useState(false);
     const [missedForm, setMissedForm] = useState({ date: '', time: '', type: 'in', reason: '' });
 
+    // Confirm punch modal state
+    const [showConfirmPunch, setShowConfirmPunch] = useState(false);
+
     // Default dates for filter
     const [fromDate, setFromDate] = useState(() => {
         const d = new Date();
@@ -89,7 +92,13 @@ const EAttandance = () => {
         return 'On Time';
     };
 
-    const handlePunch = async () => {
+    const handlePunchClick = () => {
+        if (!user || loading) return;
+        setShowConfirmPunch(true);
+    };
+
+    const confirmPunch = async () => {
+        setShowConfirmPunch(false);
         if (!user) return;
         setLoading(true);
 
@@ -233,7 +242,7 @@ const EAttandance = () => {
                     )}
 
                     <button
-                        onClick={handlePunch}
+                        onClick={handlePunchClick}
                         disabled={loading}
                         className={`w-40 h-40 rounded-full flex flex-col items-center justify-center font-bold text-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all active:scale-95 ${loading ? 'bg-gray-200 text-gray-400 border-4 border-gray-100' : (punchState === 'in' ? 'bg-emerald-50 text-emerald-600 border-[6px] border-emerald-100 hover:bg-emerald-100' : 'bg-rose-50 text-rose-600 border-[6px] border-rose-100 hover:bg-rose-100')}`}
                     >
@@ -375,6 +384,25 @@ const EAttandance = () => {
                                 <button onClick={() => setShowMissedPunch(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl active:scale-95 transition-all text-sm">Cancel</button>
                                 <button onClick={submitMissedPunch} disabled={loading} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition-all shadow-md shadow-blue-500/30 disabled:opacity-50 text-sm">Submit</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirm Punch Modal */}
+            {showConfirmPunch && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center px-4 animate-fadeIn">
+                    <div className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl text-center">
+                        <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 ${punchState === 'in' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-8 h-8">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
+                            </svg>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm {punchState === 'in' ? 'Punch In' : 'Punch Out'}</h3>
+                        <p className="text-sm text-gray-500 mb-6">Are you sure you want to mark your attendance ({punchState === 'in' ? 'Punch In' : 'Punch Out'}) right now?</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowConfirmPunch(false)} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl active:scale-95 transition-all text-sm">Cancel</button>
+                            <button onClick={confirmPunch} className={`flex-1 py-3.5 text-white font-bold rounded-xl active:scale-95 transition-all shadow-md text-sm ${punchState === 'in' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}>Yes, {punchState === 'in' ? 'Punch In' : 'Punch Out'}</button>
                         </div>
                     </div>
                 </div>

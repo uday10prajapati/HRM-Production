@@ -78,6 +78,7 @@ const EDashboard = () => {
         return callDate >= from && callDate <= to;
     }).map(call => ({
         id: call.call_id,
+        rawCall: call,
         sequenceId: call.sequence_id,
         date: new Date(call.created_at).toLocaleDateString('en-GB'),
         dairyName: call.dairy_name || 'Unknown',
@@ -95,13 +96,16 @@ const EDashboard = () => {
     const resolvedCalls = formattedCalls.filter(c => c.status === 'resolved');
 
     const handleStatusChange = async (callId, newStatus) => {
+        // Optimistically update
+        setAllCalls(prevCalls => prevCalls.map(c => c.call_id === callId ? { ...c, status: newStatus } : c));
         try {
             const res = await axios.put(`/api/service-calls/update-status/${callId}`, { status: newStatus });
             if (res.data.success) {
-                fetchCalls(); // Re-fetch to update the UI
+                fetchCalls(); // Re-fetch to confirm
             }
         } catch (err) {
             console.error('Error updating status:', err);
+            fetchCalls(); // Revert on failure
         }
     };
 
@@ -295,7 +299,7 @@ const EDashboard = () => {
                 {/* Basic List View */}
                 <div className="flex flex-col gap-4 mt-1">
                     {(activeTab === 'new' ? newCalls : activeTab === 'pending' ? pendingCalls : resolvedCalls).map(call => (
-                        <div key={call.id} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex flex-col gap-3 group relative overflow-hidden">
+                        <div key={call.id} onClick={() => navigate('/engineer-assign-call', { state: { call: call.rawCall } })} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex flex-col gap-3 group relative overflow-hidden cursor-pointer hover:shadow-md transition-shadow">
                             <div className={`absolute top-0 left-0 right-0 h-1 md:h-1.5 ${call.status === 'new' ? 'bg-blue-400' : call.status === 'pending' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
 
                             <div className="flex justify-between items-start mt-1">
@@ -307,23 +311,17 @@ const EDashboard = () => {
                                         <p className="text-sm text-gray-500">{call.date}</p>
                                     </div>
                                 </div>
-                                <select
-                                    value={call.status}
-                                    onChange={(e) => handleStatusChange(call.id, e.target.value)}
-                                    className={`px-2 py-1 text-xs font-bold rounded-md outline-none cursor-pointer border text-center ${call.status === 'new' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                <div
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-md border uppercase ${call.status === 'new' ? 'bg-blue-100 text-blue-800 border-blue-200' :
                                         call.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
                                             'bg-green-100 text-green-800 border-green-200'
                                         }`}
-                                    style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                                 >
-                                    <option value="new">NEW</option>
-                                    <option value="pending">PENDING</option>
-                                    {/* Prevent accidental complete resolution from basic dropdown, they should use a modal ideally, but allow it for now */}
-                                    <option value="resolved">RESOLVED</option>
-                                </select>
+                                    {call.status}
+                                </div>
                             </div>
 
-                            <div className="text-[14px] text-gray-600 flex flex-col gap-2 border-t border-gray-100 pt-3 mt-1">
+                            <div className="text-[14px] text-gray-600 flex flex-col gap-2 bg-slate-50/80 rounded-xl p-4 border border-slate-100 mt-2">
                                 <p className="flex gap-2">
                                     <span className="font-semibold text-gray-800 min-w-[80px]">Problem:</span>
                                     <span>{call.problem}</span>

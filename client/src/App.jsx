@@ -8,6 +8,7 @@ import EProfile from "./engineer/EProfile";
 import EAttandance from "./engineer/EAttandance";
 import EStock from "./engineer/EStock";
 import ELeave from "./engineer/ELeave";
+import EAssignCall from "./engineer/EAssignCall";
 import Admin from "./pages/Admin/AdminDashboard";
 import HrDashboard from "./pages/HR/HrDashboard"
 import AttendancePage from "./pages/Attendance";
@@ -52,6 +53,7 @@ function App() {
         <Route path="/engineer-attendance" element={Capacitor.isNativePlatform() ? <EAttandance /> : <Navigate to="/" />} />
         <Route path="/engineer-stock" element={Capacitor.isNativePlatform() ? <EStock /> : <Navigate to="/" />} />
         <Route path="/engineer-leave" element={Capacitor.isNativePlatform() ? <ELeave /> : <Navigate to="/" />} />
+        <Route path="/engineer-assign-call" element={Capacitor.isNativePlatform() ? <EAssignCall /> : <Navigate to="/" />} />
 
         {/* Employee Routes: restrict access to admin/hr only (portal no longer accessible to employee/engineer) */}
         <Route path="/attendance" element={<ProtectedRoute><AttendancePage /></ProtectedRoute>} />

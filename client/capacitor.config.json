@@ -1,6 +1,6 @@
 {
   "appId": "com.hrm.app",
-  "appName": "HRM App",
+  "appName": "SJ Globaltech",
   "webDir": "dist",
   "server": {
     "cleartext": true,
