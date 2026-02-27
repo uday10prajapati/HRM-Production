@@ -253,6 +253,25 @@ const EAssignCall = () => {
             const res = await axios.put(`/api/service-calls/update-status/${callId}`, payload);
 
             if (res.data.success) {
+                // Automatically consume stock if marked as resolved and an item is selected
+                if (callStatus === 'resolved' && itemName && quantity > 0) {
+                    try {
+                        const userObj = JSON.parse(localStorage.getItem('user'));
+                        const usedStock = stocks.find(s => s.name === itemName);
+                        if (userObj && usedStock && usedStock.id) {
+                            await axios.post('/api/stock/consume', {
+                                engineerId: userObj.id || userObj._id,
+                                stockItemId: usedStock.id,
+                                quantity: parseInt(quantity),
+                                note: `Used in Assign Call - ${callId}`
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Failed to deduct stock:', err);
+                        // Continuing with success regardless since call update worked
+                    }
+                }
+
                 toast.success(`Call status updated to ${callStatus}!`);
                 setTimeout(() => navigate(-1), 1500);
             } else {
