@@ -510,7 +510,7 @@ const AssignCalls = () => {
                                             <p className="mt-1 text-sm text-slate-500">All assigning tasks are cleared.</p>
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 gap-6">
                                             {assignedCalls.map(call => (
                                                 <div key={call.id} className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] p-6 hover:shadow-md transition-all group overflow-hidden relative">
                                                     {call.status === 'new' && <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-400" />}
@@ -519,8 +519,9 @@ const AssignCalls = () => {
                                                     {call.status === 'resolved' && <div className="absolute top-0 left-0 w-1.5 h-full bg-fuchsia-500" />}
                                                     {call.status === 'completed' && <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500" />}
 
-                                                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                                                        <div className="flex-1 space-y-4 w-full">
+                                                    <div className="flex flex-col xl:flex-row justify-between items-stretch gap-6">
+                                                        {/* Primary Info Box */}
+                                                        <div className="flex-1 space-y-4 min-w-[300px]">
                                                             <div>
                                                                 <div className="flex items-center gap-3 mb-1">
                                                                     <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] uppercase font-bold tracking-wider">Case #{call.id || call.call_id}</div>
@@ -554,83 +555,95 @@ const AssignCalls = () => {
                                                             </div>
 
                                                             <div>
-                                                                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Issue Reported</p>
+                                                                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Initial Issue Reported</p>
                                                                 <p className="text-sm font-semibold text-slate-700">{call.problem}</p>
                                                                 {call.description && call.description !== call.problem && (
                                                                     <p className="text-sm font-medium text-slate-500 mt-1 line-clamp-2">{call.description}</p>
                                                                 )}
                                                             </div>
-
-                                                            {call.status === 'resolved' && (call.problem1 || call.solutions) && (
-                                                                <div className="bg-fuchsia-50/50 border border-fuchsia-100 p-3 rounded-xl mt-3">
-                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-1">Resolution Summary</p>
-                                                                    {call.problem1 && <p className="text-xs font-medium text-fuchsia-800 mb-1"><span className="font-bold">Prob 1:</span> {call.problem1}</p>}
-                                                                    {call.problem2 && <p className="text-xs font-medium text-fuchsia-800 mb-1"><span className="font-bold">Prob 2:</span> {call.problem2}</p>}
-                                                                    {call.solutions && <p className="text-xs font-medium text-fuchsia-800"><span className="font-bold">Sol:</span> {call.solutions}</p>}
-                                                                </div>
-                                                            )}
-
-                                                            {(call.visit_start_date || call.kms_traveled || call.places_visited) && (
-                                                                <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl mt-3">
-                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-900/50 mb-2">Visit Details</p>
-                                                                    <div className="grid grid-cols-2 gap-2">
-                                                                        {call.visit_start_date && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Visit Start</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.visit_start_date}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.visit_end_date && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Visit End</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.visit_end_date}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.places_visited && (
-                                                                            <div className="col-span-2">
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Places Visited</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.places_visited}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.kms_traveled && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">KMs Traveled</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.kms_traveled} km</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.call_closed_date && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Call Closed</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.call_closed_date}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.part_used && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Part Used</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.part_used}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.quantity_used && (
-                                                                            <div>
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Quantity</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.quantity_used}</p>
-                                                                            </div>
-                                                                        )}
-                                                                        {call.return_to_home !== null && call.return_to_home !== undefined && (
-                                                                            <div className="col-span-2">
-                                                                                <p className="text-[10px] uppercase text-indigo-400 font-bold">Return to Home</p>
-                                                                                <p className="text-xs font-semibold text-indigo-800">{call.return_to_home ? 'Yes' : 'No'}</p>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            )}
                                                         </div>
 
-                                                        {/* Action Column */}
-                                                        <div className="flex flex-col items-end gap-3 w-full sm:w-[160px] shrink-0 border-t sm:border-t-0 sm:border-l border-slate-50 pt-4 sm:pt-0 sm:pl-4">
+                                                        {/* Visit & Resolution Blocks (Landscape mode internal columns) */}
+                                                        {call.status === 'resolved' && (
+                                                            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-[300px]">
+                                                                {/* Visit Container */}
+                                                                <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl flex flex-col">
+                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-900/50 mb-3 border-b border-indigo-100/50 pb-2">Visit Details</p>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-3 h-full content-start">
+                                                                        <div>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Start Date</p>
+                                                                            <p className="text-[11px] font-semibold text-indigo-800 break-words">{call.visit_start_date ? new Date(call.visit_start_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">End/Close Date</p>
+                                                                            <p className="text-[11px] font-semibold text-indigo-800 break-words">{(call.visit_end_date || call.call_closed_date) ? new Date(call.visit_end_date || call.call_closed_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                        </div>
+                                                                        <div className="md:col-span-2">
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Places Visited</p>
+                                                                            <p className="text-[11px] font-semibold text-indigo-800 break-words">
+                                                                                {(() => {
+                                                                                    try {
+                                                                                        const p = JSON.parse(call.places_visited);
+                                                                                        if (Array.isArray(p)) return p.map(x => `${x.from} \u2192 ${x.to}`).join(', ');
+                                                                                    } catch { /* ignore */ }
+                                                                                    return call.places_visited || 'N/A';
+                                                                                })()}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Distance</p>
+                                                                            <p className="text-[11px] font-semibold text-indigo-800">{call.kms_traveled ? `${call.kms_traveled} km` : '0 km'}</p>
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Returned Home?</p>
+                                                                            <p className="text-[11px] font-semibold text-indigo-800">{call.return_to_home ? 'Yes' : 'No'}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
 
-                                                            {/* Removed Edit Resolves / Add Post-Mortem button */}
+                                                                {/* Solution & Stock Container */}
+                                                                <div className="bg-fuchsia-50/50 border border-fuchsia-100 p-4 rounded-xl flex flex-col h-full gap-3">
+                                                                    <div>
+                                                                        <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-1 border-b border-fuchsia-100 pb-1">Resolution Summary</p>
+                                                                        {call.problem1 && <p className="text-[11px] font-medium text-fuchsia-800 mt-1 break-words"><span className="font-bold">Prob 1:</span> {call.problem1}</p>}
+                                                                        {call.problem2 && <p className="text-[11px] font-medium text-fuchsia-800 mt-1 break-words"><span className="font-bold">Prob 2:</span> {call.problem2}</p>}
+                                                                        {call.solutions && <p className="text-[11px] font-medium text-fuchsia-900 mt-1.5 break-words"><span className="font-bold">Sol:</span> {call.solutions}</p>}
+                                                                    </div>
+                                                                    {call.part_used && (
+                                                                        <div className="mt-auto">
+                                                                            <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-2 border-b border-fuchsia-100 pb-1">Stock Entry</p>
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
+                                                                                <div>
+                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Part Used</p>
+                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{call.part_used || 'None'}</p>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Quantity & S/N</p>
+                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{call.quantity_used || 0}x - {call.serial_number || 'No S/N'}</p>
+                                                                                </div>
+                                                                                {call.under_warranty === 'Yes' && (
+                                                                                    <div className="md:col-span-2 mt-1 bg-amber-100/50 p-2 rounded">
+                                                                                        <p className="text-[10px] text-amber-600 font-bold leading-tight mb-1 flex gap-1 items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Warranty Part Retrieved</p>
+                                                                                        <p className="text-[11px] text-amber-800 break-words">{call.return_part_name} <span className="text-amber-500 opacity-60">|</span> {call.return_serial_number}</p>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Action Column */}
+                                                        <div className="flex flex-col items-end gap-3 w-full xl:w-[220px] shrink-0 border-t xl:border-t-0 xl:border-l border-slate-100 pt-4 xl:pt-0 xl:pl-6">
+
+                                                            {/* Letterhead & Attachment Actions */}
+                                                            {call.letterhead_url && (
+                                                                <a href={call.letterhead_url} target="_blank" rel="noopener noreferrer" className="w-full text-center text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl transition-colors border border-blue-100 shadow-sm flex items-center justify-center gap-2">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+                                                                    View Attachment
+                                                                </a>
+                                                            )}
 
                                                             <div className="w-full space-y-2 mt-auto">
                                                                 {call.letterhead_received ? (
