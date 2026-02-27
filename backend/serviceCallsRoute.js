@@ -1,6 +1,15 @@
 import express from 'express';
 import { pool } from './db.js';
 import requireAuth from './authMiddleware.js';
+import multer from 'multer';
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
+const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -576,7 +585,8 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
       'places_visited', 'kms_traveled', 'return_to_home', 'return_place',
       'return_km', 'problem1', 'problem2', 'solutions', 'part_used',
       'quantity_used', 'serial_number', 'remarks', 'under_warranty',
-      'return_part_name', 'return_serial_number'
+      'return_part_name', 'return_serial_number', 'letterhead_received',
+      'letterhead_url'
     ];
 
     for (const key of allowedFields) {
@@ -603,6 +613,36 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/upload-attachment', requireAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+  if (!supabase) return res.status(500).json({ success: false, message: 'Supabase storage not configured' });
+
+  try {
+    const fileExt = req.file.originalname.split('.').pop();
+    const fileName = `${crypto.randomUUID()}-${Date.now()}.${fileExt}`;
+    const filePath = `engineer-attachments/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('attachments')
+      .upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      return res.status(500).json({ success: false, message: 'Upload failed', error: error.message });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from('attachments').getPublicUrl(filePath);
+
+    res.json({ success: true, url: publicUrlData.publicUrl });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ success: false, message: 'Server upload error' });
+  }
+});
+
 // Ensure assign_call table has resolution columns
 (async function ensureAssignCallColumns() {
   try {
@@ -619,7 +659,8 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS remarks TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS under_warranty TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_part_name TEXT`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_serial_number TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_serial_number TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);

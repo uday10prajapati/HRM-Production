@@ -15,14 +15,21 @@ const EAssignCall = () => {
     // --- MODULE 1: Visit Entry State ---
     const [visitEntry, setVisitEntry] = useState(callData?.visit_entry || '');
     // Parsing potentially valid dates format (just mocked here for demo)
-    const [appointmentDate, setAppointmentDate] = useState(callData?.appointment_date || '');
-    const [startDate, setStartDate] = useState(callData?.start_date || '');
-    const [endDate, setEndDate] = useState(callData?.end_date || '');
+    const [appointmentDate, setAppointmentDate] = useState(callData?.appointment_date ? callData.appointment_date.split('T')[0] : '');
+    const [startDate, setStartDate] = useState(callData?.visit_start_date ? callData.visit_start_date.split('T')[0] : '');
+    const [endDate, setEndDate] = useState(callData?.visit_end_date ? callData.visit_end_date.split('T')[0] : '');
 
-    const initialPlaces = callData?.places ? JSON.parse(callData?.places) : [{ from: '', to: '', distance: '' }];
+    let initialPlaces = [{ from: '', to: '', distance: '' }];
+    if (callData?.places_visited) {
+        try {
+            initialPlaces = typeof callData.places_visited === 'string' ? JSON.parse(callData.places_visited) : callData.places_visited;
+        } catch (e) {
+            console.error("Failed to parse places", e);
+        }
+    }
     const [places, setPlaces] = useState(initialPlaces);
 
-    const [returnHome, setReturnHome] = useState(callData?.return_home || 'No');
+    const [returnHome, setReturnHome] = useState(callData?.return_to_home ? 'Yes' : 'No');
     const [returnPlace, setReturnPlace] = useState(callData?.return_place || '');
     const [returnKm, setReturnKm] = useState(callData?.return_km || '');
 
@@ -63,6 +70,7 @@ const EAssignCall = () => {
     const initialStatus = callData?.status?.toLowerCase() === 'new' ? 'pending' : (callData?.status?.toLowerCase() || 'pending');
     const [callStatus, setCallStatus] = useState(initialStatus);
     const [attachment, setAttachment] = useState(null);
+    const [letterheadReceived, setLetterheadReceived] = useState(callData?.letterhead_received || false);
 
     // --- MODULE 5: TA Entry State ---
     const [voucherNumber, setVoucherNumber] = useState(callData?.voucher_number || 'VN-' + Math.floor(Math.random() * 10000));
@@ -173,6 +181,25 @@ const EAssignCall = () => {
         try {
             const callId = callData?.call_id || callData?.id;
 
+            let letterheadUrl = callData?.letterhead_url || null;
+
+            if (!isResolved && attachment) {
+                toast.info('Uploading attachment...');
+                const formData = new FormData();
+                formData.append('file', attachment);
+
+                const uploadRes = await axios.post('/api/service-calls/upload-attachment', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+
+                if (uploadRes.data.success) {
+                    letterheadUrl = uploadRes.data.url;
+                } else {
+                    toast.error('Failed to upload attachment.');
+                    return;
+                }
+            }
+
             // Calculate total km from places
             const totalKm = places.reduce((sum, p) => sum + (parseFloat(p.distance) || 0), 0);
 
@@ -184,6 +211,8 @@ const EAssignCall = () => {
 
             const payload = {
                 status: callStatus,
+                letterhead_received: letterheadReceived,
+                letterhead_url: letterheadUrl,
                 appointment_date: appointmentDate || null,
                 visit_start_date: startDate || null,
                 visit_end_date: endDate || null,
@@ -458,11 +487,16 @@ const EAssignCall = () => {
                                         <option value="solved by helpdesk">Solved by Helpdesk</option>
                                     </select>
                                 </div>
+                                <div className="flex items-center gap-2 mt-4 md:mt-0">
+                                    <input type="checkbox" id="letterheadReceived" checked={letterheadReceived} onChange={e => setLetterheadReceived(e.target.checked)} disabled={isResolved} className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" />
+                                    <label htmlFor="letterheadReceived" className="text-sm font-semibold text-gray-600 cursor-pointer">Letterhead Received / Submitted</label>
+                                </div>
                                 {!isResolved && (
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-sm font-semibold text-gray-600">Attachment (Max 1, Img/Doc)</label>
+                                    <div className="flex flex-col gap-1 md:col-span-2">
+                                        <label className="text-sm font-semibold text-gray-600">Letterhead Attachment (Img/Doc)</label>
                                         <input type="file" accept="image/*,.doc,.docx,.pdf" onChange={e => setAttachment(e.target.files[0])} className="p-2 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
                                         {attachment && <p className="text-xs text-green-600 font-medium mt-1">✓ {attachment.name} selected</p>}
+                                        {callData?.letterhead_url && !attachment && <p className="text-xs text-blue-600 font-medium mt-1">✓ Existing attachment stored</p>}
                                     </div>
                                 )}
                             </div>
