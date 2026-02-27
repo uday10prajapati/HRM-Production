@@ -73,4 +73,43 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Change Password Route
+router.post("/reset-password", async (req, res) => {
+    const { identifier, newPassword, userId } = req.body;
+
+    if (!newPassword) {
+        return res.status(400).json({ success: false, message: "New password is required." });
+    }
+
+    try {
+        let query, values;
+
+        if (userId) {
+            query = "UPDATE public.users SET password = $1 WHERE id = $2 RETURNING id";
+            values = [newPassword, userId];
+        } else if (identifier) {
+            const isEmail = identifier.includes("@");
+            if (isEmail) {
+                query = "UPDATE public.users SET password = $1 WHERE email = $2 RETURNING id";
+            } else {
+                query = "UPDATE public.users SET password = $1 WHERE mobile_number = $2 RETURNING id";
+            }
+            values = [newPassword, identifier.trim()];
+        } else {
+            return res.status(400).json({ success: false, message: "Identifier or User ID is required." });
+        }
+
+        const result = await pool.query(query, values);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: "User not found or updating failed." });
+        }
+
+        res.json({ success: true, message: "Password updated successfully." });
+    } catch (err) {
+        console.error("Change Password Error:", err);
+        res.status(500).json({ success: false, message: "Failed to update password." });
+    }
+});
+
 export default router;

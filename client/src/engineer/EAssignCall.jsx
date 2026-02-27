@@ -30,7 +30,20 @@ const EAssignCall = () => {
     const [places, setPlaces] = useState(initialPlaces);
 
     const [returnHome, setReturnHome] = useState(callData?.return_to_home ? 'Yes' : 'No');
-    const [returnPlace, setReturnPlace] = useState(callData?.return_place || '');
+
+    let initReturnFrom = '';
+    let initReturnTo = '';
+    if (callData?.return_place) {
+        try {
+            const parsed = JSON.parse(callData.return_place);
+            initReturnFrom = parsed.from || '';
+            initReturnTo = parsed.to || '';
+        } catch {
+            initReturnFrom = callData.return_place;
+        }
+    }
+    const [returnPlaceFrom, setReturnPlaceFrom] = useState(initReturnFrom);
+    const [returnPlaceTo, setReturnPlaceTo] = useState(initReturnTo);
     const [returnKm, setReturnKm] = useState(callData?.return_km || '');
 
     // --- MODULE 2: Problem & Solution State ---
@@ -127,8 +140,8 @@ const EAssignCall = () => {
                 return;
             }
         }
-        if (returnHome === 'Yes' && (!returnPlace || !returnKm)) {
-            toast.error('Return Place and Return KM are mandatory when Return Home is Yes!');
+        if (returnHome === 'Yes' && (!returnPlaceFrom || !returnPlaceTo || !returnKm)) {
+            toast.error('Return Places (From/To) and Return KM are mandatory when Return Home is Yes!');
             return;
         }
         toast.success('Visit Entry Saved successfully!');
@@ -209,6 +222,10 @@ const EAssignCall = () => {
             // Map Boolean for returnHome
             const isReturnHome = returnHome === 'Yes';
 
+            const returnPlaceJson = (returnPlaceFrom || returnPlaceTo)
+                ? JSON.stringify({ from: returnPlaceFrom, to: returnPlaceTo })
+                : null;
+
             const payload = {
                 status: callStatus,
                 letterhead_received: letterheadReceived,
@@ -219,7 +236,7 @@ const EAssignCall = () => {
                 places_visited: placesJson,
                 kms_traveled: totalKm || null,
                 return_to_home: isReturnHome,
-                return_place: returnPlace,
+                return_place: returnPlaceJson,
                 return_km: returnKm ? parseFloat(returnKm) : null,
                 problem1: problem1,
                 problem2: problem2,
@@ -335,25 +352,33 @@ const EAssignCall = () => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                            <div className="flex flex-col gap-2 bg-gray-50 p-4 rounded-xl border border-gray-200 mt-4">
                                 <div className="flex flex-col gap-1">
                                     <label className="text-sm font-semibold text-gray-600">Return Home</label>
-                                    <select value={returnHome} onChange={e => setReturnHome(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <select value={returnHome} onChange={e => setReturnHome(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-1/3">
                                         <option value="No">No</option>
                                         <option value="Yes">Yes</option>
                                     </select>
                                 </div>
                                 {returnHome === 'Yes' && (
-                                    <>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-sm font-semibold text-gray-600">Return Place</label>
-                                            <input type="text" value={returnPlace} onChange={e => setReturnPlace(e.target.value)} disabled={isResolved} placeholder="End place" className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    <div className="flex flex-col gap-2 pt-2 border-t border-gray-200 border-dashed mt-2">
+                                        <div className="flex flex-row gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-xs font-semibold text-gray-500 mb-1 block">Place (From)</label>
+                                                <input type="text" value={returnPlaceFrom} onChange={e => setReturnPlaceFrom(e.target.value)} disabled={isResolved} placeholder="From..." className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="text-xs font-semibold text-gray-500 mb-1 block">Place (To)</label>
+                                                <input type="text" value={returnPlaceTo} onChange={e => setReturnPlaceTo(e.target.value)} disabled={isResolved} placeholder="To..." className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                            </div>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-sm font-semibold text-gray-600">Return KM</label>
-                                            <input type="number" value={returnKm} onChange={e => setReturnKm(e.target.value)} disabled={isResolved} placeholder="Total KM" className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                        <div className="flex flex-row gap-3 items-end">
+                                            <div className="flex-1 w-full md:w-32 md:flex-none">
+                                                <label className="text-xs font-semibold text-gray-500 mb-1 block">Return Distance (KM)</label>
+                                                <input type="number" value={returnKm} onChange={e => setReturnKm(e.target.value)} disabled={isResolved} placeholder="Return KM" className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                            </div>
                                         </div>
-                                    </>
+                                    </div>
                                 )}
                             </div>
 
