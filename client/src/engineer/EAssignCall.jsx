@@ -18,6 +18,8 @@ const EAssignCall = () => {
     const [appointmentDate, setAppointmentDate] = useState(callData?.appointment_date ? callData.appointment_date.split('T')[0] : '');
     const [startDate, setStartDate] = useState(callData?.visit_start_date ? callData.visit_start_date.split('T')[0] : '');
     const [endDate, setEndDate] = useState(callData?.visit_end_date ? callData.visit_end_date.split('T')[0] : '');
+    const [startTime, setStartTime] = useState(callData?.visit_start_time || '');
+    const [endTime, setEndTime] = useState(callData?.visit_end_time || '');
 
     let initialPlaces = [{ from: '', to: '', distance: '' }];
     if (callData?.places_visited) {
@@ -233,6 +235,8 @@ const EAssignCall = () => {
                 appointment_date: appointmentDate || null,
                 visit_start_date: startDate || null,
                 visit_end_date: endDate || null,
+                visit_start_time: startTime || null,
+                visit_end_time: endTime || null,
                 places_visited: placesJson,
                 kms_traveled: totalKm || null,
                 return_to_home: isReturnHome,
@@ -334,6 +338,16 @@ const EAssignCall = () => {
                                     <div className="flex flex-col gap-1 flex-1">
                                         <label className="text-sm font-semibold text-gray-600">End Date</label>
                                         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} disabled={isResolved} className="w-full p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                </div>
+                                <div className="flex flex-row gap-3">
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-sm font-semibold text-gray-600">Start Time</label>
+                                        <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} disabled={isResolved} className="w-full p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-sm font-semibold text-gray-600">End Time</label>
+                                        <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} disabled={isResolved} className="w-full p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
                                     </div>
                                 </div>
                             </div>

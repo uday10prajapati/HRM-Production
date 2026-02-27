@@ -582,6 +582,7 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
 
     const allowedFields = [
       'status', 'appointment_date', 'visit_start_date', 'visit_end_date',
+      'visit_start_time', 'visit_end_time',
       'places_visited', 'kms_traveled', 'return_to_home', 'return_place',
       'return_km', 'problem1', 'problem2', 'solutions', 'part_used',
       'quantity_used', 'serial_number', 'remarks', 'under_warranty',
@@ -660,7 +661,9 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS under_warranty TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_part_name TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_serial_number TEXT`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_time TIME`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_time TIME`
     ];
     for (const q of queries) {
       await pool.query(q);
