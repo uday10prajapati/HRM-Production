@@ -571,12 +571,18 @@ const AssignCalls = () => {
                                                                     <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-900/50 mb-3 border-b border-indigo-100/50 pb-2">Visit Details</p>
                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-3 h-full content-start">
                                                                         <div>
-                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Start Date</p>
-                                                                            <p className="text-[11px] font-semibold text-indigo-800 break-words">{call.visit_start_date ? new Date(call.visit_start_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">Start Date & Time</p>
+                                                                            <div className="flex flex-col gap-0.5 mt-0.5">
+                                                                                <p className="text-[11px] font-semibold text-indigo-800 break-words">{call.visit_start_date ? new Date(call.visit_start_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                                {call.visit_start_time && <p className="text-[10px] font-medium text-indigo-600">{call.visit_start_time}</p>}
+                                                                            </div>
                                                                         </div>
                                                                         <div>
-                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">End/Close Date</p>
-                                                                            <p className="text-[11px] font-semibold text-indigo-800 break-words">{(call.visit_end_date || call.call_closed_date) ? new Date(call.visit_end_date || call.call_closed_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                            <p className="text-[10px] uppercase text-indigo-400 font-bold">End/Close Date & Time</p>
+                                                                            <div className="flex flex-col gap-0.5 mt-0.5">
+                                                                                <p className="text-[11px] font-semibold text-indigo-800 break-words">{(call.visit_end_date || call.call_closed_date) ? new Date(call.visit_end_date || call.call_closed_date).toLocaleDateString('en-GB') : 'N/A'}</p>
+                                                                                {call.visit_end_time && <p className="text-[10px] font-medium text-indigo-600">{call.visit_end_time}</p>}
+                                                                            </div>
                                                                         </div>
                                                                         <div className="md:col-span-2">
                                                                             <p className="text-[10px] uppercase text-indigo-400 font-bold">Places Visited</p>
