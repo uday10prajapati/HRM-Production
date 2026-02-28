@@ -238,7 +238,8 @@ const EAttandance = () => {
             toast.info("Acquiring GPS Location...", { autoClose: 2000 });
             const coordinates = await Geolocation.getCurrentPosition({
                 enableHighAccuracy: true,
-                timeout: 10000
+                timeout: 30000,
+                maximumAge: 10000 // Allow a 10s old cached location to speed it up
             });
 
             const currentType = punchState; // 'in' or 'out'
