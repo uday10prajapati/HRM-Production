@@ -552,15 +552,13 @@ router.get('/latest', requireAuth, async (req, res) => {
 
     const query = `
       SELECT 
-        type,
+        COALESCE(punch_type, type) as type,
         latitude,
         longitude,
         created_at
       FROM attendance
       WHERE user_id = $1 
       AND DATE(created_at) = CURRENT_DATE
-      AND latitude IS NOT NULL
-      AND longitude IS NOT NULL
       ORDER BY created_at ASC
     `;
 
@@ -573,8 +571,8 @@ router.get('/latest', requireAuth, async (req, res) => {
     }
 
     // Group locations by type
-    const punchIn = locations.find(loc => loc.type === 'punch_in');
-    const punchOut = locations.find(loc => loc.type === 'punch_out');
+    const punchIn = locations.find(loc => loc.type === 'punch_in' || loc.type === 'in');
+    const punchOut = locations.find(loc => loc.type === 'punch_out' || loc.type === 'out');
 
     res.json({
       success: true,
