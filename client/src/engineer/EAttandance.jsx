@@ -206,6 +206,47 @@ const EAttandance = () => {
         setTaAutoVisit(null);
     };
 
+    const handleEditTaEntry = (idx) => {
+        const entry = taEntries[idx];
+        setSelectedTaCall(entry.call_id);
+
+        let placesArr = [];
+        try {
+            placesArr = JSON.parse(entry.placesJson || '[]');
+        } catch {
+            placesArr = [{ from: '', to: '', distance: '' }];
+        }
+
+        const returnPlaceIndex = placesArr.findIndex(p => p.isReturn);
+        if (returnPlaceIndex >= 0) {
+            setTaReturnHome('Yes');
+            setTaReturnFrom(placesArr[returnPlaceIndex].from);
+            setTaReturnTo(placesArr[returnPlaceIndex].to);
+            setTaReturnKm(placesArr[returnPlaceIndex].distance);
+            placesArr.splice(returnPlaceIndex, 1);
+        } else {
+            setTaReturnHome('No');
+            setTaReturnFrom('');
+            setTaReturnTo('');
+            setTaReturnKm('');
+        }
+
+        setTaPlaces(placesArr.length > 0 ? placesArr : [{ from: '', to: '', distance: '' }]);
+        setTaAutoVisit({
+            startTime: entry.startTime,
+            endTime: entry.endTime
+        });
+
+        // Remove from list so it can be re-saved
+        setTaEntries(taEntries.filter((_, i) => i !== idx));
+
+        // Scroll back to the select call section
+        setTimeout(() => {
+            const section = document.getElementById('ta-voucher-edit-section');
+            if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+    };
+
     const handleSubmitTa = async () => {
         if (taEntries.length === 0) {
             toast.error('Add at least one call entry to TA voucher');
@@ -626,8 +667,8 @@ const EAttandance = () => {
                             </div>
 
                             {/* --- 5. & 6. Call Number & Fetching details --- */}
-                            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
-                                <h3 className="text-sm font-bold text-gray-700 mb-1 border-b pb-2">3. Select Call & Add</h3>
+                            <div id="ta-voucher-edit-section" className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
+                                <h3 className="text-sm font-bold text-gray-700 mb-1 border-b pb-2">3. Select Call & Add {selectedTaCall && "(Editing Mode)"}</h3>
 
                                 <div className="flex flex-col gap-1">
                                     <label className="block text-xs font-bold text-gray-500">Call Number <span className="text-red-500">*</span></label>
@@ -733,9 +774,14 @@ const EAttandance = () => {
                                             <span className="font-bold text-green-900">ID: {e.sequence_id}</span>
                                             <span>KM: {e.km} | Time: {e.startTime}-{e.endTime}</span>
                                             <span className="truncate">Visits: {e.places}</span>
-                                            <button onClick={() => setTaEntries(taEntries.filter((_, i) => i !== idx))} className="absolute right-2 top-2 p-1.5 text-red-500 bg-red-100 rounded hover:bg-red-200 transition-colors">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                                            </button>
+                                            <div className="absolute right-2 top-2 flex flex-col gap-1.5">
+                                                <button onClick={() => handleEditTaEntry(idx)} className="p-1.5 text-blue-600 bg-blue-100 rounded hover:bg-blue-200 transition-colors shadow-sm" title="Edit Entry">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.89 1.12l-2.83.899a.75.75 0 01-.94-.94l.899-2.83a4.5 4.5 0 011.12-1.89l13.682-13.682z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.862 4.487" /></svg>
+                                                </button>
+                                                <button onClick={() => setTaEntries(taEntries.filter((_, i) => i !== idx))} className="p-1.5 text-red-500 bg-red-100 rounded hover:bg-red-200 transition-colors shadow-sm" title="Remove Entry">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
