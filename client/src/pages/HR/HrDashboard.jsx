@@ -388,7 +388,7 @@ const HrDashboard = () => {
                 <h3 className="text-sm font-medium text-gray-500 mb-1">Resolved Calls</h3>
                 <div className="text-xl font-bold text-gray-900 mb-3">{resolvedCallsCount}</div>
                 <div className="mt-auto pt-3 border-t border-gray-100 w-full">
-                  <a href="/assign-call" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
+                  <a href="/documents" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
 
@@ -402,7 +402,7 @@ const HrDashboard = () => {
                 <h3 className="text-sm font-medium text-gray-500 mb-1">Pending Calls</h3>
                 <div className="text-xl font-bold text-gray-900 mb-3">{pendingCallsCount}</div>
                 <div className="mt-auto pt-3 border-t border-gray-100 w-full">
-                  <a href="/assign-call" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
+                  <a href="/documents" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>
             </div>
