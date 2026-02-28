@@ -39,6 +39,11 @@ const EAttandance = () => {
     const [taEntries, setTaEntries] = useState([]);
     const [selectedTaCall, setSelectedTaCall] = useState('');
     const [taAutoVisit, setTaAutoVisit] = useState(null);
+    const [taPlaces, setTaPlaces] = useState([]);
+    const [taReturnHome, setTaReturnHome] = useState('No');
+    const [taReturnFrom, setTaReturnFrom] = useState('');
+    const [taReturnTo, setTaReturnTo] = useState('');
+    const [taReturnKm, setTaReturnKm] = useState('');
     const [taReceiptFile, setTaReceiptFile] = useState(null);
 
     useEffect(() => {
@@ -108,37 +113,51 @@ const EAttandance = () => {
         const val = e.target.value;
         setSelectedTaCall(val);
         const call = resolvedCalls.find(c => String(c.call_id) === String(val));
+
         if (call) {
-            let pts = "As per visit";
+            let initialPlaces = [];
             if (call.places_visited) {
                 try {
-                    const parsedPl = JSON.parse(call.places_visited);
-                    if (Array.isArray(parsedPl) && parsedPl.length > 0) {
-                        pts = parsedPl.map(p => `${p.from} to ${p.to}`).join(', ');
+                    const parsed = JSON.parse(call.places_visited);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        initialPlaces = parsed;
+                    } else {
+                        initialPlaces = [{ from: call.places_visited, to: '...', distance: call.kms_traveled || '' }];
                     }
                 } catch (err) {
-                    pts = call.places_visited.toString();
+                    initialPlaces = [{ from: call.places_visited, to: '...', distance: call.kms_traveled || '' }];
+                }
+            } else {
+                initialPlaces = [{ from: '', to: '', distance: call.kms_traveled || '' }];
+            }
+
+            let retHome = 'No';
+            let retFrom = '';
+            let retTo = '';
+            let retKm = call.return_km || '';
+
+            if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
+                retHome = 'Yes';
+                if (call.return_place) {
+                    try {
+                        const parsedRet = JSON.parse(call.return_place);
+                        retFrom = parsedRet.from || '';
+                        retTo = parsedRet.to || '';
+                    } catch (e) {
+                        retFrom = call.return_place;
+                    }
                 }
             }
 
-            let totalKm = parseFloat(call.kms_traveled) || 0;
-            if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
-                totalKm += parseFloat(call.return_km) || 0;
-                let retPlace = call.return_place || "Home";
-                try {
-                    const parsedRet = JSON.parse(call.return_place);
-                    if (parsedRet && parsedRet.from) retPlace = `${parsedRet.from} to ${parsedRet.to}`;
-                } catch (e) { }
-                pts += `, Return: ${retPlace}`;
-            }
+            setTaPlaces(initialPlaces);
+            setTaReturnHome(retHome);
+            setTaReturnFrom(retFrom);
+            setTaReturnTo(retTo);
+            setTaReturnKm(retKm);
 
             setTaAutoVisit({
-                fromPlace: pts,
-                toPlace: '...',
-                km: totalKm,
                 startTime: call.visit_start_time || '',
-                endTime: call.visit_end_time || '',
-                places_visited: pts
+                endTime: call.visit_end_time || ''
             });
         } else {
             setTaAutoVisit(null);
@@ -154,13 +173,34 @@ const EAttandance = () => {
 
         const call = resolvedCalls.find(c => String(c.call_id) === String(selectedTaCall));
 
+        for (let p of taPlaces) {
+            if (!p.from || !p.to || !p.distance) {
+                toast.error('All Place (From/To) and Distance (KM) fields are mandatory!');
+                return;
+            }
+        }
+        if (taReturnHome === 'Yes' && (!taReturnFrom || !taReturnTo || !taReturnKm)) {
+            toast.error('Return Places and KM are mandatory when Return Home is Yes!');
+            return;
+        }
+
+        let totalKm = taPlaces.reduce((sum, p) => sum + (parseFloat(p.distance) || 0), 0);
+        if (taReturnHome === 'Yes') totalKm += parseFloat(taReturnKm) || 0;
+
+        let placesArr = [...taPlaces];
+        if (taReturnHome === 'Yes') {
+            placesArr.push({ from: taReturnFrom, to: taReturnTo, distance: taReturnKm, isReturn: true });
+        }
+        const placesText = placesArr.map(p => `${p.from} to ${p.to}`).join(', ');
+
         setTaEntries([...taEntries, {
             call_id: selectedTaCall,
             sequence_id: call?.sequence_id || selectedTaCall,
-            km: taAutoVisit.km,
+            km: totalKm,
             startTime: taAutoVisit.startTime,
             endTime: taAutoVisit.endTime,
-            places: taAutoVisit.places_visited
+            places: placesText,
+            placesJson: JSON.stringify(placesArr)
         }]);
         setSelectedTaCall('');
         setTaAutoVisit(null);
@@ -199,7 +239,11 @@ const EAttandance = () => {
                 startDate: taStartDate,
                 endDate: taEndDate,
                 travelMode: taTravelMode,
-                entries: taEntries,
+                entries: taEntries.map(e => ({
+                    call_id: e.call_id,
+                    km: e.km,
+                    places: e.placesJson || e.places
+                })),
                 receiptUrl: receiptUrl
             };
             const res = await axios.post('/api/service-calls/submit-ta', payload);
@@ -598,32 +642,70 @@ const EAttandance = () => {
                                 </div>
 
                                 {taAutoVisit && (
-                                    <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mt-1 animate-fadeIn flex flex-col gap-2">
-                                        <p className="text-[11px] font-bold text-indigo-800 uppercase tracking-widest mb-1 border-b border-indigo-200 pb-1">Fetched Visit Details</p>
-                                        <div className="flex flex-col gap-2 mt-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-indigo-600 font-semibold w-12">KM:</span>
-                                                <input
-                                                    type="number"
-                                                    value={taAutoVisit.km}
-                                                    onChange={e => setTaAutoVisit({ ...taAutoVisit, km: e.target.value })}
-                                                    className="w-24 text-sm font-bold p-1 rounded-md border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900"
-                                                />
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-indigo-600 font-semibold w-12">Time:</span>
-                                                <span className="text-xs text-indigo-900 font-bold">{taAutoVisit.startTime} - {taAutoVisit.endTime}</span>
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-xs text-indigo-600 font-semibold">Places (Editable if wrong):</span>
-                                                <textarea
-                                                    value={taAutoVisit.places_visited}
-                                                    onChange={e => setTaAutoVisit({ ...taAutoVisit, places_visited: e.target.value })}
-                                                    className="w-full text-xs font-medium p-2 rounded-md border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 h-16 resize-none"
-                                                />
-                                            </div>
+                                    <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mt-1 animate-fadeIn flex flex-col gap-3">
+                                        <div className="flex justify-between items-center border-b border-indigo-200 pb-2">
+                                            <p className="text-[11px] font-bold text-indigo-800 uppercase tracking-widest">Fetched Visit Details</p>
+                                            <p className="text-xs text-indigo-900 font-bold">{taAutoVisit.startTime} - {taAutoVisit.endTime}</p>
                                         </div>
-                                        <button onClick={handleAddTaEntry} className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all text-center flex justify-center items-center gap-1">
+
+                                        <div className="flex flex-col gap-3">
+                                            {taPlaces.map((place, index) => (
+                                                <div key={index} className="flex flex-col gap-2 pb-2 border-b border-indigo-100 last:border-0 last:pb-0">
+                                                    <div className="flex flex-row gap-2">
+                                                        <div className="flex-1">
+                                                            <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Place (From)</label>
+                                                            <input type="text" value={place.from} onChange={e => { const np = [...taPlaces]; np[index].from = e.target.value; setTaPlaces(np); }} className="w-full p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Place (To)</label>
+                                                            <input type="text" value={place.to} onChange={e => { const np = [...taPlaces]; np[index].to = e.target.value; setTaPlaces(np); }} className="w-full p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-row gap-2 items-end">
+                                                        <div className="flex-1">
+                                                            <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Distance (KM)</label>
+                                                            <input type="number" value={place.distance} onChange={e => { const np = [...taPlaces]; np[index].distance = e.target.value; setTaPlaces(np); }} className="w-full p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                        </div>
+                                                        {taPlaces.length > 1 && (
+                                                            <button onClick={() => setTaPlaces(taPlaces.filter((_, i) => i !== index))} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors flex items-center justify-center">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <button onClick={() => setTaPlaces([...taPlaces, { from: '', to: '', distance: '' }])} className="text-[11px] font-bold text-indigo-600 bg-indigo-100 py-1.5 rounded hover:bg-indigo-200 transition-colors self-start px-3">+ Add Place</button>
+                                        </div>
+
+                                        <div className="flex flex-col gap-2 bg-white/50 p-3 rounded-lg border border-indigo-100 mt-1">
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] font-semibold text-indigo-600">Return Home</label>
+                                                <select value={taReturnHome} onChange={e => setTaReturnHome(e.target.value)} className="p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 w-full md:w-1/2">
+                                                    <option value="No">No</option>
+                                                    <option value="Yes">Yes</option>
+                                                </select>
+                                            </div>
+                                            {taReturnHome === 'Yes' && (
+                                                <div className="flex flex-col gap-2 pt-2 border-t border-indigo-100 border-dashed mt-1">
+                                                    <div className="flex flex-row gap-2">
+                                                        <div className="flex-1">
+                                                            <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Place (From)</label>
+                                                            <input type="text" value={taReturnFrom} onChange={e => setTaReturnFrom(e.target.value)} className="w-full p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Place (To)</label>
+                                                            <input type="text" value={taReturnTo} onChange={e => setTaReturnTo(e.target.value)} className="w-full p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <label className="text-[10px] font-semibold text-indigo-600 mb-0.5 block">Return Distance (KM)</label>
+                                                        <input type="number" value={taReturnKm} onChange={e => setTaReturnKm(e.target.value)} className="w-full md:w-1/2 p-2 text-xs font-bold rounded-lg border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900" />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <button onClick={handleAddTaEntry} className="mt-2 w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all text-center flex justify-center items-center gap-1">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                                             Add Entry
                                         </button>
