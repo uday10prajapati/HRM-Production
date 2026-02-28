@@ -7,6 +7,7 @@ import EDashboard from "./engineer/EDashboard";
 import EProfile from "./engineer/EProfile";
 import EAttandance from "./engineer/EAttandance";
 import EAttandanceReport from "./engineer/EAttandanceReport";
+import ETaReport from "./engineer/ETaReport";
 import EStock from "./engineer/EStock";
 import ELeave from "./engineer/ELeave";
 import EAssignCall from "./engineer/EAssignCall";
@@ -54,6 +55,7 @@ function App() {
         <Route path="/engineer-profile" element={Capacitor.isNativePlatform() ? <EProfile /> : <Navigate to="/" />} />
         <Route path="/engineer-attendance" element={Capacitor.isNativePlatform() ? <EAttandance /> : <Navigate to="/" />} />
         <Route path="/engineer-attendance-report" element={Capacitor.isNativePlatform() ? <EAttandanceReport /> : <Navigate to="/" />} />
+        <Route path="/engineer-ta-report" element={Capacitor.isNativePlatform() ? <ETaReport /> : <Navigate to="/" />} />
         <Route path="/engineer-stock" element={Capacitor.isNativePlatform() ? <EStock /> : <Navigate to="/" />} />
         <Route path="/engineer-leave" element={Capacitor.isNativePlatform() ? <ELeave /> : <Navigate to="/" />} />
         <Route path="/engineer-assign-call" element={Capacitor.isNativePlatform() ? <EAssignCall /> : <Navigate to="/" />} />
