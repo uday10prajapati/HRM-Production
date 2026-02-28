@@ -8,8 +8,14 @@ async function run() {
     await client.connect();
     try {
         const query = `
-      SELECT call_id, ta_voucher_date, ta_voucher_number, ta_call_type, ta_travel_mode, ta_status, ta_revised_km, ta_revised_places, kms_traveled
-      FROM assign_call
+      WITH RankedCalls AS (
+        SELECT *, 
+               TO_CHAR(created_at, 'DDMMYY') || '/' || 
+               ROW_NUMBER() OVER(PARTITION BY DATE(created_at) ORDER BY created_at ASC) as sequence_id
+        FROM assign_call
+      )
+      SELECT sequence_id, call_id, dairy_name, name, ta_voucher_date, ta_voucher_number, ta_call_type, ta_travel_mode, ta_status, ta_revised_km, ta_revised_places, kms_traveled
+      FROM RankedCalls
       WHERE CAST(id AS TEXT) = $1
         AND ta_voucher_number IS NOT NULL
         AND ta_voucher_number != 'null'

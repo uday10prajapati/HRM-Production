@@ -112,7 +112,7 @@ const ETaReport = () => {
                                                 <span className="text-base font-extrabold text-gray-800">{record.ta_voucher_number}</span>
                                             </div>
                                             <span className="text-xs font-semibold text-gray-600 mt-1">
-                                                <span className="font-extrabold text-indigo-700">{record.call_id}</span> - {record.dairy_name || record.name || 'Unknown'}
+                                                <span className="font-extrabold text-indigo-700">{record.sequence_id || record.call_id}</span> - {record.dairy_name || record.name || 'Unknown'}
                                             </span>
                                             <span className="text-xs font-semibold text-indigo-600 flex items-center gap-1 mt-0.5">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -137,13 +137,13 @@ const ETaReport = () => {
                                                         const placesArr = JSON.parse(record.ta_revised_places);
                                                         if (Array.isArray(placesArr)) {
                                                             return placesArr.map((p, i) => (
-                                                                <div key={i} className="flex items-center text-[10px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md">
+                                                                <div key={i} className={`flex items-center text-[10px] font-bold ${p.isReturn ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'} px-1.5 py-0.5 rounded-md`}>
                                                                     <span>{p.from}</span>
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-3 h-3 mx-1 text-indigo-300">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className={`w-3 h-3 mx-1 ${p.isReturn ? 'text-orange-300' : 'text-indigo-300'}`}>
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                                                                     </svg>
-                                                                    <span>{p.to}</span>
-                                                                    <span className="ml-1.5 text-indigo-400 bg-white px-1 rounded-sm border border-indigo-50">
+                                                                    <span>{p.isReturn ? 'Home' : p.to}</span>
+                                                                    <span className={`ml-1.5 ${p.isReturn ? 'text-orange-500 border-orange-100' : 'text-indigo-400 border-indigo-50'} bg-white px-1 rounded-sm border`}>
                                                                         {p.distance} km
                                                                     </span>
                                                                 </div>
