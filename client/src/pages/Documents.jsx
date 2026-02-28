@@ -182,10 +182,9 @@ export default function ViewAssignedCalls() {
                       className="appearance-none pl-4 pr-10 py-2.5 bg-slate-50/50 border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
                     >
                       <option value="">Status (All)</option>
+                      <option value="new">New</option>
                       <option value="pending">Pending</option>
                       <option value="resolved">Resolved</option>
-                      <option value="completed">Completed</option>
-                      <option value="in_progress">In Progress</option>
                     </select>
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -298,9 +297,9 @@ export default function ViewAssignedCalls() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${activeStyle}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${call.status === 'completed' ? 'bg-emerald-500' :
-                                    call.status === 'in_progress' ? 'bg-indigo-500' :
-                                      call.status === 'resolved' ? 'bg-fuchsia-500' :
-                                        call.status === 'pending' ? 'bg-amber-500' : 'bg-slate-400'
+                                  call.status === 'in_progress' ? 'bg-indigo-500' :
+                                    call.status === 'resolved' ? 'bg-fuchsia-500' :
+                                      call.status === 'pending' ? 'bg-amber-500' : 'bg-slate-400'
                                   }`}></span>
                                 <span className="capitalize">{call.status.replace('_', ' ')}</span>
                               </div>

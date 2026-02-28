@@ -67,7 +67,7 @@ function App() {
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/apply-leave" element={<ProtectedRoute><ApplyLeave /></ProtectedRoute>} />
         <Route path="/payslips" element={<ProtectedRoute><Payslips /></ProtectedRoute>} />
-        <Route path="/documents" element={<ProtectedRoute role="admin"><Documents /></ProtectedRoute>} />
+        <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/payroll" element={<ProtectedRoute><PayrollAdmin /></ProtectedRoute>} />
         <Route path="/reports/payroll" element={<ProtectedRoute role="hr"><PayrollReports /></ProtectedRoute>} />
         <Route path="/leave-management" element={<LeaveManagement />} />

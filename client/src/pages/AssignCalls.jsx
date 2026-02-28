@@ -604,9 +604,11 @@ const AssignCalls = () => {
                                                                     >
                                                                         <option value="new">NEW</option>
                                                                         <option value="pending">PENDING</option>
-                                                                        <option value="in_progress">IN PROGRESS</option>
-                                                                        <option value="completed">COMPLETED</option>
                                                                         <option value="resolved">RESOLVED</option>
+                                                                        {/* Retain current view if somehow an Admin views an unsupported status */}
+                                                                        {['in_progress', 'completed'].includes(call.status) && (
+                                                                            <option value={call.status} disabled>{call.status.replace('_', ' ').toUpperCase()}</option>
+                                                                        )}
                                                                     </select>
                                                                 </div>
                                                             </div>
