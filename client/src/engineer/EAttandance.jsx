@@ -70,26 +70,36 @@ const EAttandance = () => {
                 const calls = res.data.calls.filter(c =>
                     (String(c.id) === String(userId) || String(c.engineer_id) === String(userId)) &&
                     String(c.status).toLowerCase() === 'resolved'
-                    && !c.ta_voucher_number // Only fetch those without a voucher
                 );
 
-                const filtered = calls.filter(c => {
+                const filteredByDate = calls.filter(c => {
                     const dt = c.visit_end_date ? new Date(c.visit_end_date) : (c.created_at ? new Date(c.created_at) : null);
-                    if (!dt) return false;
+                    if (!dt) return true; // Include if no date
                     const sd = new Date(taStartDate);
                     const ed = new Date(taEndDate);
                     dt.setHours(0, 0, 0, 0);
                     sd.setHours(0, 0, 0, 0);
-                    ed.setHours(0, 0, 0, 0);
+                    ed.setHours(23, 59, 59, 999);
                     return dt >= sd && dt <= ed;
                 });
 
-                setResolvedCalls(filtered);
+                const availableCalls = filteredByDate.filter(c => !c.ta_voucher_number || c.ta_voucher_number === 'null');
+
+                // Keep track of counts for user feedback
+                c_totalResolvedRef.current = calls.length;
+                c_dateFilteredRef.current = filteredByDate.length;
+                c_availRef.current = availableCalls.length;
+
+                setResolvedCalls(availableCalls);
             }
         } catch (error) {
             console.error("Failed to fetch TA calls:", error);
         }
     };
+
+    const c_totalResolvedRef = React.useRef(0);
+    const c_dateFilteredRef = React.useRef(0);
+    const c_availRef = React.useRef(0);
 
     const handleTaCallSelect = (e) => {
         const val = e.target.value;
@@ -531,7 +541,20 @@ const EAttandance = () => {
                                             <option key={c.call_id} value={c.call_id}>CALL-{c.call_id} : {c.dairy_name}</option>
                                         ))}
                                     </select>
-                                    {resolvedCalls.length === 0 && <p className="text-[10px] text-orange-500 mt-1 font-semibold">No resolved calls found for selected dates without TA.</p>}
+
+                                    {/* Show intelligent feedback about why calls might be missing */}
+                                    {resolvedCalls.length === 0 && (
+                                        <div className="text-[10px] text-orange-500 mt-1 font-semibold flex flex-col gap-0.5">
+                                            <p>No available calls found to add.</p>
+                                            <ul className="list-disc pl-3 text-gray-400 mt-1">
+                                                <li>Total resolved calls: {c_totalResolvedRef.current}</li>
+                                                <li>Matching date range: {c_dateFilteredRef.current}</li>
+                                                {c_dateFilteredRef.current > c_availRef.current && (
+                                                    <li className="text-orange-400 font-bold">Already Vouchered: {c_dateFilteredRef.current - c_availRef.current} (these are hidden)</li>
+                                                )}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {taAutoVisit && (
