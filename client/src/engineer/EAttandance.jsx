@@ -39,6 +39,7 @@ const EAttandance = () => {
     const [taEntries, setTaEntries] = useState([]);
     const [selectedTaCall, setSelectedTaCall] = useState('');
     const [taAutoVisit, setTaAutoVisit] = useState(null);
+    const [taReceiptFile, setTaReceiptFile] = useState(null);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -67,7 +68,22 @@ const EAttandance = () => {
         try {
             const res = await axios.get('/api/service-calls/assigned-calls');
             if (res.data.success) {
-                const calls = res.data.calls.filter(c =>
+                // Calculate DDMMYY/sequence for ALL calls before filtering to ensure ID consistency with Dashboard
+                const sorted = [...res.data.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const dateCounts = {};
+                const callsWithId = sorted.map(c => {
+                    const d = new Date(c.created_at);
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const yy = String(d.getFullYear()).slice(-2);
+                    const dateKey = `${dd}${mm}${yy}`;
+
+                    if (!dateCounts[dateKey]) dateCounts[dateKey] = 0;
+                    dateCounts[dateKey]++;
+                    return { ...c, sequence_id: `${dateKey}/${dateCounts[dateKey]}` };
+                });
+
+                const calls = callsWithId.filter(c =>
                     (String(c.id) === String(userId) || String(c.engineer_id) === String(userId)) &&
                     String(c.status).toLowerCase() === 'resolved'
                 );
@@ -105,10 +121,15 @@ const EAttandance = () => {
                 }
             }
 
+            let totalKm = parseFloat(call.kms_traveled) || 0;
+            if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
+                totalKm += parseFloat(call.return_km) || 0;
+            }
+
             setTaAutoVisit({
                 fromPlace: pts,
                 toPlace: '...',
-                km: call.kms_traveled || 0,
+                km: totalKm,
                 startTime: call.visit_start_time || '',
                 endTime: call.visit_end_time || '',
                 places_visited: pts
@@ -124,8 +145,12 @@ const EAttandance = () => {
             toast.error('Call already added in this voucher');
             return;
         }
+
+        const call = resolvedCalls.find(c => String(c.call_id) === String(selectedTaCall));
+
         setTaEntries([...taEntries, {
             call_id: selectedTaCall,
+            sequence_id: call?.sequence_id || selectedTaCall,
             km: taAutoVisit.km,
             startTime: taAutoVisit.startTime,
             endTime: taAutoVisit.endTime,
@@ -142,6 +167,25 @@ const EAttandance = () => {
         }
         setLoading(true);
         try {
+            let receiptUrl = null;
+            if (taReceiptFile) {
+                toast.info('Uploading TA Receipt...');
+                const formData = new FormData();
+                formData.append('file', taReceiptFile);
+
+                const uploadRes = await axios.post('/api/service-calls/upload-attachment', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+
+                if (uploadRes.data.success) {
+                    receiptUrl = uploadRes.data.url;
+                } else {
+                    toast.error('Failed to upload receipt.');
+                    setLoading(false);
+                    return; // Stop submission
+                }
+            }
+
             const payload = {
                 voucherDate: taVoucherDate,
                 voucherNumber: taVoucherNumber,
@@ -149,13 +193,17 @@ const EAttandance = () => {
                 startDate: taStartDate,
                 endDate: taEndDate,
                 travelMode: taTravelMode,
-                entries: taEntries
+                entries: taEntries,
+                receiptUrl: receiptUrl
             };
             const res = await axios.post('/api/service-calls/submit-ta', payload);
             if (res.data.success) {
                 toast.success('TA Voucher Submitted successfully!');
                 setTaVoucherNumber('TA-' + Math.floor(100000 + Math.random() * 900000));
                 setTaEntries([]);
+                setTaReceiptFile(null);
+                const fileInput = document.getElementById('ta-receipt');
+                if (fileInput) fileInput.value = '';
                 // Trigger refetch
                 fetchResolvedCalls(user.id);
             }
@@ -525,7 +573,7 @@ const EAttandance = () => {
                                     <select value={selectedTaCall} onChange={handleTaCallSelect} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
                                         <option value="">-- Auto Fetch Resolved Calls --</option>
                                         {resolvedCalls.map(c => (
-                                            <option key={c.call_id} value={c.call_id}>CALL-{c.call_id} : {c.dairy_name}</option>
+                                            <option key={c.call_id} value={c.call_id}>ID: {c.sequence_id} • {c.dairy_name}</option>
                                         ))}
                                     </select>
 
@@ -565,7 +613,7 @@ const EAttandance = () => {
                                     <h3 className="text-sm font-bold text-green-700 mb-1 border-b border-green-50 pb-2">4. TA Voucher Entries ({taEntries.length})</h3>
                                     {taEntries.map((e, idx) => (
                                         <div key={idx} className="flex flex-col p-2 bg-green-50 rounded-lg border border-green-100 text-xs text-green-800 font-medium relative pr-8">
-                                            <span className="font-bold text-green-900">Call ID: {e.call_id}</span>
+                                            <span className="font-bold text-green-900">ID: {e.sequence_id}</span>
                                             <span>KM: {e.km} | Time: {e.startTime}-{e.endTime}</span>
                                             <span className="truncate">Visits: {e.places}</span>
                                             <button onClick={() => setTaEntries(taEntries.filter((_, i) => i !== idx))} className="absolute right-2 top-2 p-1.5 text-red-500 bg-red-100 rounded hover:bg-red-200 transition-colors">
@@ -576,7 +624,19 @@ const EAttandance = () => {
                                 </div>
                             )}
 
-                            {/* --- 8. Submit Button --- */}
+                            {/* --- 8. Upload Receipt --- */}
+                            <div className="flex flex-col gap-1.5 mt-2 mb-2 p-3 bg-gray-50 border border-gray-100 rounded-2xl">
+                                <label className="block text-sm font-bold text-gray-700">Upload Receipt <span className="text-[10px] font-normal text-gray-400">(Fuel/Ticket) Optional</span></label>
+                                <input
+                                    type="file"
+                                    id="ta-receipt"
+                                    accept="image/*,.pdf"
+                                    onChange={e => setTaReceiptFile(e.target.files[0])}
+                                    className="w-full text-xs p-2 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-blue-500 outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                />
+                            </div>
+
+                            {/* --- 9. Submit Button --- */}
                             <button
                                 onClick={handleSubmitTa}
                                 disabled={loading || taEntries.length === 0}

@@ -96,7 +96,7 @@ router.post('/assign', requireAuth, async (req, res) => {
 // Add TA submit route
 router.post('/submit-ta', requireAuth, async (req, res) => {
   try {
-    const { voucherDate, voucherNumber, callType, startDate, endDate, travelMode, entries } = req.body;
+    const { voucherDate, voucherNumber, callType, startDate, endDate, travelMode, entries, receiptUrl } = req.body;
     if (!entries || entries.length === 0) {
       return res.status(400).json({ success: false, message: 'No entries provided' });
     }
@@ -108,10 +108,11 @@ router.post('/submit-ta', requireAuth, async (req, res) => {
               ta_voucher_number = $2, 
               ta_call_type = $3, 
               ta_travel_mode = $4, 
-              ta_status = $5 
+              ta_status = $5,
+              ta_receipt_url = $7
           WHERE call_id = $6
        `;
-      await pool.query(q, [voucherDate, voucherNumber, callType, travelMode, 'Approved Pending for Admin and hr', entry.call_id]);
+      await pool.query(q, [voucherDate, voucherNumber, callType, travelMode, 'Approved Pending for Admin and hr', entry.call_id, receiptUrl || null]);
     }
 
     res.json({ success: true, message: 'TA Submitted successfully' });
@@ -691,7 +692,8 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_serial_number TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_time TIME`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_time TIME`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_time TIME`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_receipt_url TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);
