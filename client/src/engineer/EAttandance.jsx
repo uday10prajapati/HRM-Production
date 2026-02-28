@@ -125,6 +125,11 @@ const EAttandance = () => {
             return;
         }
 
+        // Check if call is already selected
+        if (String(selectedTaCall) === String(val)) {
+            return;
+        }
+
         // Auto format places
         let initialPlaces = [];
         if (call.places_visited) {
@@ -186,6 +191,18 @@ const EAttandance = () => {
 
         setSelectedTaCall(''); // Ensure dropdown reverts and blue box stays hidden!
         setTaAutoVisit(null);
+    };
+
+    // Cancel call selection
+    const handleCancelTaSelection = () => {
+        setSelectedTaCall('');
+        setTaAutoVisit(null);
+        setTaPlaces([{ from: '', to: '', distance: '' }]);
+        setTaReturnHome('No');
+        setTaReturnFrom('');
+        setTaReturnTo('');
+        setTaReturnKm('');
+        toast.info('Selection cleared');
     };
 
     const handleAddTaEntry = () => {
@@ -696,12 +713,25 @@ const EAttandance = () => {
 
                                 <div className="flex flex-col gap-1">
                                     <label className="block text-xs font-bold text-gray-500">Call Number <span className="text-red-500">*</span></label>
-                                    <select value={selectedTaCall} onChange={handleTaCallSelect} disabled={!!selectedTaCall} className={`w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none ${selectedTaCall ? 'opacity-70 bg-gray-100 cursor-not-allowed' : ''}`}>
-                                        <option value="">-- Auto Fetch Resolved Calls --</option>
-                                        {resolvedCalls.map(c => (
-                                            <option key={c.call_id} value={c.call_id}>ID: {c.sequence_id} • {c.dairy_name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="flex gap-2">
+                                        <select value={selectedTaCall} onChange={handleTaCallSelect} disabled={!!selectedTaCall} className={`flex-1 text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none ${selectedTaCall ? 'opacity-70 bg-gray-100 cursor-not-allowed' : ''}`}>
+                                            <option value="">-- Auto Fetch Resolved Calls --</option>
+                                            {resolvedCalls
+                                                .filter(c => !taEntries.find(e => String(e.call_id) === String(c.call_id)))
+                                                .map(c => (
+                                                    <option key={c.call_id} value={c.call_id}>ID: {c.sequence_id} • {c.dairy_name}</option>
+                                                ))}
+                                        </select>
+                                        {selectedTaCall && (
+                                            <button
+                                                onClick={handleCancelTaSelection}
+                                                className="px-4 py-2 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 transition-colors text-sm whitespace-nowrap"
+                                                title="Clear selection"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
+                                    </div>
 
                                     {/* Show intelligent feedback about why calls might be missing */}
                                     {resolvedCalls.length === 0 && (

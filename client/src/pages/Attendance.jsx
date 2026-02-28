@@ -249,6 +249,23 @@ function AttendancePage() {
   async function handlePunch(type) {
     const userId = getStoredUserId();
     if (!userId) { alert("User not found. Please login."); return; }
+    
+    // Validation: Check if already punched in/out today
+    if (latestPunch) {
+      if (type === 'in' && latestPunch.punch_in) {
+        alert('You have already punched in today. Only one punch in per day is allowed.');
+        return;
+      }
+      if (type === 'out' && latestPunch.punch_out) {
+        alert('You have already punched out today. Only one punch out per day is allowed.');
+        return;
+      }
+      if (type === 'out' && !latestPunch.punch_in) {
+        alert('You must punch in first before punching out.');
+        return;
+      }
+    }
+    
     setPunchLoading(true);
 
     // optimistic UI update using client timestamp for immediate feedback
@@ -377,7 +394,8 @@ function AttendancePage() {
               <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => handlePunch('in')}
-                  disabled={punchLoading}
+                  disabled={punchLoading || (latestPunch && latestPunch.punch_in)}
+                  title={latestPunch && latestPunch.punch_in ? 'Already punched in today' : ''}
                   className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/40 hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-md"
                 >
                   <svg className="w-5 h-5 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -387,7 +405,8 @@ function AttendancePage() {
                 </button>
                 <button
                   onClick={() => handlePunch('out')}
-                  disabled={punchLoading}
+                  disabled={punchLoading || (latestPunch && latestPunch.punch_out) || !latestPunch || !latestPunch.punch_in}
+                  title={latestPunch && latestPunch.punch_out ? 'Already punched out today' : !latestPunch || !latestPunch.punch_in ? 'Punch in first' : ''}
                   className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-md shadow-rose-500/20 hover:shadow-lg hover:shadow-rose-500/40 hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-md"
                 >
                   <svg className="w-5 h-5 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
