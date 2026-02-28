@@ -81,7 +81,7 @@ const LiveTracker = () => {
                                 latitude,
                                 longitude
                             }, {
-                                headers: { 'x-user-id': 'admin' } // bypass self-check just in case auth headers lag
+                                headers: { 'x-user-id': userId }
                             });
                         } catch (e) {
                             console.warn("Tracker API error", e);
