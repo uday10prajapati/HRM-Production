@@ -26,7 +26,9 @@ const EAttandance = () => {
     const [toDate] = useState(todayStr);
 
     // TA Entry State
-    const [activeMainTab, setActiveMainTab] = useState('attendance'); // 'attendance' or 'ta'
+    const searchParams = new URLSearchParams(window.location.search);
+    const initialTab = searchParams.get('tab') === 'ta' ? 'ta' : 'attendance';
+    const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'attendance' or 'ta'
     const [taVoucherDate, setTaVoucherDate] = useState(todayStr);
     const [taVoucherNumber, setTaVoucherNumber] = useState('TA-' + Math.floor(100000 + Math.random() * 900000));
     const [taCallType, setTaCallType] = useState('Service Call');
@@ -66,7 +68,7 @@ const EAttandance = () => {
             const res = await axios.get('/api/service-calls/assigned-calls');
             if (res.data.success) {
                 const calls = res.data.calls.filter(c =>
-                    String(c.id) === String(userId) &&
+                    (String(c.id) === String(userId) || String(c.engineer_id) === String(userId)) &&
                     String(c.status).toLowerCase() === 'resolved'
                     && !c.ta_voucher_number // Only fetch those without a voucher
                 );
@@ -493,6 +495,7 @@ const EAttandance = () => {
                                         <select value={taCallType} onChange={e => setTaCallType(e.target.value)} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
                                             <option value="Service Call">Service Call</option>
                                             <option value="PM Call">PM Call</option>
+                                            <option value="Other">Other</option>
                                         </select>
                                     </div>
                                     <div className="flex flex-col gap-1">
