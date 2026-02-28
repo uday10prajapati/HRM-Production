@@ -139,9 +139,9 @@ router.get('/ta-records', requireAuth, async (req, res) => {
         AND ta_voucher_number IS NOT NULL
         AND ta_voucher_number != 'null'
         AND ta_voucher_date IS NOT NULL
-        AND ta_voucher_date != ''
-        AND TO_DATE(ta_voucher_date, 'YYYY-MM-DD') BETWEEN TO_DATE($2, 'YYYY-MM-DD') AND TO_DATE($3, 'YYYY-MM-DD')
-      ORDER BY TO_DATE(ta_voucher_date, 'YYYY-MM-DD') DESC, created_at DESC
+        AND ta_voucher_date >= CAST($2 AS DATE)
+        AND ta_voucher_date <= CAST($3 AS DATE)
+      ORDER BY ta_voucher_date DESC, created_at DESC
     `;
     const result = await pool.query(query, [String(userId), start, end]);
 
