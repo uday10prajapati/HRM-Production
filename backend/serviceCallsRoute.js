@@ -135,9 +135,11 @@ router.get('/ta-records', requireAuth, async (req, res) => {
     const query = `
       SELECT call_id, ta_voucher_date, ta_voucher_number, ta_call_type, ta_travel_mode, ta_status, ta_revised_km, ta_revised_places, kms_traveled
       FROM assign_call
-      WHERE (CAST(id AS TEXT) = $1 OR CAST(engineer_id AS TEXT) = $1)
+      WHERE CAST(id AS TEXT) = $1
         AND ta_voucher_number IS NOT NULL
         AND ta_voucher_number != 'null'
+        AND ta_voucher_date IS NOT NULL
+        AND ta_voucher_date != ''
         AND TO_DATE(ta_voucher_date, 'YYYY-MM-DD') BETWEEN TO_DATE($2, 'YYYY-MM-DD') AND TO_DATE($3, 'YYYY-MM-DD')
       ORDER BY TO_DATE(ta_voucher_date, 'YYYY-MM-DD') DESC, created_at DESC
     `;
