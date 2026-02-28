@@ -111,57 +111,81 @@ const EAttandance = () => {
 
     const handleTaCallSelect = (e) => {
         const val = e.target.value;
-        setSelectedTaCall(val);
-        const call = resolvedCalls.find(c => String(c.call_id) === String(val));
+        if (!val) {
+            setSelectedTaCall('');
+            return;
+        }
 
-        if (call) {
-            let initialPlaces = [];
-            if (call.places_visited) {
-                try {
-                    const parsed = JSON.parse(call.places_visited);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        initialPlaces = parsed;
-                    } else {
-                        initialPlaces = [{ from: call.places_visited, to: '...', distance: call.kms_traveled || '' }];
-                    }
-                } catch (err) {
+        const call = resolvedCalls.find(c => String(c.call_id) === String(val));
+        if (!call) return;
+
+        if (taEntries.find(entry => String(entry.call_id) === String(val))) {
+            toast.error('Call already added in this voucher');
+            setSelectedTaCall(''); // Reset dropdown
+            return;
+        }
+
+        // Auto format places
+        let initialPlaces = [];
+        if (call.places_visited) {
+            try {
+                const parsed = JSON.parse(call.places_visited);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    initialPlaces = parsed;
+                } else {
                     initialPlaces = [{ from: call.places_visited, to: '...', distance: call.kms_traveled || '' }];
                 }
-            } else {
-                initialPlaces = [{ from: '', to: '', distance: call.kms_traveled || '' }];
+            } catch (err) {
+                initialPlaces = [{ from: call.places_visited, to: '...', distance: call.kms_traveled || '' }];
             }
+        } else {
+            initialPlaces = [{ from: '', to: '', distance: call.kms_traveled || '' }];
+        }
 
-            let retHome = 'No';
-            let retFrom = '';
-            let retTo = '';
-            let retKm = call.return_km || '';
+        let retHome = 'No';
+        let retFrom = '';
+        let retTo = '';
+        let retKm = call.return_km || '';
 
-            if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
-                retHome = 'Yes';
-                if (call.return_place) {
-                    try {
-                        const parsedRet = JSON.parse(call.return_place);
-                        retFrom = parsedRet.from || '';
-                        retTo = parsedRet.to || '';
-                    } catch (e) {
-                        retFrom = call.return_place;
-                    }
+        if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
+            retHome = 'Yes';
+            if (call.return_place) {
+                try {
+                    const parsedRet = JSON.parse(call.return_place);
+                    retFrom = parsedRet.from || '';
+                    retTo = parsedRet.to || '';
+                } catch (e) {
+                    retFrom = call.return_place;
                 }
             }
-
-            setTaPlaces(initialPlaces);
-            setTaReturnHome(retHome);
-            setTaReturnFrom(retFrom);
-            setTaReturnTo(retTo);
-            setTaReturnKm(retKm);
-
-            setTaAutoVisit({
-                startTime: call.visit_start_time || '',
-                endTime: call.visit_end_time || ''
-            });
-        } else {
-            setTaAutoVisit(null);
         }
+
+        let totalKm = initialPlaces.reduce((sum, p) => sum + (parseFloat(p.distance) || 0), 0);
+        if (retHome === 'Yes') totalKm += parseFloat(retKm) || 0;
+
+        let placesArr = [...initialPlaces];
+        if (retHome === 'Yes') {
+            placesArr.push({ from: retFrom, to: retTo, distance: retKm, isReturn: true });
+        }
+        const placesText = placesArr.map(p => `${p.from} to ${p.to}`).join(', ');
+
+        const autoVisit = {
+            startTime: call.visit_start_time || '',
+            endTime: call.visit_end_time || ''
+        };
+
+        setTaEntries([...taEntries, {
+            call_id: val,
+            sequence_id: call?.sequence_id || val,
+            km: totalKm,
+            startTime: autoVisit.startTime,
+            endTime: autoVisit.endTime,
+            places: placesText || 'Not specified',
+            placesJson: JSON.stringify(placesArr)
+        }]);
+
+        setSelectedTaCall(''); // Ensure dropdown reverts and blue box stays hidden!
+        setTaAutoVisit(null);
     };
 
     const handleAddTaEntry = () => {
@@ -672,7 +696,7 @@ const EAttandance = () => {
 
                                 <div className="flex flex-col gap-1">
                                     <label className="block text-xs font-bold text-gray-500">Call Number <span className="text-red-500">*</span></label>
-                                    <select value={selectedTaCall} onChange={handleTaCallSelect} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <select value={selectedTaCall} onChange={handleTaCallSelect} disabled={!!selectedTaCall} className={`w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none ${selectedTaCall ? 'opacity-70 bg-gray-100 cursor-not-allowed' : ''}`}>
                                         <option value="">-- Auto Fetch Resolved Calls --</option>
                                         {resolvedCalls.map(c => (
                                             <option key={c.call_id} value={c.call_id}>ID: {c.sequence_id} • {c.dairy_name}</option>
@@ -759,7 +783,7 @@ const EAttandance = () => {
 
                                         <button onClick={handleAddTaEntry} className="mt-2 w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all text-center flex justify-center items-center gap-1">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                            Add Entry
+                                            Save Edited Changes
                                         </button>
                                     </div>
                                 )}
