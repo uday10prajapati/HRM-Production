@@ -28,7 +28,16 @@ const EAttandance = () => {
     // TA Entry State
     const searchParams = new URLSearchParams(window.location.search);
     const initialTab = searchParams.get('tab') === 'ta' ? 'ta' : 'attendance';
+    // Detect sidebar navigation: either has ?tab parameter OR no query params (direct sidebar link)
+    const isFromSidebar = !!searchParams.get('tab') || Object.keys(Object.fromEntries(searchParams)).length === 0;
     const [activeMainTab, setActiveMainTab] = useState(initialTab); // 'attendance' or 'ta'
+    
+    // Update URL to include tab parameter when loaded without one (for consistency)
+    useEffect(() => {
+        if (!searchParams.get('tab') && initialTab) {
+            window.history.replaceState({}, '', `?tab=${initialTab}`);
+        }
+    }, []);
     const [taVoucherDate, setTaVoucherDate] = useState(todayStr);
     const [taVoucherNumber, setTaVoucherNumber] = useState('TA-' + Math.floor(100000 + Math.random() * 900000));
     const [taCallType, setTaCallType] = useState('Service Call');
@@ -55,12 +64,15 @@ const EAttandance = () => {
             // Set user auth header specifically for the backend's middleware
             axios.defaults.headers.common['x-user-id'] = parsed.id;
 
-            fetchTodayStatus(parsed.id);
-            fetchHistory(parsed.id, fromDate, toDate);
+            // Only fetch for attendance tab, not TA
+            if (activeMainTab === 'attendance') {
+                fetchTodayStatus(parsed.id);
+                fetchHistory(parsed.id, fromDate, toDate);
+            }
         } else {
             navigate('/');
         }
-    }, [navigate, fromDate, toDate]);
+    }, [navigate, fromDate, toDate, activeMainTab]);
 
     // Fetch resolved calls whenever TA tab is active or dates/type vary
     useEffect(() => {
@@ -516,25 +528,33 @@ const EAttandance = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
                     </svg>
                 </button>
-                <h1 className="text-xl font-bold text-gray-900 tracking-tight flex-1">Attendance</h1>
+                <h1 className="text-xl font-bold text-gray-900 tracking-tight flex-1">{activeMainTab === 'ta' ? 'TA Entry' : 'Attendance'}</h1>
             </div>
 
+            {!isFromSidebar && (
             <div className="px-4 mt-2">
                 <div className="flex bg-gray-200 rounded-xl p-1 w-full shadow-sm">
                     <button
-                        onClick={() => setActiveMainTab('attendance')}
+                        onClick={() => {
+                            setActiveMainTab('attendance');
+                            window.history.pushState({}, '', '?tab=attendance');
+                        }}
                         className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeMainTab === 'attendance' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                     >
                         Attendance
                     </button>
                     <button
-                        onClick={() => setActiveMainTab('ta')}
+                        onClick={() => {
+                            setActiveMainTab('ta');
+                            window.history.pushState({}, '', '?tab=ta');
+                        }}
                         className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeMainTab === 'ta' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                     >
                         TA Entry
                     </button>
                 </div>
             </div>
+            )}
 
             <div className="flex-1 px-4 py-2 flex flex-col gap-5">
 
