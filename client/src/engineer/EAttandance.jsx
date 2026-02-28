@@ -25,6 +25,19 @@ const EAttandance = () => {
     const [fromDate] = useState(todayStr);
     const [toDate] = useState(todayStr);
 
+    // TA Entry State
+    const [activeMainTab, setActiveMainTab] = useState('attendance'); // 'attendance' or 'ta'
+    const [taVoucherDate, setTaVoucherDate] = useState(todayStr);
+    const [taVoucherNumber, setTaVoucherNumber] = useState('TA-' + Math.floor(100000 + Math.random() * 900000));
+    const [taCallType, setTaCallType] = useState('Service Call');
+    const [taStartDate, setTaStartDate] = useState(todayStr);
+    const [taEndDate, setTaEndDate] = useState(todayStr);
+    const [taTravelMode, setTaTravelMode] = useState('Bike');
+    const [resolvedCalls, setResolvedCalls] = useState([]);
+    const [taEntries, setTaEntries] = useState([]);
+    const [selectedTaCall, setSelectedTaCall] = useState('');
+    const [taAutoVisit, setTaAutoVisit] = useState(null);
+
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
@@ -39,7 +52,120 @@ const EAttandance = () => {
         } else {
             navigate('/');
         }
-    }, [navigate]);
+    }, [navigate, fromDate, toDate]);
+
+    // Fetch resolved calls whenever TA tab is active or dates/type vary
+    useEffect(() => {
+        if (user && activeMainTab === 'ta') {
+            fetchResolvedCalls(user.id);
+        }
+    }, [user, activeMainTab, taStartDate, taEndDate, taCallType]);
+
+    const fetchResolvedCalls = async (userId) => {
+        try {
+            const res = await axios.get('/api/service-calls/assigned-calls');
+            if (res.data.success) {
+                const calls = res.data.calls.filter(c =>
+                    String(c.id) === String(userId) &&
+                    String(c.status).toLowerCase() === 'resolved'
+                    && !c.ta_voucher_number // Only fetch those without a voucher
+                );
+
+                const filtered = calls.filter(c => {
+                    const dt = c.visit_end_date ? new Date(c.visit_end_date) : (c.created_at ? new Date(c.created_at) : null);
+                    if (!dt) return false;
+                    const sd = new Date(taStartDate);
+                    const ed = new Date(taEndDate);
+                    dt.setHours(0, 0, 0, 0);
+                    sd.setHours(0, 0, 0, 0);
+                    ed.setHours(0, 0, 0, 0);
+                    return dt >= sd && dt <= ed;
+                });
+
+                setResolvedCalls(filtered);
+            }
+        } catch (error) {
+            console.error("Failed to fetch TA calls:", error);
+        }
+    };
+
+    const handleTaCallSelect = (e) => {
+        const val = e.target.value;
+        setSelectedTaCall(val);
+        const call = resolvedCalls.find(c => String(c.call_id) === String(val));
+        if (call) {
+            let pts = "As per visit";
+            if (call.places_visited) {
+                try {
+                    const parsedPl = JSON.parse(call.places_visited);
+                    if (Array.isArray(parsedPl) && parsedPl.length > 0) {
+                        pts = parsedPl.map(p => `${p.from} to ${p.to}`).join(', ');
+                    }
+                } catch (err) {
+                    pts = call.places_visited.toString();
+                }
+            }
+
+            setTaAutoVisit({
+                fromPlace: pts,
+                toPlace: '...',
+                km: call.kms_traveled || 0,
+                startTime: call.visit_start_time || '',
+                endTime: call.visit_end_time || '',
+                places_visited: pts
+            });
+        } else {
+            setTaAutoVisit(null);
+        }
+    };
+
+    const handleAddTaEntry = () => {
+        if (!selectedTaCall) { toast.error('Select a call first'); return; }
+        if (taEntries.find(e => String(e.call_id) === String(selectedTaCall))) {
+            toast.error('Call already added in this voucher');
+            return;
+        }
+        setTaEntries([...taEntries, {
+            call_id: selectedTaCall,
+            km: taAutoVisit.km,
+            startTime: taAutoVisit.startTime,
+            endTime: taAutoVisit.endTime,
+            places: taAutoVisit.places_visited
+        }]);
+        setSelectedTaCall('');
+        setTaAutoVisit(null);
+    };
+
+    const handleSubmitTa = async () => {
+        if (taEntries.length === 0) {
+            toast.error('Add at least one call entry to TA voucher');
+            return;
+        }
+        setLoading(true);
+        try {
+            const payload = {
+                voucherDate: taVoucherDate,
+                voucherNumber: taVoucherNumber,
+                callType: taCallType,
+                startDate: taStartDate,
+                endDate: taEndDate,
+                travelMode: taTravelMode,
+                entries: taEntries
+            };
+            const res = await axios.post('/api/service-calls/submit-ta', payload);
+            if (res.data.success) {
+                toast.success('TA Voucher Submitted successfully!');
+                setTaVoucherNumber('TA-' + Math.floor(100000 + Math.random() * 900000));
+                setTaEntries([]);
+                // Trigger refetch
+                fetchResolvedCalls(user.id);
+            }
+        } catch (err) {
+            toast.error('Failed to submit TA');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchTodayStatus = async (userId) => {
         try {
@@ -213,107 +339,242 @@ const EAttandance = () => {
                 <h1 className="text-xl font-bold text-gray-900 tracking-tight flex-1">Attendance</h1>
             </div>
 
-            <div className="flex-1 px-4 py-5 flex flex-col gap-5">
-
-                {/* Punch Card Section */}
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col items-center relative overflow-hidden">
-                    <div className="absolute top-0 w-full h-1.5 bg-blue-500 left-0"></div>
-
-                    <h2 className="text-xl font-bold text-gray-800 mb-1">Mark Attendance</h2>
-                    <p className="text-sm text-gray-500 mb-6 text-center">Standard Hours: 10:00 AM - 7:00 PM<br />Location must be enabled.</p>
-
-                    {delayMessage && punchState === 'out' && (
-                        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold mb-5 flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
-                            </svg>
-                            {delayMessage}
-                        </div>
-                    )}
-
+            <div className="px-4 mt-2">
+                <div className="flex bg-gray-200 rounded-xl p-1 w-full shadow-sm">
                     <button
-                        onClick={handlePunchClick}
-                        disabled={loading}
-                        className={`w-40 h-40 rounded-full flex flex-col items-center justify-center font-bold text-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all active:scale-95 ${loading ? 'bg-gray-200 text-gray-400 border-4 border-gray-100' : (punchState === 'in' ? 'bg-emerald-50 text-emerald-600 border-[6px] border-emerald-100 hover:bg-emerald-100' : 'bg-rose-50 text-rose-600 border-[6px] border-rose-100 hover:bg-rose-100')}`}
+                        onClick={() => setActiveMainTab('attendance')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeMainTab === 'attendance' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                     >
-                        {loading ? (
-                            <span className="animate-pulse">Tracking...</span>
-                        ) : (
-                            <>
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-10 h-10 mb-2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
-                                </svg>
-                                {punchState === 'in' ? 'Punch In' : 'Punch Out'}
-                            </>
-                        )}
+                        Attendance
                     </button>
-                    {punchState === 'out' && <p className="text-xs font-semibold text-gray-400 mt-5">You are currently checked in.</p>}
-
                     <button
-                        onClick={() => setShowMissedPunch(true)}
-                        className="mt-6 text-sm font-semibold text-blue-500 underline decoration-blue-200 underline-offset-4 hover:text-blue-600 transition-colors"
+                        onClick={() => setActiveMainTab('ta')}
+                        className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-colors ${activeMainTab === 'ta' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                     >
-                        Forgot to punch in/out? Send Report
+                        TA Entry
                     </button>
                 </div>
+            </div>
 
-                {/* History Section */}
-                <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 mt-2">
-                    <div className="p-5 border-b border-gray-100 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-gray-800">Today's Attendance</h3>
-                        <button
-                            onClick={() => navigate('/engineer-attendance-report')}
-                            className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-2"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                            </svg>
-                            View Reports
-                        </button>
-                    </div>
+            <div className="flex-1 px-4 py-2 flex flex-col gap-5">
 
-                    <div className="flex flex-col">
-                        {history.length > 0 ? (
-                            history.map(record => (
-                                <div key={record.id} className="p-4 border-b border-gray-50 flex justify-between items-center bg-white hover:bg-gray-50">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide ${record.type === 'in' || record.type === 'punch_in' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                                {record.type === 'in' || record.type === 'punch_in' ? 'Punch In' : 'Punch Out'}
-                                            </span>
-                                            {record.is_half_day && (
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] bg-orange-100 text-orange-700 font-extrabold uppercase tracking-wide">
-                                                    Half Day
+                {activeMainTab === 'attendance' && (
+                    <>
+                        {/* Punch Card Section */}
+                        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col items-center relative overflow-hidden">
+                            <div className="absolute top-0 w-full h-1.5 bg-blue-500 left-0"></div>
+
+                            <h2 className="text-xl font-bold text-gray-800 mb-1">Mark Attendance</h2>
+                            <p className="text-sm text-gray-500 mb-6 text-center">Standard Hours: 10:00 AM - 7:00 PM<br />Location must be enabled.</p>
+
+                            {delayMessage && punchState === 'out' && (
+                                <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold mb-5 flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                                    </svg>
+                                    {delayMessage}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={handlePunchClick}
+                                disabled={loading}
+                                className={`w-40 h-40 rounded-full flex flex-col items-center justify-center font-bold text-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all active:scale-95 ${loading ? 'bg-gray-200 text-gray-400 border-4 border-gray-100' : (punchState === 'in' ? 'bg-emerald-50 text-emerald-600 border-[6px] border-emerald-100 hover:bg-emerald-100' : 'bg-rose-50 text-rose-600 border-[6px] border-rose-100 hover:bg-rose-100')}`}
+                            >
+                                {loading ? (
+                                    <span className="animate-pulse">Tracking...</span>
+                                ) : (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-10 h-10 mb-2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
+                                        </svg>
+                                        {punchState === 'in' ? 'Punch In' : 'Punch Out'}
+                                    </>
+                                )}
+                            </button>
+                            {punchState === 'out' && <p className="text-xs font-semibold text-gray-400 mt-5">You are currently checked in.</p>}
+
+                            <button
+                                onClick={() => setShowMissedPunch(true)}
+                                className="mt-6 text-sm font-semibold text-blue-500 underline decoration-blue-200 underline-offset-4 hover:text-blue-600 transition-colors"
+                            >
+                                Forgot to punch in/out? Send Report
+                            </button>
+                        </div>
+
+                        {/* History Section */}
+                        <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 mt-2">
+                            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+                                <h3 className="text-lg font-bold text-gray-800">Today's Attendance</h3>
+                                <button
+                                    onClick={() => navigate('/engineer-attendance-report')}
+                                    className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                    </svg>
+                                    View Reports
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col">
+                                {history.length > 0 ? (
+                                    history.map(record => (
+                                        <div key={record.id} className="p-4 border-b border-gray-50 flex justify-between items-center bg-white hover:bg-gray-50">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide ${record.type === 'in' || record.type === 'punch_in' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                        {record.type === 'in' || record.type === 'punch_in' ? 'Punch In' : 'Punch Out'}
+                                                    </span>
+                                                    {record.is_half_day && (
+                                                        <span className="px-2 py-0.5 rounded-md text-[10px] bg-orange-100 text-orange-700 font-extrabold uppercase tracking-wide">
+                                                            Half Day
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs text-gray-400 font-bold">{record.created_at.split(' ')[0]}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[15px] font-bold text-gray-800">{record.created_at.split(' ')[1]} {record.created_at.split(' ')[2]}</span>
+                                                    {record.delay_time && (
+                                                        <span className="text-[11px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-md">
+                                                            Delayed: {record.delay_time}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="text-right flex flex-col items-end gap-1">
+                                                <span className="text-xs font-bold text-gray-400 flex items-center gap-1">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                                        <path fillRule="evenodd" d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11 0 .308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clipRule="evenodd" />
+                                                    </svg>
+                                                    Location Secured
                                                 </span>
-                                            )}
-                                            <span className="text-xs text-gray-400 font-bold">{record.created_at.split(' ')[0]}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[15px] font-bold text-gray-800">{record.created_at.split(' ')[1]} {record.created_at.split(' ')[2]}</span>
-                                            {record.delay_time && (
-                                                <span className="text-[11px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-md">
-                                                    Delayed: {record.delay_time}
-                                                </span>
-                                            )}
-                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-8 text-center text-gray-400 text-sm font-medium">
+                                        No records found for these dates.
                                     </div>
-                                    <div className="text-right flex flex-col items-end gap-1">
-                                        <span className="text-xs font-bold text-gray-400 flex items-center gap-1">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                                                <path fillRule="evenodd" d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11 0 .308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" clipRule="evenodd" />
-                                            </svg>
-                                            Location Secured
-                                        </span>
+                                )}
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {activeMainTab === 'ta' && (
+                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 flex flex-col gap-4 mb-10 overflow-hidden relative">
+                        <div className="absolute top-0 w-full h-1.5 bg-blue-500 left-0"></div>
+                        <h2 className="text-xl font-bold text-gray-800 tracking-tight">TA Voucher Entry</h2>
+
+                        <div className="flex flex-col gap-3">
+                            {/* --- 1. Header Section --- */}
+                            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                <h3 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">1. Header Information</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-bold text-gray-500">Voucher Date <span className="text-red-500">*</span></label>
+                                        <input type="date" value={taVoucherDate} onChange={e => setTaVoucherDate(e.target.value)} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-xs font-bold text-gray-500">Voucher No <span className="text-[10px] text-gray-400">(Auto)</span></label>
+                                        <input type="text" value={taVoucherNumber} readOnly className="w-full text-sm p-2 rounded-xl border border-gray-200 bg-gray-100 text-gray-600 outline-none cursor-not-allowed font-medium" />
                                     </div>
                                 </div>
-                            ))
-                        ) : (
-                            <div className="p-8 text-center text-gray-400 text-sm font-medium">
-                                No records found for these dates.
                             </div>
-                        )}
+
+                            {/* --- 2. Call Type & 3. Date Range & 4. Travel Mode --- */}
+                            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
+                                <h3 className="text-sm font-bold text-gray-700 mb-1 border-b pb-2">2. Filter Resolved Calls</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="flex flex-col gap-1 col-span-2">
+                                        <label className="block text-xs font-bold text-gray-500">Call Type <span className="text-red-500">*</span></label>
+                                        <select value={taCallType} onChange={e => setTaCallType(e.target.value)} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="Service Call">Service Call</option>
+                                            <option value="PM Call">PM Call</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="block text-xs font-bold text-gray-500">Start Date <span className="text-red-500">*</span></label>
+                                        <input type="date" value={taStartDate} onChange={e => setTaStartDate(e.target.value)} max={taEndDate} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="block text-xs font-bold text-gray-500">End Date <span className="text-red-500">*</span></label>
+                                        <input type="date" value={taEndDate} onChange={e => setTaEndDate(e.target.value)} min={taStartDate} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 col-span-2">
+                                        <label className="block text-xs font-bold text-gray-500">Travel Mode <span className="text-red-500">*</span></label>
+                                        <div className="flex gap-2">
+                                            {['Bike', 'Car', 'Public Transport'].map(mode => (
+                                                <button key={mode} onClick={() => setTaTravelMode(mode)} className={`flex-1 text-xs py-2 px-1 font-bold rounded-lg border transition-all ${taTravelMode === mode ? 'bg-blue-50 border-blue-400 text-blue-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                                                    {mode}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* --- 5. & 6. Call Number & Fetching details --- */}
+                            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
+                                <h3 className="text-sm font-bold text-gray-700 mb-1 border-b pb-2">3. Select Call & Add</h3>
+
+                                <div className="flex flex-col gap-1">
+                                    <label className="block text-xs font-bold text-gray-500">Call Number <span className="text-red-500">*</span></label>
+                                    <select value={selectedTaCall} onChange={handleTaCallSelect} className="w-full text-sm p-2 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                        <option value="">-- Auto Fetch Resolved Calls --</option>
+                                        {resolvedCalls.map(c => (
+                                            <option key={c.call_id} value={c.call_id}>CALL-{c.call_id} : {c.dairy_name}</option>
+                                        ))}
+                                    </select>
+                                    {resolvedCalls.length === 0 && <p className="text-[10px] text-orange-500 mt-1 font-semibold">No resolved calls found for selected dates without TA.</p>}
+                                </div>
+
+                                {taAutoVisit && (
+                                    <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mt-1 animate-fadeIn flex flex-col gap-2">
+                                        <p className="text-[11px] font-bold text-indigo-800 uppercase tracking-widest mb-1 border-b border-indigo-200 pb-1">Fetched Visit Details</p>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                            <span className="text-xs text-indigo-600 font-semibold">Dist:</span> <span className="text-xs text-indigo-900 font-bold text-right">{taAutoVisit.km || 0} KM</span>
+                                            <span className="text-xs text-indigo-600 font-semibold">Time:</span> <span className="text-xs text-indigo-900 font-bold text-right">{taAutoVisit.startTime} - {taAutoVisit.endTime}</span>
+                                            <span className="text-xs text-indigo-600 font-semibold col-span-2">Places: <span className="text-indigo-900 ml-1">{taAutoVisit.places_visited || 'N/A'}</span></span>
+                                        </div>
+                                        <button onClick={handleAddTaEntry} className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all text-center flex justify-center items-center gap-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                            Add Entry
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* --- 7. Added Entries List --- */}
+                            {taEntries.length > 0 && (
+                                <div className="p-4 bg-white rounded-2xl border-2 border-green-100 shadow-sm flex flex-col gap-2 mb-2">
+                                    <h3 className="text-sm font-bold text-green-700 mb-1 border-b border-green-50 pb-2">4. TA Voucher Entries ({taEntries.length})</h3>
+                                    {taEntries.map((e, idx) => (
+                                        <div key={idx} className="flex flex-col p-2 bg-green-50 rounded-lg border border-green-100 text-xs text-green-800 font-medium relative pr-8">
+                                            <span className="font-bold text-green-900">Call ID: {e.call_id}</span>
+                                            <span>KM: {e.km} | Time: {e.startTime}-{e.endTime}</span>
+                                            <span className="truncate">Visits: {e.places}</span>
+                                            <button onClick={() => setTaEntries(taEntries.filter((_, i) => i !== idx))} className="absolute right-2 top-2 p-1.5 text-red-500 bg-red-100 rounded hover:bg-red-200 transition-colors">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* --- 8. Submit Button --- */}
+                            <button
+                                onClick={handleSubmitTa}
+                                disabled={loading || taEntries.length === 0}
+                                className="w-full py-3.5 bg-[#10b981] text-white font-bold rounded-xl text-[15px] shadow-lg shadow-emerald-200 hover:bg-[#059669] active:scale-95 transition-all mt-2 disabled:bg-gray-400 disabled:shadow-none mb-10"
+                            >
+                                {loading ? 'Submitting...' : 'Submit TA Voucher'}
+                            </button>
+                            <p className="text-[10px] text-gray-400 font-semibold text-center italic -mt-5">Status will update to: "Approved Pending for Admin and hr"</p>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
             {/* Missed Punch Modal */}

@@ -581,61 +581,8 @@ const EAssignCall = () => {
                     )}
                 </div>
 
-                {/* --- MODULE 5: TA ENTRY ---
-                <div className={`bg-white rounded-2xl p-6 shadow-sm border ${activeSection === 'TA' ? 'border-[#2a8bf2] ring-2 ring-[#2a8bf2]/20' : 'border-gray-200'} transition-all`}>
-                    <div className="flex items-center gap-3 mb-6 cursor-pointer" onClick={() => setActiveSection('TA')}>
-                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">5</div>
-                        <h2 className="text-xl font-bold text-gray-800">TA Entry</h2>
-                    </div>
-
-                    {activeSection === 'TA' && (
-                        <div className={`flex flex-col gap-4 animate-fadeIn ${readOnlyClasses}`}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Call ID</label>
-                                    <select value={selectedCallId} onChange={handleCallIdSelect} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-75">
-                                        <option value="">Select Call ID...</option>
-                                        <option value={callData?.call_id || "CALL-001"}>{callData?.call_id || "CALL-001"}</option>
-                                        <option value="CALL-002">CALL-002</option>
-                                    </select>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Voucher Number (Auto)</label>
-                                    <input type="text" value={voucherNumber} readOnly className="p-2.5 rounded-xl border border-gray-300 bg-gray-100 text-gray-500 outline-none" />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">From Date</label>
-                                    <input type="date" value={travelFromDate} onChange={e => setTravelFromDate(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">To Date</label>
-                                    <input type="date" value={travelToDate} onChange={e => setTravelToDate(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Mode of Travel</label>
-                                    <select value={modeOfTravel} onChange={e => setModeOfTravel(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">Select Mode...</option>
-                                        <option value="Car">Car</option>
-                                        <option value="Bike">Bike</option>
-                                        <option value="Public Travel">Public Travel</option>
-                                    </select>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Type</label>
-                                    <select value={travelType} onChange={e => setTravelType(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">Select Type...</option>
-                                        <option value="Service Call">Service Call</option>
-                                        <option value="PM Call">PM Call</option>
-                                        <option value="Other">Other</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="flex justify-end mt-2 pointer-events-auto">
-                                <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl transition-colors shadow-sm active:scale-95 disabled:opacity-75" onClick={() => { setActiveSection('VISIT') }}>Continue to Visit Entry</button>
-                            </div>
-                        </div>
-                    )}
-                </div> */}
+               
+                
 
             </div>
 

@@ -93,6 +93,34 @@ router.post('/assign', requireAuth, async (req, res) => {
   }
 });
 
+// Add TA submit route
+router.post('/submit-ta', requireAuth, async (req, res) => {
+  try {
+    const { voucherDate, voucherNumber, callType, startDate, endDate, travelMode, entries } = req.body;
+    if (!entries || entries.length === 0) {
+      return res.status(400).json({ success: false, message: 'No entries provided' });
+    }
+
+    for (const entry of entries) {
+      const q = `
+          UPDATE assign_call 
+          SET ta_voucher_date = $1, 
+              ta_voucher_number = $2, 
+              ta_call_type = $3, 
+              ta_travel_mode = $4, 
+              ta_status = $5 
+          WHERE call_id = $6
+       `;
+      await pool.query(q, [voucherDate, voucherNumber, callType, travelMode, 'Approved Pending for Admin and hr', entry.call_id]);
+    }
+
+    res.json({ success: true, message: 'TA Submitted successfully' });
+  } catch (err) {
+    console.error('Submit TA error:', err);
+    res.status(500).json({ success: false, message: 'Failed to submit TA' });
+  }
+});
+
 // Add assign-call route
 router.post('/assign-call', requireAuth, async (req, res) => {
   try {
