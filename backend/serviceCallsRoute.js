@@ -745,6 +745,47 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
   }
 })();
 
+// Update basic assignment details (Engineer, problem, description)
+router.put('/assign-call/:callId/basic-details', requireAuth, async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const {
+      id,
+      name,
+      role,
+      mobile_number,
+      problem,
+      description
+    } = req.body;
+
+    const query = `
+      UPDATE assign_call 
+      SET 
+        id = $1,
+        name = $2,
+        role = $3,
+        mobile_number = $4,
+        problem = $5,
+        description = $6
+      WHERE call_id::text = $7 OR id = $7
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
+      id, name, role, mobile_number, problem, description, String(callId)
+    ]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    res.json({ success: true, call: result.rows[0] });
+  } catch (err) {
+    console.error('basic-details update error', err);
+    res.status(500).json({ success: false, message: 'Failed to update basic details' });
+  }
+});
+
 // Update resolved details (problem1, problem2, solutions)
 router.put('/assign-call/:callId/resolved-details', requireAuth, async (req, res) => {
   try {

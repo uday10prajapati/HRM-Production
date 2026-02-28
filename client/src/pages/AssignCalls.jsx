@@ -31,6 +31,11 @@ const AssignCalls = () => {
     const [editProblem2, setEditProblem2] = useState('');
     const [editSolutions, setEditSolutions] = useState('');
 
+    const [editingBasicCallId, setEditingBasicCallId] = useState(null);
+    const [editBasicEngineerId, setEditBasicEngineerId] = useState('');
+    const [editBasicProblem, setEditBasicProblem] = useState('');
+    const [editBasicDescription, setEditBasicDescription] = useState('');
+
     // Add this helper function at the top of your component
     const isHrOrAdmin = (userRole) => {
         if (!userRole) return false;
@@ -259,6 +264,37 @@ const AssignCalls = () => {
             }
         } catch (err) {
             console.error('Error updating call details:', err);
+            alert(err.response?.data?.message || 'Failed to update call details');
+        }
+    };
+
+    const handleUpdateBasicDetails = async (callId) => {
+        try {
+            const selectedEng = engineers.find(e => String(e.id) === String(editBasicEngineerId));
+            if (!selectedEng) {
+                alert('Please select a valid engineer');
+                return;
+            }
+
+            const response = await axios.put(
+                `/api/service-calls/assign-call/${callId}/basic-details`,
+                {
+                    id: selectedEng.id,
+                    name: selectedEng.name,
+                    role: selectedEng.role,
+                    mobile_number: selectedEng.mobile_number,
+                    problem: editBasicProblem,
+                    description: editBasicDescription || editBasicProblem
+                }
+            );
+
+            if (response.data.success) {
+                setEditingBasicCallId(null);
+                fetchAssignedCalls();
+                alert('Call updated successfully!');
+            }
+        } catch (err) {
+            console.error('Error updating basic details:', err);
             alert(err.response?.data?.message || 'Failed to update call details');
         }
     };
@@ -532,11 +568,32 @@ const AssignCalls = () => {
 
                                                             <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-50">
                                                                 <div>
-                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Engineer</p>
-                                                                    <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
-                                                                        <span className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[9px] text-indigo-700">{String(call.name)[0]}</span>
-                                                                        {call.name}
-                                                                    </p>
+                                                                    <div className="flex justify-between items-center mb-1">
+                                                                        <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Engineer</p>
+                                                                        {isHrOrAdmin(userRole) && editingBasicCallId !== (call.call_id || call.id) && (
+                                                                            <button onClick={() => {
+                                                                                setEditingBasicCallId(call.call_id || call.id);
+                                                                                setEditBasicEngineerId(call.id);
+                                                                                setEditBasicProblem(call.problem || '');
+                                                                                setEditBasicDescription(call.description || '');
+                                                                            }} className="text-[10px] uppercase font-bold text-indigo-500 hover:text-indigo-700 group-hover:opacity-100 opacity-60 transition-opacity">Edit Details</button>
+                                                                        )}
+                                                                    </div>
+                                                                    {editingBasicCallId === (call.call_id || call.id) ? (
+                                                                        <select
+                                                                            className="w-full mt-0.5 border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-bold bg-white text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-colors cursor-pointer"
+                                                                            value={editBasicEngineerId}
+                                                                            onChange={(e) => setEditBasicEngineerId(e.target.value)}
+                                                                        >
+                                                                            <option value="" disabled>-- Select Engineer --</option>
+                                                                            {engineers.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                                                                        </select>
+                                                                    ) : (
+                                                                        <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                                                                            <span className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[9px] text-indigo-700">{String(call.name)[0]}</span>
+                                                                            {call.name}
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                                 <div>
                                                                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Active Status</p>
@@ -556,9 +613,34 @@ const AssignCalls = () => {
 
                                                             <div>
                                                                 <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Initial Issue Reported</p>
-                                                                <p className="text-sm font-semibold text-slate-700">{call.problem}</p>
-                                                                {call.description && call.description !== call.problem && (
-                                                                    <p className="text-sm font-medium text-slate-500 mt-1 line-clamp-2">{call.description}</p>
+                                                                {editingBasicCallId === (call.call_id || call.id) ? (
+                                                                    <div className="space-y-2 mt-1">
+                                                                        <input
+                                                                            type="text"
+                                                                            className="w-full border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                                                            value={editBasicProblem}
+                                                                            onChange={(e) => setEditBasicProblem(e.target.value)}
+                                                                            placeholder="Problem title..."
+                                                                        />
+                                                                        <textarea
+                                                                            className="w-full border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs font-medium bg-white text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                                                                            value={editBasicDescription}
+                                                                            onChange={(e) => setEditBasicDescription(e.target.value)}
+                                                                            rows="2"
+                                                                            placeholder="Detailed description..."
+                                                                        />
+                                                                        <div className="flex justify-end gap-2 mt-2 pt-1">
+                                                                            <button onClick={() => setEditingBasicCallId(null)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-md transition-colors">Cancel</button>
+                                                                            <button onClick={() => handleUpdateBasicDetails(call.call_id || call.id)} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-md shadow-sm transition-colors">Save Details</button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <>
+                                                                        <p className="text-sm font-semibold text-slate-700">{call.problem}</p>
+                                                                        {call.description && call.description !== call.problem && (
+                                                                            <p className="text-sm font-medium text-slate-500 mt-1 line-clamp-2">{call.description}</p>
+                                                                        )}
+                                                                    </>
                                                                 )}
                                                             </div>
                                                         </div>
