@@ -4,7 +4,13 @@ import { pool } from './db.js';
 // Attaches req.user = { id, role }
 export default async function requireAuth(req, res, next) {
   try {
-    const headerId = req.header('x-user-id') || req.query.userId || null;
+    let headerId = req.header('x-user-id') || req.query.userId || null;
+
+    // Legacy support for older Mobile App builds that hardcoded 'admin' into the tracking requests
+    if (headerId === 'admin' && req.body && req.body.userId) {
+      headerId = req.body.userId;
+    }
+
     if (!headerId) {
       return res.status(401).json({ success: false, message: 'Missing X-User-Id header or userId query param' });
     }
