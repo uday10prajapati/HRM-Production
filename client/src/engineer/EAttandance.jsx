@@ -746,11 +746,11 @@ const EAttandance = () => {
                             <button
                                 onClick={handleSubmitTa}
                                 disabled={loading || taEntries.length === 0}
-                                className="w-full py-3.5 bg-[#10b981] text-white font-bold rounded-xl text-[15px] shadow-lg shadow-emerald-200 hover:bg-[#059669] active:scale-95 transition-all mt-2 disabled:bg-gray-400 disabled:shadow-none mb-10"
+                                className="w-full py-3.5 bg-[#10b981] text-white font-bold rounded-xl text-[15px] shadow-lg hover:bg-[#059669] active:scale-95 transition-all mt-4 disabled:bg-gray-400 disabled:shadow-none mb-6"
                             >
                                 {loading ? 'Submitting...' : 'Submit TA Voucher'}
                             </button>
-                            <p className="text-[10px] text-gray-400 font-semibold text-center italic -mt-5">Status will update to: "Approved Pending for Admin and hr"</p>
+                            <p className="text-[10px] text-gray-400 font-semibold text-center mt-2 italic">Status will update to: "Approved Pending for Admin and hr"</p>
                         </div>
                     </div>
                 )}
@@ -799,27 +799,30 @@ const EAttandance = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* Confirm Punch Modal */}
-            {showConfirmPunch && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center px-4 animate-fadeIn">
-                    <div className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl text-center">
-                        <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 ${punchState === 'in' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-8 h-8">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
-                            </svg>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm {punchState === 'in' ? 'Punch In' : 'Punch Out'}</h3>
-                        <p className="text-sm text-gray-500 mb-6">Are you sure you want to mark your attendance ({punchState === 'in' ? 'Punch In' : 'Punch Out'}) right now?</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowConfirmPunch(false)} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl active:scale-95 transition-all text-sm">Cancel</button>
-                            <button onClick={confirmPunch} className={`flex-1 py-3.5 text-white font-bold rounded-xl active:scale-95 transition-all shadow-md text-sm ${punchState === 'in' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}>Yes, {punchState === 'in' ? 'Punch In' : 'Punch Out'}</button>
+            {
+                showConfirmPunch && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center px-4 animate-fadeIn">
+                        <div className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl text-center">
+                            <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 ${punchState === 'in' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-8 h-8">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zm-7.518-.267A8.25 8.25 0 1120.25 10.5M8.288 14.212A5.25 5.25 0 1117.25 10.5" />
+                                </svg>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm {punchState === 'in' ? 'Punch In' : 'Punch Out'}</h3>
+                            <p className="text-sm text-gray-500 mb-6">Are you sure you want to mark your attendance ({punchState === 'in' ? 'Punch In' : 'Punch Out'}) right now?</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowConfirmPunch(false)} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl active:scale-95 transition-all text-sm">Cancel</button>
+                                <button onClick={confirmPunch} className={`flex-1 py-3.5 text-white font-bold rounded-xl active:scale-95 transition-all shadow-md text-sm ${punchState === 'in' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}>Yes, {punchState === 'in' ? 'Punch In' : 'Punch Out'}</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 
