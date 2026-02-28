@@ -108,7 +108,12 @@ const ETaReport = () => {
                                     <div className="flex justify-between items-start pl-2">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{record.ta_voucher_date}</span>
-                                            <span className="text-base font-extrabold text-gray-800">{record.ta_voucher_number}</span>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-base font-extrabold text-gray-800">{record.ta_voucher_number}</span>
+                                            </div>
+                                            <span className="text-xs font-semibold text-gray-600 mt-1">
+                                                <span className="font-extrabold text-indigo-700">{record.call_id}</span> - {record.dairy_name || record.name || 'Unknown'}
+                                            </span>
                                             <span className="text-xs font-semibold text-indigo-600 flex items-center gap-1 mt-0.5">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 011.875 1.875v11.25a1.875 1.875 0 01-1.875 1.875H5.625a1.875 1.875 0 01-1.875-1.875V6.375A1.875 1.875 0 015.625 4.5z" />
@@ -120,12 +125,36 @@ const ETaReport = () => {
                                             <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold max-w-[120px] text-center ${getStatusStyles(record.ta_status)}`}>
                                                 {record.ta_status}
                                             </span>
-                                            <span className="text-xs font-bold bg-gray-50 text-gray-600 px-2 py-0.5 rounded-lg border border-gray-200 shadow-sm mt-1">KM: {record.ta_revised_km || record.kms_traveled || 0}</span>
+                                            <span className="text-[11px] font-bold bg-gray-50 text-gray-600 px-2 py-0.5 rounded-lg border border-gray-200 shadow-sm mt-1 whitespace-nowrap">KM: {record.ta_revised_km || record.kms_traveled || 0}</span>
                                         </div>
                                     </div>
                                     {record.ta_revised_places && (
-                                        <div className="mt-1 pl-2 text-xs text-gray-500 font-medium">
-                                            <span className="font-bold text-gray-700">Places: </span>{record.ta_revised_places}
+                                        <div className="mt-2 pl-2">
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 block">Places Visited</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {(() => {
+                                                    try {
+                                                        const placesArr = JSON.parse(record.ta_revised_places);
+                                                        if (Array.isArray(placesArr)) {
+                                                            return placesArr.map((p, i) => (
+                                                                <div key={i} className="flex items-center text-[10px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md">
+                                                                    <span>{p.from}</span>
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-3 h-3 mx-1 text-indigo-300">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                                                                    </svg>
+                                                                    <span>{p.to}</span>
+                                                                    <span className="ml-1.5 text-indigo-400 bg-white px-1 rounded-sm border border-indigo-50">
+                                                                        {p.distance} km
+                                                                    </span>
+                                                                </div>
+                                                            ));
+                                                        }
+                                                        return <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">{record.ta_revised_places}</span>;
+                                                    } catch (e) {
+                                                        return <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">{record.ta_revised_places}</span>;
+                                                    }
+                                                })()}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

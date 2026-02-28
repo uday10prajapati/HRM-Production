@@ -133,7 +133,7 @@ router.get('/ta-records', requireAuth, async (req, res) => {
     }
 
     const query = `
-      SELECT call_id, ta_voucher_date, ta_voucher_number, ta_call_type, ta_travel_mode, ta_status, ta_revised_km, ta_revised_places, kms_traveled
+      SELECT call_id, dairy_name, name, ta_voucher_date, ta_voucher_number, ta_call_type, ta_travel_mode, ta_status, ta_revised_km, ta_revised_places, kms_traveled
       FROM assign_call
       WHERE CAST(id AS TEXT) = $1
         AND ta_voucher_number IS NOT NULL
