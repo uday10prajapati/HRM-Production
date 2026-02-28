@@ -109,10 +109,12 @@ router.post('/submit-ta', requireAuth, async (req, res) => {
               ta_call_type = $3, 
               ta_travel_mode = $4, 
               ta_status = $5,
-              ta_receipt_url = $7
+              ta_receipt_url = $7,
+              ta_revised_km = $8,
+              ta_revised_places = $9
           WHERE call_id = $6
        `;
-      await pool.query(q, [voucherDate, voucherNumber, callType, travelMode, 'Approved Pending for Admin and hr', entry.call_id, receiptUrl || null]);
+      await pool.query(q, [voucherDate, voucherNumber, callType, travelMode, 'Approved Pending for Admin and hr', entry.call_id, receiptUrl || null, entry.km, entry.places]);
     }
 
     res.json({ success: true, message: 'TA Submitted successfully' });
@@ -693,7 +695,9 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_time TIME`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_time TIME`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_receipt_url TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_receipt_url TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_km NUMERIC`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_places TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);

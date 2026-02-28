@@ -124,6 +124,12 @@ const EAttandance = () => {
             let totalKm = parseFloat(call.kms_traveled) || 0;
             if (call.return_to_home === true || String(call.return_to_home).toLowerCase() === 'true' || String(call.return_to_home).toLowerCase() === 'yes' || call.return_to_home === 1) {
                 totalKm += parseFloat(call.return_km) || 0;
+                let retPlace = call.return_place || "Home";
+                try {
+                    const parsedRet = JSON.parse(call.return_place);
+                    if (parsedRet && parsedRet.from) retPlace = `${parsedRet.from} to ${parsedRet.to}`;
+                } catch (e) { }
+                pts += `, Return: ${retPlace}`;
             }
 
             setTaAutoVisit({
@@ -594,10 +600,28 @@ const EAttandance = () => {
                                 {taAutoVisit && (
                                     <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mt-1 animate-fadeIn flex flex-col gap-2">
                                         <p className="text-[11px] font-bold text-indigo-800 uppercase tracking-widest mb-1 border-b border-indigo-200 pb-1">Fetched Visit Details</p>
-                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                                            <span className="text-xs text-indigo-600 font-semibold">Dist:</span> <span className="text-xs text-indigo-900 font-bold text-right">{taAutoVisit.km || 0} KM</span>
-                                            <span className="text-xs text-indigo-600 font-semibold">Time:</span> <span className="text-xs text-indigo-900 font-bold text-right">{taAutoVisit.startTime} - {taAutoVisit.endTime}</span>
-                                            <span className="text-xs text-indigo-600 font-semibold col-span-2">Places: <span className="text-indigo-900 ml-1">{taAutoVisit.places_visited || 'N/A'}</span></span>
+                                        <div className="flex flex-col gap-2 mt-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-indigo-600 font-semibold w-12">KM:</span>
+                                                <input
+                                                    type="number"
+                                                    value={taAutoVisit.km}
+                                                    onChange={e => setTaAutoVisit({ ...taAutoVisit, km: e.target.value })}
+                                                    className="w-24 text-sm font-bold p-1 rounded-md border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-indigo-600 font-semibold w-12">Time:</span>
+                                                <span className="text-xs text-indigo-900 font-bold">{taAutoVisit.startTime} - {taAutoVisit.endTime}</span>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-xs text-indigo-600 font-semibold">Places (Editable if wrong):</span>
+                                                <textarea
+                                                    value={taAutoVisit.places_visited}
+                                                    onChange={e => setTaAutoVisit({ ...taAutoVisit, places_visited: e.target.value })}
+                                                    className="w-full text-xs font-medium p-2 rounded-md border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 h-16 resize-none"
+                                                />
+                                            </div>
                                         </div>
                                         <button onClick={handleAddTaEntry} className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all text-center flex justify-center items-center gap-1">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
