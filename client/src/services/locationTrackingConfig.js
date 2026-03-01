@@ -5,13 +5,13 @@
 
 export const LOCATION_TRACKING_CONFIG = {
     // How often to fetch location (milliseconds)
-    FETCH_INTERVAL: 60000, // 1 minute
+    FETCH_INTERVAL: 30000, // 30 seconds (was 60s)
     
     // Minimum distance moved to trigger location storage (meters)
-    DISTANCE_THRESHOLD: 10, // 10 meters
+    DISTANCE_THRESHOLD: 5, // 5 meters (was 10m)
     
     // Maximum time between storage events (milliseconds)
-    TIME_THRESHOLD: 60000, // 1 minute
+    TIME_THRESHOLD: 45000, // 45 seconds (was 60s)
     
     // Geolocation options
     GEOLOCATION_OPTIONS: {
