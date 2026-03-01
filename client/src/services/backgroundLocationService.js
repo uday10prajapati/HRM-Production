@@ -129,7 +129,10 @@ async function backgroundLocationTask(userId) {
 
     try {
         // Dynamically import BackgroundTask only on native platforms
-        const { BackgroundTask } = await import('@capacitor/background-task').catch(() => ({ BackgroundTask: null }));
+        // Use variable for module name so Vite doesn't try to resolve it statically
+        const moduleName = '@capacitor/background-task';
+        const BackgroundTaskModule = await import(moduleName).catch(() => null);
+        const BackgroundTask = BackgroundTaskModule?.BackgroundTask;
         
         if (!BackgroundTask) {
             console.warn('BackgroundTask not available - location tracking will stop when app closes');

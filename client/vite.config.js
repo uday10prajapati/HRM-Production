@@ -14,6 +14,9 @@ export default defineConfig({
       }
     }
   },
+  optimizeDeps: {
+    exclude: ['@capacitor/background-task']
+  },
   build: {
     rollupOptions: {
       external: ['@capacitor/background-task']
