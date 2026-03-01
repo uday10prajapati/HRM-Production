@@ -37,7 +37,7 @@ import 'leaflet/dist/leaflet.css';
 
 function App() {
   React.useEffect(() => {
-    // Auto-resume background location tracking on app initialization
+    // Auto-resume background location tracking on app initialization (native only)
     if (Capacitor.isNativePlatform()) {
       resumeLocationTrackingIfNeeded().catch(err => console.error('Failed to resume location tracking:', err));
     }

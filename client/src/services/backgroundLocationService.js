@@ -1,7 +1,7 @@
 import { Geolocation } from '@capacitor/geolocation';
-import { BackgroundTask } from '@capacitor/background-task';
 import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
+import { Capacitor } from '@capacitor/core';
 
 /**
  * Background Location Tracking Service
@@ -118,10 +118,24 @@ function shouldStoreLocation(currentLocation) {
 }
 
 /**
- * Background task for tracking location
+ * Background task for tracking location (only on native platforms)
  */
 async function backgroundLocationTask(userId) {
+    // Only register background task on native platforms
+    if (!Capacitor.isNativePlatform()) {
+        console.log('Background task not available on web platform');
+        return;
+    }
+
     try {
+        // Dynamically import BackgroundTask only on native platforms
+        const { BackgroundTask } = await import('@capacitor/background-task').catch(() => ({ BackgroundTask: null }));
+        
+        if (!BackgroundTask) {
+            console.warn('BackgroundTask not available - location tracking will stop when app closes');
+            return;
+        }
+
         const taskId = await BackgroundTask.beforeExit(async () => {
             try {
                 const location = await getCurrentLocation();
@@ -136,11 +150,14 @@ async function backgroundLocationTask(userId) {
                 BackgroundTask.finish({ taskId });
             } catch (error) {
                 console.error('Background task error:', error);
-                BackgroundTask.finish({ taskId });
+                if (BackgroundTask && typeof BackgroundTask.finish === 'function') {
+                    BackgroundTask.finish({ taskId });
+                }
             }
         });
     } catch (error) {
-        console.error('Failed to register background task:', error);
+        console.warn('Failed to register background task:', error?.message);
+        // Continue tracking anyway - web/browser tracking will still work
     }
 }
 
@@ -148,6 +165,12 @@ async function backgroundLocationTask(userId) {
  * Start background location tracking
  */
 export async function startLocationTracking(userId) {
+    // Only start on native platforms
+    if (!Capacitor.isNativePlatform()) {
+        console.log('Location tracking is only available on native mobile app');
+        return;
+    }
+
     if (locationTrackingInterval) {
         console.warn('Location tracking already running');
         return;
@@ -220,6 +243,11 @@ export function isLocationTrackingActive() {
  * Resume tracking if app was closed during active tracking
  */
 export async function resumeLocationTrackingIfNeeded() {
+    // Only on native platforms
+    if (!Capacitor.isNativePlatform()) {
+        return;
+    }
+
     const trackingActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
     const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
 
