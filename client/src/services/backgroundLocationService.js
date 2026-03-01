@@ -12,11 +12,14 @@ import { Capacitor } from '@capacitor/core';
  */
 
 let locationTrackingInterval = null;
+let trackingHeartbeatInterval = null;
 let lastStoredLocation = null;
 let lastStoredTime = null;
+let currentTrackingUserId = null;
 const INTERVAL_MS = LOCATION_TRACKING_CONFIG.FETCH_INTERVAL;
 const DISTANCE_THRESHOLD = LOCATION_TRACKING_CONFIG.DISTANCE_THRESHOLD;
 const TIME_THRESHOLD = LOCATION_TRACKING_CONFIG.TIME_THRESHOLD;
+const HEARTBEAT_INTERVAL = 10000; // Check every 10 seconds if tracking is still running
 
 /**
  * Calculate distance between two GPS coordinates using Haversine formula
@@ -118,6 +121,38 @@ function shouldStoreLocation(currentLocation) {
 }
 
 /**
+ * Heartbeat check to ensure tracking stays active
+ * This prevents tracking from dying if the app is backgrounded/force-closed
+ */
+function startTrackingHeartbeat(userId) {
+    if (trackingHeartbeatInterval) {
+        clearInterval(trackingHeartbeatInterval);
+    }
+
+    trackingHeartbeatInterval = setInterval(async () => {
+        try {
+            const storageUserId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
+            const isActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
+
+            // If tracking should be active but interval is gone, restart it
+            if (isActive && storageUserId && !locationTrackingInterval) {
+                console.log('⚠️ Tracking stopped unexpectedly! Restarting...');
+                await startLocationTracking(storageUserId);
+            }
+        } catch (error) {
+            console.error('Heartbeat error:', error);
+        }
+    }, HEARTBEAT_INTERVAL);
+}
+
+function stopTrackingHeartbeat() {
+    if (trackingHeartbeatInterval) {
+        clearInterval(trackingHeartbeatInterval);
+        trackingHeartbeatInterval = null;
+    }
+}
+
+/**
  * Background task for tracking location (only on native platforms)
  */
 async function backgroundLocationTask(userId) {
@@ -182,6 +217,7 @@ export async function startLocationTracking(userId) {
     console.log('🟢 Starting background location tracking for user:', userId);
 
     // Save tracking state to localStorage
+    currentTrackingUserId = userId;
     localStorage.setItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE, 'true');
     localStorage.setItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID, userId);
 
@@ -195,7 +231,7 @@ export async function startLocationTracking(userId) {
         }
     }
 
-    // Set up interval tracking (~1 minute)
+    // Set up interval tracking
     locationTrackingInterval = setInterval(async () => {
         try {
             const location = await getCurrentLocation();
@@ -212,6 +248,9 @@ export async function startLocationTracking(userId) {
         }
     }, INTERVAL_MS);
 
+    // Start heartbeat to monitor tracking health
+    startTrackingHeartbeat(userId);
+
     // Also register background task for when app is in background
     await backgroundLocationTask(userId);
 }
@@ -226,11 +265,14 @@ export async function stopLocationTracking() {
         console.log('🔴 Location tracking stopped');
     }
 
+    stopTrackingHeartbeat();
+
     // Clear tracking state
     localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE);
     localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
 
     // Reset variables
+    currentTrackingUserId = null;
     lastStoredLocation = null;
     lastStoredTime = null;
 }
