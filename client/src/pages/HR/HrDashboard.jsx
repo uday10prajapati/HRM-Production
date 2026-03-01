@@ -25,8 +25,8 @@ const HrDashboard = () => {
     engineerId: "",
     dairyName: "",
     problem: "",
-    problem: "",
-    description: ""
+    description: "",
+    priority: "Medium"
   });
   const [assignedCallsCount, setAssignedCallsCount] = useState(0);
   const [dairySuggestions, setDairySuggestions] = useState([]);
@@ -280,7 +280,8 @@ const HrDashboard = () => {
         mobile_number: selectedEngineer.mobile_number,
         dairy_name: assignCallForm.dairyName,
         problem: assignCallForm.problem,
-        description: assignCallForm.description
+        description: assignCallForm.description,
+        priority: assignCallForm.priority
       });
 
       if (response.data?.success) {
@@ -290,7 +291,8 @@ const HrDashboard = () => {
           engineerId: "",
           dairyName: "",
           problem: "",
-          description: ""
+          description: "",
+          priority: "Medium"
         });
       }
     } catch (err) {
@@ -659,6 +661,11 @@ const HrDashboard = () => {
               </div>
               <input className="mb-2 w-full border p-2" placeholder="Problem" value={assignCallForm.problem} onChange={e => setAssignCallForm({ ...assignCallForm, problem: e.target.value })} />
               <textarea className="mb-2 w-full border p-2" placeholder="Description" value={assignCallForm.description} onChange={e => setAssignCallForm({ ...assignCallForm, description: e.target.value })} />
+              <select className="mb-2 w-full border p-2" value={assignCallForm.priority} onChange={e => setAssignCallForm({ ...assignCallForm, priority: e.target.value })}>
+                <option value="Low">🟢 Low</option>
+                <option value="Medium">🟡 Medium</option>
+                <option value="High">🔴 High</option>
+              </select>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setIsAssignCallOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
                 <button type="submit" className="px-3 py-1 bg-purple-600 text-white rounded">Assign Call</button>

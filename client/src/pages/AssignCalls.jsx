@@ -16,6 +16,7 @@ const AssignCalls = () => {
     const [selectedEngineer, setSelectedEngineer] = useState(null);
     const [dairyName, setDairyName] = useState('');
     const [problem, setProblem] = useState('');
+    const [priority, setPriority] = useState('Medium');
     const [assignedCalls, setAssignedCalls] = useState([]);
     const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
     const [userRole, setUserRole] = useState(''); // Add this line
@@ -126,7 +127,8 @@ const AssignCalls = () => {
                 mobile_number: selectedEngineer.mobile_number,
                 dairy_name: dairyName,
                 problem: problem,
-                description: problem
+                description: problem,
+                priority: priority
             };
 
             const response = await axios.post(
@@ -143,6 +145,7 @@ const AssignCalls = () => {
                 setSelectedEngineer(null);
                 setDairyName('');
                 setProblem('');
+                setPriority('Medium');
 
                 // ✅ REFRESH ASSIGNED CALLS
                 fetchAssignedCalls();
@@ -488,6 +491,7 @@ const AssignCalls = () => {
                                                                 setSelectedEngineer('');
                                                                 setDairyName(row.society || '');
                                                                 setProblem('');
+                                                                setPriority('Medium');
                                                                 setShowPopup(true);
                                                             }}
                                                             className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wide transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
@@ -566,7 +570,7 @@ const AssignCalls = () => {
                                                                 <h3 className="text-xl font-bold text-slate-900 leading-tight">{call.dairy_name}</h3>
                                                             </div>
 
-                                                            <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-50">
+                                                            <div className="grid grid-cols-3 gap-3 pb-3 border-b border-slate-50">
                                                                 <div>
                                                                     <div className="flex justify-between items-center mb-1">
                                                                         <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Engineer</p>
@@ -610,6 +614,15 @@ const AssignCalls = () => {
                                                                             <option value={call.status} disabled>{call.status.replace('_', ' ').toUpperCase()}</option>
                                                                         )}
                                                                     </select>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Priority</p>
+                                                                    <div className="mt-0.5 px-3 py-1.5 rounded-lg inline-block text-xs font-bold uppercase tracking-wider" style={{
+                                                                        backgroundColor: call.priority === 'High' ? '#fee2e2' : call.priority === 'Medium' ? '#fef3c7' : '#dcfce7',
+                                                                        color: call.priority === 'High' ? '#991b1b' : call.priority === 'Medium' ? '#92400e' : '#166534'
+                                                                    }}>
+                                                                        {call.priority === 'High' ? '🔴' : call.priority === 'Medium' ? '🟡' : '🟢'} {call.priority || 'Medium'}
+                                                                    </div>
                                                                 </div>
                                                             </div>
 
@@ -817,6 +830,26 @@ const AssignCalls = () => {
                                         {engineers.map(e => (
                                             <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
                                         ))}
+                                    </select>
+                                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                        <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
+                                    Priority Level
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        className="appearance-none w-full px-5 py-3.5 bg-slate-50/50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                        value={priority}
+                                        onChange={(e) => setPriority(e.target.value)}
+                                    >
+                                        <option value="Low">🟢 Low</option>
+                                        <option value="Medium">🟡 Medium</option>
+                                        <option value="High">🔴 High</option>
                                     </select>
                                     <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
                                         <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>

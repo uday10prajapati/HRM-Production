@@ -49,8 +49,13 @@ router.post('/assign', requireAuth, async (req, res) => {
       mobile_number,
       dairy_name,
       problem,
-      description
+      description,
+      priority
     } = req.body;
+
+    // Validate priority if provided
+    const validPriorities = ['High', 'Medium', 'Low'];
+    const finalPriority = priority && validPriorities.includes(priority) ? priority : 'Medium';
 
     const query = `
             INSERT INTO assign_call (
@@ -61,8 +66,9 @@ router.post('/assign', requireAuth, async (req, res) => {
                 dairy_name,
                 problem,
                 description,
+                priority,
                 status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'new')
             RETURNING *
         `;
 
@@ -73,7 +79,8 @@ router.post('/assign', requireAuth, async (req, res) => {
       mobile_number,
       dairy_name,
       problem,
-      description
+      description,
+      finalPriority
     ];
 
     const result = await pool.query(query, values);
@@ -171,7 +178,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       mobile_number,
       dairy_name,
       problem,
-      description
+      description,
+      priority
     } = req.body;
 
     // Validate required fields
@@ -182,6 +190,10 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       });
     }
 
+    // Validate priority if provided
+    const validPriorities = ['High', 'Medium', 'Low'];
+    const finalPriority = priority && validPriorities.includes(priority) ? priority : 'Medium';
+
     const query = `
             INSERT INTO assign_call (
                 id,
@@ -191,8 +203,9 @@ router.post('/assign-call', requireAuth, async (req, res) => {
                 dairy_name,
                 problem,
                 description,
+                priority,
                 status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'new')
             RETURNING *
         `;
 
@@ -203,7 +216,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       mobile_number,
       dairy_name,
       problem,
-      description
+      description,
+      finalPriority
     ]);
 
     res.json({

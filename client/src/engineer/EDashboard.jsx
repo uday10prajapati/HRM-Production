@@ -70,6 +70,9 @@ const EDashboard = () => {
         navigate('/');
     };
 
+    // Priority ordering function
+    const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2 };
+
     const formattedCalls = allCalls.filter(call => {
         const callDate = new Date(call.created_at);
         const from = new Date(fromDate);
@@ -89,7 +92,9 @@ const EDashboard = () => {
         notes: call.part_used ? `Used ${call.quantity_used || 0}x ${call.part_used}` : 'No parts used',
         assignedTo: call.engineer_name || user.name || 'Unknown',
         status: (call.status || 'new').toLowerCase(),
-    }));
+        priority: call.priority || 'Medium',
+        prioritySortOrder: priorityOrder[call.priority || 'Medium']
+    })).sort((a, b) => a.prioritySortOrder - b.prioritySortOrder);
 
     const newCalls = formattedCalls.filter(c => c.status === 'new');
     const pendingCalls = formattedCalls.filter(c => c.status === 'pending');
@@ -320,19 +325,29 @@ const EDashboard = () => {
                             <div className="flex justify-between items-start mt-1">
                                 <div>
                                     <h3 className="text-lg font-bold text-gray-800 tracking-tight">{call.dairyName}</h3>
-                                    <div className="flex items-center gap-2 mt-0.5">
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                         <p className="text-sm font-bold text-[#2a8bf2]">ID: {call.sequenceId}</p>
                                         <span className="text-gray-300">•</span>
                                         <p className="text-sm text-gray-500">{call.date}</p>
                                     </div>
                                 </div>
-                                <div
-                                    className={`px-3 py-1.5 text-xs font-bold rounded-md border uppercase ${call.status === 'new' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                                        call.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                                            'bg-green-100 text-green-800 border-green-200'
-                                        }`}
-                                >
-                                    {call.status}
+                                <div className="flex flex-col gap-2 items-end">
+                                    <div
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md border uppercase ${call.status === 'new' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                            call.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                                'bg-green-100 text-green-800 border-green-200'
+                                            }`}
+                                    >
+                                        {call.status}
+                                    </div>
+                                    <div
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md border uppercase flex items-center gap-1 ${call.priority === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
+                                            call.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                                'bg-green-100 text-green-800 border-green-200'
+                                            }`}
+                                    >
+                                        {call.priority === 'High' ? '🔴' : call.priority === 'Medium' ? '🟡' : '🟢'} {call.priority}
+                                    </div>
                                 </div>
                             </div>
 
