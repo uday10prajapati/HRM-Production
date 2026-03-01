@@ -3,6 +3,93 @@ import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
 import { Capacitor } from '@capacitor/core';
 
+// Try to import background geolocation for true background tracking
+let BackgroundGeolocation = null;
+const initBackgroundGeolocation = async () => {
+    if (BackgroundGeolocation) return BackgroundGeolocation;
+    try {
+        const moduleName = '@capacitor-community/background-geolocation';
+        const module = await import(moduleName).catch(() => null);
+        BackgroundGeolocation = module?.BackgroundGeolocation;
+        return BackgroundGeolocation;
+    } catch (error) {
+        console.warn('Background Geolocation not available');
+        return null;
+    }
+};
+
+/**
+ * Start true background geolocation (runs even when app is closed)
+ */
+async function startBackgroundGeolocation(userId) {
+    try {
+        const BGGeo = await initBackgroundGeolocation();
+        if (!BGGeo) {
+            console.warn('BackgroundGeolocation plugin not available, falling back to interval tracking');
+            return false;
+        }
+
+        console.log('🟢 Starting true background geolocation tracking');
+
+        // Configure background geolocation
+        await BGGeo.configure({
+            desiredAccuracy: 10, // 10 meters
+            stationaryRadius: 5, // 5 meters
+            distanceFilter: 5, // 5 meters - store every 5m moved
+            interval: 30000, // Check every 30 seconds
+            fastestInterval: 10000, // Fastest check every 10 seconds
+            activitiesInterval: 30000, // Activity check interval
+            notificationTitle: 'Location Tracking',
+            notificationText: 'Tracking work location',
+            startOnBoot: true,
+            stopOnTerminate: false, // IMPORTANT: Keep tracking even if app is terminated
+            startForeground: true,
+            allowIdenticalConsecutiveLocations: false,
+            heartbeatInterval: 60000, // Heartbeat every 60 seconds
+            params: { userId }
+        });
+
+        // Listen for location updates
+        BGGeo.onLocation(async (location) => {
+            console.log('📍 Background location received:', location);
+            try {
+                // Store the location
+                await storeLocation(location.latitude, location.longitude, userId);
+            } catch (error) {
+                console.error('Error storing background location:', error);
+            }
+        });
+
+        // Handle errors
+        BGGeo.onError((error) => {
+            console.error('❌ Background Geolocation error:', error);
+        });
+
+        // Start tracking
+        await BGGeo.start();
+        console.log('✅ Background geolocation started successfully');
+        return true;
+    } catch (error) {
+        console.error('Failed to start background geolocation:', error);
+        return false;
+    }
+}
+
+/**
+ * Stop true background geolocation
+ */
+async function stopBackgroundGeolocation() {
+    try {
+        const BGGeo = await initBackgroundGeolocation();
+        if (BGGeo) {
+            await BGGeo.stop();
+            console.log('🔴 Background geolocation stopped');
+        }
+    } catch (error) {
+        console.error('Error stopping background geolocation:', error);
+    }
+}
+
 /**
  * Background Location Tracking Service
  * - Fetches location every ~1 minute
@@ -209,11 +296,6 @@ export async function startLocationTracking(userId) {
         return;
     }
 
-    if (locationTrackingInterval) {
-        console.warn('Location tracking already running');
-        return;
-    }
-
     console.log('🟢 Starting background location tracking for user:', userId);
 
     // Save tracking state to localStorage
@@ -221,35 +303,41 @@ export async function startLocationTracking(userId) {
     localStorage.setItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE, 'true');
     localStorage.setItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID, userId);
 
-    // Fetch immediately
-    const location = await getCurrentLocation();
-    if (location) {
-        if (shouldStoreLocation(location)) {
-            await storeLocation(location.latitude, location.longitude, userId);
-            lastStoredLocation = location;
-            lastStoredTime = Date.now();
-        }
-    }
+    // Try to start true background geolocation first (works even when app is closed)
+    const bgStarted = await startBackgroundGeolocation(userId);
 
-    // Set up interval tracking
-    locationTrackingInterval = setInterval(async () => {
-        try {
-            const location = await getCurrentLocation();
-
-            if (location) {
-                if (shouldStoreLocation(location)) {
-                    await storeLocation(location.latitude, location.longitude, userId);
-                    lastStoredLocation = location;
-                    lastStoredTime = Date.now();
-                }
+    // Also set up interval tracking as fallback
+    if (!locationTrackingInterval) {
+        // Fetch immediately
+        const location = await getCurrentLocation();
+        if (location) {
+            if (shouldStoreLocation(location)) {
+                await storeLocation(location.latitude, location.longitude, userId);
+                lastStoredLocation = location;
+                lastStoredTime = Date.now();
             }
-        } catch (error) {
-            console.error('Error in location tracking interval:', error);
         }
-    }, INTERVAL_MS);
 
-    // Start heartbeat to monitor tracking health
-    startTrackingHeartbeat(userId);
+        // Set up interval tracking
+        locationTrackingInterval = setInterval(async () => {
+            try {
+                const location = await getCurrentLocation();
+
+                if (location) {
+                    if (shouldStoreLocation(location)) {
+                        await storeLocation(location.latitude, location.longitude, userId);
+                        lastStoredLocation = location;
+                        lastStoredTime = Date.now();
+                    }
+                }
+            } catch (error) {
+                console.error('Error in location tracking interval:', error);
+            }
+        }, INTERVAL_MS);
+
+        // Start heartbeat to monitor tracking health
+        startTrackingHeartbeat(userId);
+    }
 
     // Also register background task for when app is in background
     await backgroundLocationTask(userId);
@@ -266,6 +354,9 @@ export async function stopLocationTracking() {
     }
 
     stopTrackingHeartbeat();
+
+    // Stop background geolocation
+    await stopBackgroundGeolocation();
 
     // Clear tracking state
     localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE);
