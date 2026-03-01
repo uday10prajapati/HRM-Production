@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Geolocation } from '@capacitor/geolocation';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { startLocationTracking, stopLocationTracking, resumeLocationTrackingIfNeeded } from '../services/backgroundLocationService';
 
 const EAttandance = () => {
     const navigate = useNavigate();
@@ -63,6 +64,9 @@ const EAttandance = () => {
 
             // Set user auth header specifically for the backend's middleware
             axios.defaults.headers.common['x-user-id'] = parsed.id;
+
+            // Resume background location tracking if it was active
+            resumeLocationTrackingIfNeeded();
 
             // Only fetch for attendance tab, not TA
             if (activeMainTab === 'attendance') {
@@ -468,8 +472,16 @@ const EAttandance = () => {
                         if (isHalfDay) toast.warning('Half Day Marked.');
                     }
                     setPunchState('out'); // Now require punch out
+                    
+                    // 🟢 START BACKGROUND LOCATION TRACKING ON PUNCH IN
+                    toast.info('📍 Location tracking started', { autoClose: 1500 });
+                    await startLocationTracking(user.id);
                 } else {
                     setPunchState('in'); // Reset state if they punched out
+                    
+                    // 🔴 STOP BACKGROUND LOCATION TRACKING ON PUNCH OUT
+                    toast.info('📍 Location tracking stopped', { autoClose: 1500 });
+                    await stopLocationTracking();
                 }
 
                 // Refresh history and status

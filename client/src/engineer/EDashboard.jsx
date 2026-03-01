@@ -14,6 +14,8 @@ const EDashboard = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [user, setUser] = useState({});
     const [allCalls, setAllCalls] = useState([]);
+    const [touchStart, setTouchStart] = useState(null);
+    const [touchEnd, setTouchEnd] = useState(null);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -116,6 +118,30 @@ const EDashboard = () => {
 
     const handleMenuToggle = () => {
         setIsSidebarOpen(!isSidebarOpen);
+    };
+
+    // Swipe handling for tabs
+    const handleTouchStart = (e) => {
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchEnd = (e) => {
+        setTouchEnd(e.changedTouches[0].clientX);
+        if (!touchStart || !e.changedTouches[0].clientX) return;
+
+        const distance = touchStart - e.changedTouches[0].clientX;
+        const isLeftSwipe = distance > 50;
+        const isRightSwipe = distance < -50;
+
+        if (isLeftSwipe) {
+            // Swipe left - go to next tab
+            if (activeTab === 'new') setActiveTab('pending');
+            else if (activeTab === 'pending') setActiveTab('resolved');
+        } else if (isRightSwipe) {
+            // Swipe right - go to previous tab
+            if (activeTab === 'pending') setActiveTab('new');
+            else if (activeTab === 'resolved') setActiveTab('pending');
+        }
     };
 
     return (
@@ -265,7 +291,7 @@ const EDashboard = () => {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 p-4 flex flex-col gap-4">
+            <div className="flex-1 p-4 flex flex-col gap-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
                 {/* Date Filters - Match screenshot styling but modernised */}
                 <div className="flex gap-1 bg-[#3a3b3c] rounded-xl overflow-hidden shadow-md">
                     <div className="flex-1 bg-transparent p-3 relative flex items-center">
@@ -319,7 +345,7 @@ const EDashboard = () => {
                 {/* Basic List View */}
                 <div className="flex flex-col gap-4 mt-1">
                     {(activeTab === 'new' ? newCalls : activeTab === 'pending' ? pendingCalls : resolvedCalls).map(call => (
-                        <div key={call.id} onClick={() => navigate('/engineer-assign-call', { state: { call: call.rawCall } })} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex flex-col gap-3 group relative overflow-hidden cursor-pointer hover:shadow-md transition-shadow">
+                        <div key={call.id} onClick={() => call.status !== 'resolved' && navigate('/engineer-assign-call', { state: { call: call.rawCall } })} className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex flex-col gap-3 group relative overflow-hidden ${call.status !== 'resolved' ? 'cursor-pointer hover:shadow-md' : 'cursor-default'} transition-shadow`}>
                             <div className={`absolute top-0 left-0 right-0 h-1 md:h-1.5 ${call.status === 'new' ? 'bg-blue-400' : call.status === 'pending' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
 
                             <div className="flex justify-between items-start mt-1">

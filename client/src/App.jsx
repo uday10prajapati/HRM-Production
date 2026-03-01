@@ -32,9 +32,16 @@ import AssignedCalls from './pages/AssignCalls';
 import PendingTasks from './pages/PendingTasks';
 import AttendanceCorrectionPage from "./pages/AttReport";
 import LiveTracker from "./components/LiveTracker";
+import { resumeLocationTrackingIfNeeded } from "./services/backgroundLocationService";
 import 'leaflet/dist/leaflet.css';
 
 function App() {
+  React.useEffect(() => {
+    // Auto-resume background location tracking on app initialization
+    if (Capacitor.isNativePlatform()) {
+      resumeLocationTrackingIfNeeded().catch(err => console.error('Failed to resume location tracking:', err));
+    }
+  }, []);
   return (
     <Router>
       {Capacitor.isNativePlatform() && <LiveTracker />}
