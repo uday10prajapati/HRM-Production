@@ -543,7 +543,8 @@ router.get('/ta-approvals-test', async (req, res) => {
 // Submit TA approval/rejection action (admin/hr only)
 router.post('/ta-approval-action', requireAuth, async (req, res) => {
   try {
-    console.log('[TA-Action] Request received:', { call_id: req.body?.call_id, action: req.body?.action });
+    const { call_id, id, action, notes } = req.body;
+    console.log('[TA-Action] Request received:', { call_id, id, action });
     console.log('[TA-Action] User role:', req.user?.role);
     
     // Ensure columns exist first
@@ -559,11 +560,9 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Only HR/Admin can approve/reject TA' });
     }
 
-    const { call_id, action, notes } = req.body;
-
-    if (!call_id) {
-      console.log('[TA-Action] Missing call_id');
-      return res.status(400).json({ success: false, message: 'Missing call_id' });
+    if (!call_id && !id) {
+      console.log('[TA-Action] Missing both call_id and id');
+      return res.status(400).json({ success: false, message: 'Missing call_id or id' });
     }
 
     if (action !== 'approve' && action !== 'reject') {
@@ -574,52 +573,93 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
     const isHR = requesterRole === 'hr';
     const isAdmin = requesterRole === 'admin';
 
-    console.log('[TA-Action] Processing:', { isHR, isAdmin, action, call_id });
+    // Log current state before update
+    const beforeCheck = await pool.query(
+      `SELECT id, call_id, ta_hr_approved, ta_admin_approved, ta_rejected_by, ta_rejection_notes 
+       FROM assign_call 
+       WHERE id = $1 OR call_id = $2`,
+      [id, call_id]
+    );
+    console.log('[TA-Action] BEFORE UPDATE:', beforeCheck.rows[0] || 'NOT FOUND');
 
-    // Execute approval update based on role
+    // Determine which field to use for matching
+    console.log('[TA-Action] Processing:', { isHR, isAdmin, action, hasId: !!id, hasCallId: !!call_id });
+
+    // Execute approval update based on role - use simpler approach with CAST
     if (action === 'approve') {
       if (isHR) {
-        console.log('[TA-Action] HR approving call:', call_id);
-        await pool.query(
+        console.log('[TA-Action] HR approving call ID:', call_id);
+        const updateResult = await pool.query(
           `UPDATE assign_call 
            SET 
              ta_hr_approved = TRUE,
              ta_hr_approval_date = NOW(),
-             ta_hr_approval_notes = $1
-           WHERE call_id = $2`,
-          [notes || null, call_id]
+             ta_hr_approval_notes = $1,
+             ta_rejected_by = NULL,
+             ta_rejection_notes = NULL
+           WHERE call_id::text = $2`,
+          [notes || null, String(call_id)]
         );
+        console.log('[TA-Action] HR update result - rows affected:', updateResult.rowCount);
       } else if (isAdmin) {
-        console.log('[TA-Action] Admin approving call:', call_id);
-        await pool.query(
+        console.log('[TA-Action] Admin approving call ID:', call_id);
+        const updateResult = await pool.query(
           `UPDATE assign_call 
            SET 
              ta_admin_approved = TRUE,
              ta_admin_approval_date = NOW(),
-             ta_admin_approval_notes = $1
-           WHERE call_id = $2`,
-          [notes || null, call_id]
+             ta_admin_approval_notes = $1,
+             ta_rejected_by = NULL,
+             ta_rejection_notes = NULL
+           WHERE call_id::text = $2`,
+          [notes || null, String(call_id)]
         );
+        console.log('[TA-Action] Admin update result - rows affected:', updateResult.rowCount);
       }
     } else {
       // Rejection - use requesterId instead of name
-      console.log('[TA-Action] Rejecting call:', call_id, 'by user:', requesterId);
-      await pool.query(
+      console.log('[TA-Action] Rejecting call ID:', call_id, 'by user:', requesterId);
+      const rejectResult = await pool.query(
         `UPDATE assign_call 
          SET 
            ta_rejection_notes = $1,
            ta_rejected_by = $2,
            ta_hr_approved = FALSE,
            ta_admin_approved = FALSE
-         WHERE call_id = $3`,
-        [notes || null, requesterId, call_id]
+         WHERE call_id::text = $3`,
+        [notes || null, requesterId, String(call_id)]
       );
+      console.log('[TA-Action] Reject update result - rows affected:', rejectResult.rowCount);
     }
     console.log('[TA-Action] Update executed successfully');
 
+    // For approval actions, do another round of clearing to be absolutely sure
+    if (action === 'approve') {
+      console.log('[TA-Action] Force-clearing all rejection data...');
+      const clearResult = await pool.query(
+        `UPDATE assign_call 
+         SET 
+           ta_rejected_by = NULL,
+           ta_rejection_notes = NULL
+         WHERE call_id::text = $1`,
+        [String(call_id)]
+      );
+      console.log('[TA-Action] Rejection data cleared - rows affected:', clearResult.rowCount);
+    }
+
+    // Log state AFTER update to confirm changes
+    const afterCheck = await pool.query(
+      `SELECT id, call_id, ta_hr_approved, ta_admin_approved, ta_rejected_by, ta_rejection_notes 
+       FROM assign_call 
+       WHERE call_id::text = $1`,
+      [String(call_id)]
+    );
+    console.log('[TA-Action] AFTER UPDATE:', afterCheck.rows[0] || 'NOT FOUND');
+
     // Now fetch the updated record and calculate final status
-    const statusQuery = `
-      SELECT 
+    const result = await pool.query(
+      `SELECT 
+        id,
         call_id,
         formatted_call_id,
         ta_voucher_number,
@@ -633,18 +673,27 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
           ELSE 'Pending'
         END AS final_status
       FROM assign_call
-      WHERE call_id = $1
-    `;
+      WHERE call_id::text = $1`,
+      [String(call_id)]
+    );
 
-    console.log('[TA-Action] Fetching updated record for call_id:', call_id);
-    const result = await pool.query(statusQuery, [call_id]);
+    console.log('[TA-Action] Fetching updated record for ID or call_id');
 
     if (!result.rows || result.rows.length === 0) {
-      console.log('[TA-Action] Record not found for call_id:', call_id);
+      console.log('[TA-Action] Record not found');
       return res.status(404).json({ success: false, message: 'Call not found' });
     }
 
     const updatedRecord = result.rows[0];
+    console.log('[TA-Action] Updated record details:', {
+      id: updatedRecord.id,
+      call_id: updatedRecord.call_id,
+      ta_hr_approved: updatedRecord.ta_hr_approved,
+      ta_admin_approved: updatedRecord.ta_admin_approved,
+      ta_rejected_by: updatedRecord.ta_rejected_by,
+      ta_rejection_notes: updatedRecord.ta_rejection_notes,
+      final_status: updatedRecord.final_status
+    });
     console.log('[TA-Action] Success - Final status:', updatedRecord.final_status);
 
     return res.json({ 
@@ -1174,6 +1223,58 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('letterhead update error', err);
     return res.status(500).json({ success: false, message: 'Failed to update letterhead status' });
+  }
+});
+
+// Diagnostic endpoint to test database updates
+router.post('/api/service-calls/ta-diagnostic', async (req, res) => {
+  try {
+    const { call_id, id } = req.body;
+    console.log('[DIAGNOSTIC] Test with call_id:', call_id, 'id:', id);
+
+    // Step 1: Check current state
+    const before = await pool.query(
+      `SELECT id, call_id, ta_rejected_by, ta_admin_approved 
+       FROM assign_call 
+       WHERE call_id::text = $1 OR id = $2`,
+      [String(call_id), id]
+    );
+    console.log('[DIAGNOSTIC] Current state:', before.rows[0] || 'NOT FOUND');
+
+    // Step 2: Try simple direct UPDATE with CAST
+    if (before.rows.length > 0) {
+      const updateRes = await pool.query(
+        `UPDATE assign_call 
+         SET ta_rejected_by = NULL, ta_rejection_notes = NULL
+         WHERE call_id::text = $1
+         RETURNING id, call_id, ta_rejected_by, ta_rejection_notes`,
+        [String(call_id)]
+      );
+      console.log('[DIAGNOSTIC] Update result - rows affected:', updateRes.rowCount);
+      console.log('[DIAGNOSTIC] Updated record:', updateRes.rows[0] || 'NONE');
+
+      // Step 3: Verify with fresh query
+      const verify = await pool.query(
+        `SELECT id, call_id, ta_rejected_by, ta_admin_approved 
+         FROM assign_call 
+         WHERE call_id::text = $1`,
+        [String(call_id)]
+      );
+      console.log('[DIAGNOSTIC] Verification after update:', verify.rows[0] || 'NOT FOUND');
+
+      return res.json({
+        success: true,
+        before: before.rows[0],
+        updateRowsAffected: updateRes.rowCount,
+        updated: updateRes.rows[0],
+        verified: verify.rows[0]
+      });
+    }
+
+    return res.status(404).json({ success: false, message: 'Record not found' });
+  } catch (err) {
+    console.error('[DIAGNOSTIC] Error:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 

@@ -62,7 +62,15 @@ const TAApproval = () => {
             console.log('TA Records response:', res.data);
             
             if (res.data.success) {
-                setTaRecords(res.data.data || []);
+                const records = res.data.data || [];
+                console.log('Records loaded - check final_ta_status:', records.map(r => ({
+                    call_id: r.call_id,
+                    ta_rejected_by: r.ta_rejected_by,
+                    ta_hr_approved: r.ta_hr_approved,
+                    ta_admin_approved: r.ta_admin_approved,
+                    final_ta_status: r.final_ta_status
+                })));
+                setTaRecords(records);
                 setError(null);
             } else {
                 setError(res.data.message || 'Failed to fetch TA records');
@@ -120,17 +128,10 @@ const TAApproval = () => {
 
     const handleOpenModal = (ta) => {
         setSelectedTA(ta);
-        setApprovalNotes(ta.ta_rejection_notes || ta.ta_hr_approval_notes || ta.ta_admin_approval_notes || '');
+        setApprovalNotes(ta.ta_hr_approval_notes || ta.ta_admin_approval_notes || '');
         
-        // Pre-fill action based on current status
-        const status = getSimpleStatus(ta);
-        if (status === 'Rejected') {
-            setApprovalAction('reject');
-        } else if (status === 'Approved') {
-            setApprovalAction('approve');
-        } else {
-            setApprovalAction('approve'); // Default to approve for pending
-        }
+        // Always default to 'approve' - user can manually change to 'reject' if needed
+        setApprovalAction('approve');
         
         setShowModal(true);
     };
@@ -145,6 +146,7 @@ const TAApproval = () => {
             
             const res = await axios.post('/api/service-calls/ta-approval-action', {
                 call_id: selectedTA.call_id,
+                id: selectedTA.id,
                 action: approvalAction,
                 notes: approvalNotes
             }, {
@@ -157,7 +159,12 @@ const TAApproval = () => {
                 alert(`TA ${approvalAction}d successfully!`);
                 setShowModal(false);
                 setSubmitting(false);
-                await fetchTARecords();
+                setFilterStatus('all'); // Reset filter to show all records
+                
+                // Force a complete page refresh to ensure database changes are picked up
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             } else {
                 alert(res.data.message || 'Failed to process approval');
                 setSubmitting(false);
@@ -367,7 +374,7 @@ const TAApproval = () => {
             {/* Approval Modal */}
             {showModal && selectedTA && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-8">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-8 max-h-screen overflow-y-auto">
                         <h2 className="text-2xl font-bold text-slate-900 mb-6">
                             {getSimpleStatus(selectedTA) === 'Pending' ? 'Review TA Voucher' : 'Edit TA Approval'}
                         </h2>
@@ -426,6 +433,12 @@ const TAApproval = () => {
 
                         {/* Action Selection */}
                         <div className="mb-6">
+                            {selectedTA.ta_rejected_by && (
+                                <div className="p-3 mb-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                    <p className="text-xs font-semibold text-orange-800">⚠️ This TA was previously rejected</p>
+                                    <p className="text-xs text-orange-700 mt-1">You can change this decision by selecting Approve below</p>
+                                </div>
+                            )}
                             <label className="block text-sm font-semibold text-slate-700 mb-3">Action</label>
                             <div className="flex gap-3">
                                 <label className="flex items-center cursor-pointer">
@@ -469,10 +482,11 @@ const TAApproval = () => {
                                 onClick={() => setShowModal(false)}
                                 className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors"
                             >
-                                Cancel
+                                Close
                             </button>
                             <button
                                 onClick={handleSubmitApproval}
+                                disabled={submitting}
                                 className={`flex-1 px-4 py-2 text-white rounded-lg font-semibold transition-colors ${
                                     approvalAction === 'approve' 
                                         ? 'bg-green-600 hover:bg-green-700' 
