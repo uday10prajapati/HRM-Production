@@ -36,13 +36,33 @@ const TAApproval = () => {
         try {
             setLoading(true);
             setError(null);
+            
+            // Get user from localStorage
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            const userId = user?.id;
+            
+            console.log('Fetching TA records with user:', { userId, userName: user?.name });
+            
+            if (!userId) {
+                setError('User not logged in');
+                setLoading(false);
+                return;
+            }
+            
             // Use 'pending' as default if filterStatus is empty, otherwise use the filterStatus value
             const statusParam = filterStatus === '' ? 'all' : filterStatus;
             const res = await axios.get('/api/service-calls/ta-approvals', {
-                params: { status: statusParam }
+                params: { status: statusParam },
+                headers: {
+                    'x-user-id': userId
+                }
             });
+            
+            console.log('TA Records response:', res.data);
+            
             if (res.data.success) {
                 setTaRecords(res.data.data || []);
+                setError(null);
             } else {
                 setError(res.data.message || 'Failed to fetch TA records');
             }
@@ -108,10 +128,17 @@ const TAApproval = () => {
         if (!selectedTA) return;
 
         try {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            const userId = user.id;
+            
             const res = await axios.post('/api/service-calls/ta-approval-action', {
                 call_id: selectedTA.call_id,
                 action: approvalAction,
                 notes: approvalNotes
+            }, {
+                headers: userId ? {
+                    'x-user-id': String(userId)
+                } : {}
             });
 
             if (res.data.success) {

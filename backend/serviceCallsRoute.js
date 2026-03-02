@@ -452,6 +452,100 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// === TA APPROVAL ENDPOINTS (BEFORE WILDCARD ROUTE!) ===
+
+// Get TA records for approval (admin/hr only)
+router.get('/ta-approvals', requireAuth, async (req, res) => {
+  try {
+    // Select all columns - avoids column mismatch issues
+    const taResult = await pool.query(
+      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+    );
+    
+    return res.status(200).json({ success: true, data: taResult.rows || [] });
+    
+  } catch (err) {
+    // Log error for debugging
+    console.error('[TA-Approvals] Error:', err?.message || err);
+    // Return safe response
+    return res.status(200).json({ success: true, data: [] });
+  }
+});
+
+// TEST ENDPOINT - TA approvals without auth (for debugging)
+router.get('/ta-approvals-test', async (req, res) => {
+  try {
+    const taResult = await pool.query(
+      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+    );
+    
+    return res.status(200).json({ success: true, data: taResult.rows || [] });
+    
+  } catch (err) {
+    console.error('[TA-Approvals-Test] Error:', err?.message || err);
+    return res.status(200).json({ success: true, data: [] });
+  }
+});
+
+// Submit TA approval/rejection action (admin/hr only)
+router.post('/ta-approval-action', requireAuth, async (req, res) => {
+  try {
+    const requesterRole = req.user?.role ?? '';
+    
+    // Only HR and Admin can approve/reject TA
+    if (!isHrOrAdmin(requesterRole)) {
+      return res.status(403).json({ success: false, message: 'Only HR/Admin can approve/reject TA' });
+    }
+
+    const { call_id, action, notes } = req.body;
+
+    if (!call_id) {
+      return res.status(400).json({ success: false, message: 'Missing call_id' });
+    }
+
+    if (action !== 'approve' && action !== 'reject') {
+      return res.status(400).json({ success: false, message: 'Invalid action. Must be approve or reject' });
+    }
+
+    // Determine the new status
+    const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
+
+    // Build update query
+    let query = `
+      UPDATE assign_call 
+      SET 
+        ta_status = $1,
+        ta_approval_notes = $2,
+        ta_approval_date = NOW(),
+        ta_approved_by = $3,
+        updated_at = NOW()
+      WHERE call_id::text = $4
+      RETURNING 
+        call_id,
+        formatted_call_id,
+        call_type,
+        name,
+        ta_voucher_number,
+        ta_status,
+        ta_approval_notes,
+        ta_approval_date,
+        ta_approved_by
+    `;
+
+    const result = await pool.query(query, [newStatus, notes || null, req.user?.name || 'HR/Admin', String(call_id)]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    console.log(`TA ${action}ed for call ${call_id} by ${req.user?.name}`);
+    return res.json({ success: true, message: `TA ${action}ed successfully`, record: result.rows[0] });
+  } catch (err) {
+    console.error('Error processing TA approval action:', err.message || err);
+    return res.status(500).json({ success: false, message: 'Failed to process TA action', error: err.message });
+  }
+});
+
 // GET /api/assign_call/:id
 router.get('/:id', requireAuth, async (req, res) => {
   try {
@@ -698,103 +792,6 @@ router.post('/send-sms', async (req, res) => {
     });
   }
 });
-
-// === TA APPROVAL ENDPOINTS ===
-
-// Get TA records for approval (admin/hr only)
-// Get TA records for approval (admin/hr only)
-router.get('/ta-approvals', requireAuth, async (req, res) => {
-  try {
-    // Select all columns - avoids column mismatch issues
-    const taResult = await pool.query(
-      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
-    );
-    
-    return res.status(200).json({ success: true, data: taResult.rows || [] });
-    
-  } catch (err) {
-    // Log error for debugging
-    console.error('[TA-Approvals] Error:', err?.message || err);
-    // Return safe response
-    return res.status(200).json({ success: true, data: [] });
-  }
-});
-
-// TEST ENDPOINT - TA approvals without auth (for debugging)
-router.get('/ta-approvals-test', async (req, res) => {
-  try {
-    const taResult = await pool.query(
-      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
-    );
-    
-    return res.status(200).json({ success: true, data: taResult.rows || [] });
-    
-  } catch (err) {
-    console.error('[TA-Approvals-Test] Error:', err?.message || err);
-    return res.status(200).json({ success: true, data: [] });
-  }
-});
-
-// Submit TA approval/rejection action (admin/hr only)
-router.post('/ta-approval-action', requireAuth, async (req, res) => {
-  try {
-    const requesterRole = req.user?.role ?? '';
-    
-    // Only HR and Admin can approve/reject TA
-    if (!isHrOrAdmin(requesterRole)) {
-      return res.status(403).json({ success: false, message: 'Only HR/Admin can approve/reject TA' });
-    }
-
-    const { call_id, action, notes } = req.body;
-
-    if (!call_id) {
-      return res.status(400).json({ success: false, message: 'Missing call_id' });
-    }
-
-    if (action !== 'approve' && action !== 'reject') {
-      return res.status(400).json({ success: false, message: 'Invalid action. Must be approve or reject' });
-    }
-
-    // Determine the new status
-    const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
-
-    // Build update query
-    let query = `
-      UPDATE assign_call 
-      SET 
-        ta_status = $1,
-        ta_approval_notes = $2,
-        ta_approval_date = NOW(),
-        ta_approved_by = $3,
-        updated_at = NOW()
-      WHERE call_id::text = $4
-      RETURNING 
-        call_id,
-        formatted_call_id,
-        call_type,
-        name,
-        ta_voucher_number,
-        ta_status,
-        ta_approval_notes,
-        ta_approval_date,
-        ta_approved_by
-    `;
-
-    const result = await pool.query(query, [newStatus, notes || null, req.user?.name || 'HR/Admin', String(call_id)]);
-
-    if (!result.rows || result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Call not found' });
-    }
-
-    console.log(`TA ${action}ed for call ${call_id} by ${req.user?.name}`);
-    return res.json({ success: true, message: `TA ${action}ed successfully`, record: result.rows[0] });
-  } catch (err) {
-    console.error('Error processing TA approval action:', err.message || err);
-    return res.status(500).json({ success: false, message: 'Failed to process TA action', error: err.message });
-  }
-});
-
-export default router;
 
 // --- New endpoints: update status and letterhead workflow ---
 
@@ -1058,3 +1055,5 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to update letterhead status' });
   }
 });
+
+export default router;
