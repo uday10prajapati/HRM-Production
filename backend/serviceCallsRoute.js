@@ -13,6 +13,41 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
+// Helper function to format call_id with prefix and sequence based on call_type
+const formatCallId = (baseId, callType, sequenceNumber) => {
+  const prefix = callType === 'PM Call' ? 'P-' : 'S-';
+  return `${prefix}${baseId}/${sequenceNumber}`;
+};
+
+// Helper function to generate base ID in DDMMYY format
+const generateBaseCallId = () => {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  return `${dd}${mm}${yy}`;
+};
+
+// Helper function to get next sequence number for the day
+const getNextSequenceNumber = async (baseId, callType) => {
+  try {
+    const prefix = callType === 'PM Call' ? 'P-' : 'S-';
+    const pattern = `${prefix}${baseId}/%`;
+    
+    const query = `
+      SELECT COUNT(*) as count FROM assign_call 
+      WHERE call_id LIKE $1
+    `;
+    
+    const result = await pool.query(query, [pattern]);
+    const nextSequence = (result.rows[0]?.count || 0) + 1;
+    return nextSequence;
+  } catch (err) {
+    console.error('Error getting sequence number:', err);
+    return 1; // Default to 1 if error
+  }
+};
+
 // (removed simple engineers-only /search route)
 
 // Add route for assigned calls
@@ -179,7 +214,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       dairy_name,
       problem,
       description,
-      priority
+      priority,
+      call_type
     } = req.body;
 
     // Validate required fields
@@ -194,6 +230,15 @@ router.post('/assign-call', requireAuth, async (req, res) => {
     const validPriorities = ['High', 'Medium', 'Low'];
     const finalPriority = priority && validPriorities.includes(priority) ? priority : 'Medium';
 
+    // Validate and format call_type
+    const validCallTypes = ['Service Call', 'PM Call'];
+    const finalCallType = call_type && validCallTypes.includes(call_type) ? call_type : 'Service Call';
+
+    // Generate base ID and format with prefix and sequence
+    const baseCallId = generateBaseCallId();
+    const sequenceNumber = await getNextSequenceNumber(baseCallId, finalCallType);
+    const formattedCallId = formatCallId(baseCallId, finalCallType, sequenceNumber);
+
     const query = `
             INSERT INTO assign_call (
                 id,
@@ -204,8 +249,10 @@ router.post('/assign-call', requireAuth, async (req, res) => {
                 problem,
                 description,
                 priority,
+                call_type,
+                call_id,
                 status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'new')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')
             RETURNING *
         `;
 
@@ -217,7 +264,9 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       dairy_name,
       problem,
       description,
-      finalPriority
+      finalPriority,
+      finalCallType,
+      formattedCallId
     ]);
 
     res.json({

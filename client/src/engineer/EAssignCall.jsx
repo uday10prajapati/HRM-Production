@@ -12,6 +12,17 @@ const EAssignCall = () => {
     const callData = location.state?.call || {};
     const isResolved = callData?.status?.toLowerCase() === 'resolved';
 
+    // Helper function to format call_id based on call_type
+    const getFormattedCallId = (callId, callType) => {
+        if (!callId) return 'N/A';
+        // If already formatted (starts with S- or P-), return as is
+        if (callId.startsWith('S-') || callId.startsWith('P-')) return callId;
+        // Extract the numeric part if it exists
+        const numericPart = callId.replace(/^[SP]-/, '');
+        const prefix = callType === 'PM Call' ? 'P-' : 'S-';
+        return `${prefix}${numericPart || callId}`;
+    };
+
     // --- MODULE 1: Visit Entry State ---
     const [visitEntry, setVisitEntry] = useState(callData?.visit_entry || '');
     // Parsing potentially valid dates format (just mocked here for demo)
@@ -298,9 +309,14 @@ const EAssignCall = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                     </svg>
                 </button>
-                <h1 className="text-xl font-bold tracking-wide flex-1 text-center pr-10">
-                    {isResolved ? 'Resolved Call Details' : 'Assign Call Details'}
-                </h1>
+                <div className="flex-1 text-center pr-10">
+                    <h1 className="text-xl font-bold tracking-wide">
+                        {isResolved ? 'Resolved Call Details' : 'Assign Call Details'}
+                    </h1>
+                    <p className="text-xs font-semibold opacity-90 mt-1">
+                        Call ID: {getFormattedCallId(callData?.call_id, callData?.call_type)}
+                    </p>
+                </div>
             </div>
 
             {isResolved && (

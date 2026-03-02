@@ -17,6 +17,7 @@ const AssignCalls = () => {
     const [dairyName, setDairyName] = useState('');
     const [problem, setProblem] = useState('');
     const [priority, setPriority] = useState('Medium');
+    const [callType, setCallType] = useState('Service Call');
     const [assignedCalls, setAssignedCalls] = useState([]);
     const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
     const [userRole, setUserRole] = useState(''); // Add this line
@@ -42,6 +43,17 @@ const AssignCalls = () => {
         if (!userRole) return false;
         const role = userRole.toLowerCase();
         return role === 'admin' || role === 'hr';
+    };
+
+    // Helper function to format call_id based on call_type
+    const getFormattedCallId = (callId, callType) => {
+        if (!callId) return 'N/A';
+        // If already formatted (starts with S- or P-), return as is
+        if (callId.startsWith('S-') || callId.startsWith('P-')) return callId;
+        // Extract the numeric part if it exists
+        const numericPart = callId.replace(/^[SP]-/, '');
+        const prefix = callType === 'PM Call' ? 'P-' : 'S-';
+        return `${prefix}${numericPart || callId}`;
     };
 
     useEffect(() => {
@@ -128,7 +140,8 @@ const AssignCalls = () => {
                 dairy_name: dairyName,
                 problem: problem,
                 description: problem,
-                priority: priority
+                priority: priority,
+                call_type: callType
             };
 
             const response = await axios.post(
@@ -146,6 +159,7 @@ const AssignCalls = () => {
                 setDairyName('');
                 setProblem('');
                 setPriority('Medium');
+                setCallType('Service Call');
 
                 // ✅ REFRESH ASSIGNED CALLS
                 fetchAssignedCalls();
@@ -492,6 +506,7 @@ const AssignCalls = () => {
                                                                 setDairyName(row.society || '');
                                                                 setProblem('');
                                                                 setPriority('Medium');
+                                                                setCallType('Service Call');
                                                                 setShowPopup(true);
                                                             }}
                                                             className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wide transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
@@ -564,7 +579,12 @@ const AssignCalls = () => {
                                                         <div className="flex-1 space-y-4 min-w-[300px]">
                                                             <div>
                                                                 <div className="flex items-center gap-3 mb-1">
-                                                                    <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] uppercase font-bold tracking-wider">Case #{call.id || call.call_id}</div>
+                                                                    <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] uppercase font-bold tracking-wider">Case #{getFormattedCallId(call.call_id, call.call_type) || call.id}</div>
+                                                                    {call.call_type && (
+                                                                        <span className={`px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider ${call.call_type === 'PM Call' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                            {call.call_type === 'PM Call' ? '🔧 PM' : '📞 Service'}
+                                                                        </span>
+                                                                    )}
                                                                     <span className="text-xs font-semibold text-slate-400">{new Date(call.created_at).toLocaleString()}</span>
                                                                 </div>
                                                                 <h3 className="text-xl font-bold text-slate-900 leading-tight">{call.dairy_name}</h3>
@@ -837,22 +857,43 @@ const AssignCalls = () => {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
-                                    Priority Level
-                                </label>
-                                <div className="relative">
-                                    <select
-                                        className="appearance-none w-full px-5 py-3.5 bg-slate-50/50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
-                                        value={priority}
-                                        onChange={(e) => setPriority(e.target.value)}
-                                    >
-                                        <option value="Low">🟢 Low</option>
-                                        <option value="Medium">🟡 Medium</option>
-                                        <option value="High">🔴 High</option>
-                                    </select>
-                                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                                        <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
+                                        Call Type
+                                    </label>
+                                    <div className="relative">
+                                        <select
+                                            className="appearance-none w-full px-5 py-3.5 bg-slate-50/50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                            value={callType}
+                                            onChange={(e) => setCallType(e.target.value)}
+                                        >
+                                            <option value="Service Call">📞 Service Call</option>
+                                            <option value="PM Call">🔧 PM Call</option>
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                            <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
+                                        Priority Level
+                                    </label>
+                                    <div className="relative">
+                                        <select
+                                            className="appearance-none w-full px-5 py-3.5 bg-slate-50/50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                            value={priority}
+                                            onChange={(e) => setPriority(e.target.value)}
+                                        >
+                                            <option value="Low">🟢 Low</option>
+                                            <option value="Medium">🟡 Medium</option>
+                                            <option value="High">🔴 High</option>
+                                        </select>
+                                        <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                            <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
