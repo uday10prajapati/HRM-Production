@@ -1,32 +1,26 @@
--- Migration: Add call_type column and ensure call_id supports formatted IDs
--- Description: Adds call_type column for Service Call vs PM Call distinction
+-- Migration: Add call_type and formatted_call_id columns
+-- Description: Safer approach - keeps call_id as numeric, adds new formatted_call_id for display
+
+BEGIN;
 
 -- Add call_type column if it doesn't exist
 ALTER TABLE assign_call 
 ADD COLUMN IF NOT EXISTS call_type VARCHAR(50) DEFAULT 'Service Call';
 
--- Set NOT NULL constraint on call_type
+-- Add new formatted_call_id column for the display ID (S-220226/1, P-220226/1)
+ALTER TABLE assign_call
+ADD COLUMN IF NOT EXISTS formatted_call_id VARCHAR(50);
+
+-- Add NOT NULL constraints
 ALTER TABLE assign_call 
 ALTER COLUMN call_type SET NOT NULL;
 
--- Ensure call_id is VARCHAR and large enough for formatted IDs (e.g., "S-220226" or "P-220226")
--- First, try to convert the column if it's currently numeric
-DO $$
-BEGIN
-    -- Check if call_id is numeric and convert it to VARCHAR
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'assign_call' 
-        AND column_name = 'call_id' 
-        AND data_type IN ('integer', 'bigint', 'smallint')
-    ) THEN
-        -- Drop the identity constraint if exists
-        ALTER TABLE assign_call ALTER COLUMN call_id DROP IDENTITY IF EXISTS;
-        -- Change the column type to VARCHAR
-        ALTER TABLE assign_call ALTER COLUMN call_id TYPE VARCHAR(50);
-    END IF;
-END $$;
+-- Make formatted_call_id unique since it will be the business identifier
+CREATE UNIQUE INDEX IF NOT EXISTS idx_formatted_call_id ON assign_call(formatted_call_id) 
+WHERE formatted_call_id IS NOT NULL;
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_assign_call_type ON assign_call(call_type);
-CREATE INDEX IF NOT EXISTS idx_assign_call_id ON assign_call(call_id);
+CREATE INDEX IF NOT EXISTS idx_assign_call_created_at ON assign_call(created_at);
+
+COMMIT;

@@ -579,7 +579,7 @@ const AssignCalls = () => {
                                                         <div className="flex-1 space-y-4 min-w-[300px]">
                                                             <div>
                                                                 <div className="flex items-center gap-3 mb-1">
-                                                                    <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] uppercase font-bold tracking-wider">Case #{getFormattedCallId(call.call_id, call.call_type) || call.id}</div>
+                                                                    <div className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] uppercase font-bold tracking-wider">Case #{getFormattedCallId(call.formatted_call_id || call.call_id, call.call_type) || call.id}</div>
                                                                     {call.call_type && (
                                                                         <span className={`px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider ${call.call_type === 'PM Call' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
                                                                             {call.call_type === 'PM Call' ? '🔧 PM' : '📞 Service'}

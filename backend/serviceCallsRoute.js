@@ -36,11 +36,12 @@ const getNextSequenceNumber = async (baseId, callType) => {
     
     const query = `
       SELECT COUNT(*) as count FROM assign_call 
-      WHERE call_id LIKE $1
+      WHERE formatted_call_id LIKE $1
     `;
     
     const result = await pool.query(query, [pattern]);
-    const nextSequence = (result.rows[0]?.count || 0) + 1;
+    const count = parseInt(result.rows[0]?.count) || 0;
+    const nextSequence = count + 1;
     return nextSequence;
   } catch (err) {
     console.error('Error getting sequence number:', err);
@@ -239,6 +240,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
     const sequenceNumber = await getNextSequenceNumber(baseCallId, finalCallType);
     const formattedCallId = formatCallId(baseCallId, finalCallType, sequenceNumber);
 
+    console.log('Assigning call with ID:', formattedCallId, 'Type:', finalCallType);
+
     const query = `
             INSERT INTO assign_call (
                 id,
@@ -250,7 +253,7 @@ router.post('/assign-call', requireAuth, async (req, res) => {
                 description,
                 priority,
                 call_type,
-                call_id,
+                formatted_call_id,
                 status
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')
             RETURNING *
@@ -276,10 +279,12 @@ router.post('/assign-call', requireAuth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error assigning call:', err);
+    console.error('Error assigning call - Full Error:', err);
+    console.error('Error message:', err.message);
+    console.error('Error code:', err.code);
     res.status(500).json({
       success: false,
-      message: 'Failed to assign call'
+      message: 'Failed to assign call: ' + err.message
     });
   }
 });

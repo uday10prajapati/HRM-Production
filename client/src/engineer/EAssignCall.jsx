@@ -314,7 +314,7 @@ const EAssignCall = () => {
                         {isResolved ? 'Resolved Call Details' : 'Assign Call Details'}
                     </h1>
                     <p className="text-xs font-semibold opacity-90 mt-1">
-                        Call ID: {getFormattedCallId(callData?.call_id, callData?.call_type)}
+                        Call ID: {getFormattedCallId(callData?.formatted_call_id || callData?.call_id, callData?.call_type)}
                     </p>
                 </div>
             </div>
