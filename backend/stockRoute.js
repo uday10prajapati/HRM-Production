@@ -529,4 +529,114 @@ router.delete('/product-items/:name', async (req, res) => {
   }
 });
 
+// Bulk assign items to engineer
+router.post('/bulk-assign', async (req, res) => {
+  try {
+    const { itemIds, engineerId, quantity } = req.body;
+    
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Invalid itemIds array' });
+    }
+    if (!engineerId) {
+      return res.status(400).json({ error: 'Missing engineerId' });
+    }
+    if (typeof quantity !== 'number' || quantity < 1) {
+      return res.status(400).json({ error: 'Quantity must be a positive number' });
+    }
+
+    let assignedCount = 0;
+    let failedCount = 0;
+
+    for (const itemId of itemIds) {
+      try {
+        // Check if stock item exists
+        const itemCheck = await pool.query('SELECT id, quantity FROM stock_items WHERE id = $1', [itemId]);
+        if (itemCheck.rows.length === 0) {
+          failedCount++;
+          continue;
+        }
+
+        const itemQty = itemCheck.rows[0].quantity;
+        const assignQty = Math.min(quantity, itemQty);
+
+        if (assignQty > 0) {
+          // Insert or update engineer_stock
+          await pool.query(
+            `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = quantity + $3`,
+            [engineerId, itemId, assignQty]
+          );
+
+          // Deduct from central stock
+          await pool.query(
+            'UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2',
+            [assignQty, itemId]
+          );
+
+          assignedCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (itemErr) {
+        console.error('Error assigning item:', itemErr);
+        failedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Assigned ${assignedCount} items, ${failedCount} failed`,
+      assigned: assignedCount,
+      failed: failedCount
+    });
+  } catch (err) {
+    console.error('Bulk assign error:', err);
+    res.status(500).json({ error: 'Failed to bulk assign items', details: err.message });
+  }
+});
+
+// Bulk delete items
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { itemIds } = req.body;
+    
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Invalid itemIds array' });
+    }
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const itemId of itemIds) {
+      try {
+        // Delete associated engineer_stock records first
+        await pool.query('DELETE FROM engineer_stock WHERE stock_item_id = $1', [itemId]);
+        
+        // Delete the stock item
+        const deleteResult = await pool.query('DELETE FROM stock_items WHERE id = $1', [itemId]);
+        
+        if (deleteResult.rowCount > 0) {
+          deletedCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (itemErr) {
+        console.error('Error deleting item:', itemErr);
+        failedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Deleted ${deletedCount} items, ${failedCount} failed`,
+      deleted: deletedCount,
+      failed: failedCount
+    });
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    res.status(500).json({ error: 'Failed to bulk delete items', details: err.message });
+  }
+});
+
 export default router;
