@@ -185,7 +185,11 @@ router.get('/ta-records', requireAuth, async (req, res) => {
         ta_voucher_number, 
         ta_call_type, 
         ta_travel_mode, 
-        ta_status, 
+        CASE 
+          WHEN ta_rejected_by IS NOT NULL THEN 'Rejected'
+          WHEN COALESCE(ta_hr_approved, FALSE) = TRUE OR COALESCE(ta_admin_approved, FALSE) = TRUE THEN 'Approved'
+          ELSE 'Pending'
+        END as ta_status,
         ta_revised_km, 
         ta_revised_places, 
         kms_traveled
@@ -393,6 +397,28 @@ function isHrOrAdmin(role) {
   return r === 'admin' || r === 'hr';
 }
 
+// Helper: ensure TA approval columns exist by executing each ALTER TABLE separately
+async function ensureTAColumns() {
+  const columns = [
+    'ta_hr_approved BOOLEAN DEFAULT FALSE',
+    'ta_admin_approved BOOLEAN DEFAULT FALSE',
+    'ta_hr_approval_date TIMESTAMP',
+    'ta_admin_approval_date TIMESTAMP',
+    'ta_hr_approval_notes TEXT',
+    'ta_admin_approval_notes TEXT',
+    'ta_rejection_notes TEXT',
+    'ta_rejected_by TEXT'
+  ];
+  
+  for (const col of columns) {
+    try {
+      await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ${col}`);
+    } catch (err) {
+      console.warn(`[TA-Migration] Warning adding column: ${col}`, err?.message);
+    }
+  }
+}
+
 // POST /api/assign_call
 // Body: { title, description, customerId, engineerId?, scheduled_at? }
 // Only admin/manager/hr may assign engineer; others cannot set engineer_id
@@ -455,11 +481,25 @@ router.post('/', requireAuth, async (req, res) => {
 // === TA APPROVAL ENDPOINTS (BEFORE WILDCARD ROUTE!) ===
 
 // Get TA records for approval (admin/hr only)
+// Calculates final status based on either HR or Admin approval
 router.get('/ta-approvals', requireAuth, async (req, res) => {
   try {
-    // Select all columns - avoids column mismatch issues
+    // First, ensure the approval columns exist
+    await ensureTAColumns();
+
+    // Now fetch TA records with status calculation
     const taResult = await pool.query(
-      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+      `SELECT 
+        *,
+        CASE 
+          WHEN ta_rejected_by IS NOT NULL THEN 'Rejected'
+          WHEN COALESCE(ta_hr_approved, FALSE) = TRUE OR COALESCE(ta_admin_approved, FALSE) = TRUE THEN 'Approved'
+          ELSE 'Pending'
+        END AS final_ta_status
+       FROM assign_call 
+       WHERE ta_voucher_number IS NOT NULL 
+       ORDER BY created_at DESC 
+       LIMIT 100`
     );
     
     return res.status(200).json({ success: true, data: taResult.rows || [] });
@@ -475,8 +515,21 @@ router.get('/ta-approvals', requireAuth, async (req, res) => {
 // TEST ENDPOINT - TA approvals without auth (for debugging)
 router.get('/ta-approvals-test', async (req, res) => {
   try {
+    // Ensure columns exist
+    await ensureTAColumns();
+
     const taResult = await pool.query(
-      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+      `SELECT 
+        *,
+        CASE 
+          WHEN ta_rejected_by IS NOT NULL THEN 'Rejected'
+          WHEN COALESCE(ta_hr_approved, FALSE) = TRUE OR COALESCE(ta_admin_approved, FALSE) = TRUE THEN 'Approved'
+          ELSE 'Pending'
+        END AS final_ta_status
+       FROM assign_call 
+       WHERE ta_voucher_number IS NOT NULL 
+       ORDER BY created_at DESC 
+       LIMIT 100`
     );
     
     return res.status(200).json({ success: true, data: taResult.rows || [] });
@@ -490,59 +543,127 @@ router.get('/ta-approvals-test', async (req, res) => {
 // Submit TA approval/rejection action (admin/hr only)
 router.post('/ta-approval-action', requireAuth, async (req, res) => {
   try {
-    const requesterRole = req.user?.role ?? '';
+    console.log('[TA-Action] Request received:', { call_id: req.body?.call_id, action: req.body?.action });
+    console.log('[TA-Action] User role:', req.user?.role);
+    
+    // Ensure columns exist first
+    await ensureTAColumns();
+    console.log('[TA-Action] Columns ensured');
+
+    const requesterRole = (req.user?.role ?? '').toLowerCase();
+    const requesterId = req.user?.id || 'unknown';
     
     // Only HR and Admin can approve/reject TA
     if (!isHrOrAdmin(requesterRole)) {
+      console.log('[TA-Action] Access denied - not HR/Admin. Role:', requesterRole);
       return res.status(403).json({ success: false, message: 'Only HR/Admin can approve/reject TA' });
     }
 
     const { call_id, action, notes } = req.body;
 
     if (!call_id) {
+      console.log('[TA-Action] Missing call_id');
       return res.status(400).json({ success: false, message: 'Missing call_id' });
     }
 
     if (action !== 'approve' && action !== 'reject') {
+      console.log('[TA-Action] Invalid action:', action);
       return res.status(400).json({ success: false, message: 'Invalid action. Must be approve or reject' });
     }
 
-    // Determine the new status
-    const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
+    const isHR = requesterRole === 'hr';
+    const isAdmin = requesterRole === 'admin';
 
-    // Build update query
-    let query = `
-      UPDATE assign_call 
-      SET 
-        ta_status = $1,
-        ta_approval_notes = $2,
-        ta_approval_date = NOW(),
-        ta_approved_by = $3,
-        updated_at = NOW()
-      WHERE call_id::text = $4
-      RETURNING 
+    console.log('[TA-Action] Processing:', { isHR, isAdmin, action, call_id });
+
+    // Execute approval update based on role
+    if (action === 'approve') {
+      if (isHR) {
+        console.log('[TA-Action] HR approving call:', call_id);
+        await pool.query(
+          `UPDATE assign_call 
+           SET 
+             ta_hr_approved = TRUE,
+             ta_hr_approval_date = NOW(),
+             ta_hr_approval_notes = $1
+           WHERE call_id = $2`,
+          [notes || null, call_id]
+        );
+      } else if (isAdmin) {
+        console.log('[TA-Action] Admin approving call:', call_id);
+        await pool.query(
+          `UPDATE assign_call 
+           SET 
+             ta_admin_approved = TRUE,
+             ta_admin_approval_date = NOW(),
+             ta_admin_approval_notes = $1
+           WHERE call_id = $2`,
+          [notes || null, call_id]
+        );
+      }
+    } else {
+      // Rejection - use requesterId instead of name
+      console.log('[TA-Action] Rejecting call:', call_id, 'by user:', requesterId);
+      await pool.query(
+        `UPDATE assign_call 
+         SET 
+           ta_rejection_notes = $1,
+           ta_rejected_by = $2,
+           ta_hr_approved = FALSE,
+           ta_admin_approved = FALSE
+         WHERE call_id = $3`,
+        [notes || null, requesterId, call_id]
+      );
+    }
+    console.log('[TA-Action] Update executed successfully');
+
+    // Now fetch the updated record and calculate final status
+    const statusQuery = `
+      SELECT 
         call_id,
         formatted_call_id,
-        call_type,
-        name,
         ta_voucher_number,
-        ta_status,
-        ta_approval_notes,
-        ta_approval_date,
-        ta_approved_by
+        COALESCE(ta_hr_approved, FALSE) as ta_hr_approved,
+        COALESCE(ta_admin_approved, FALSE) as ta_admin_approved,
+        ta_rejected_by,
+        ta_rejection_notes,
+        CASE 
+          WHEN ta_rejected_by IS NOT NULL THEN 'Rejected'
+          WHEN COALESCE(ta_hr_approved, FALSE) = TRUE OR COALESCE(ta_admin_approved, FALSE) = TRUE THEN 'Approved'
+          ELSE 'Pending'
+        END AS final_status
+      FROM assign_call
+      WHERE call_id = $1
     `;
 
-    const result = await pool.query(query, [newStatus, notes || null, req.user?.name || 'HR/Admin', String(call_id)]);
+    console.log('[TA-Action] Fetching updated record for call_id:', call_id);
+    const result = await pool.query(statusQuery, [call_id]);
 
     if (!result.rows || result.rows.length === 0) {
+      console.log('[TA-Action] Record not found for call_id:', call_id);
       return res.status(404).json({ success: false, message: 'Call not found' });
     }
 
-    console.log(`TA ${action}ed for call ${call_id} by ${req.user?.name}`);
-    return res.json({ success: true, message: `TA ${action}ed successfully`, record: result.rows[0] });
+    const updatedRecord = result.rows[0];
+    console.log('[TA-Action] Success - Final status:', updatedRecord.final_status);
+
+    return res.json({ 
+      success: true, 
+      message: `TA ${action} recorded. Current status: ${updatedRecord.final_status}`, 
+      record: updatedRecord 
+    });
+
   } catch (err) {
-    console.error('Error processing TA approval action:', err.message || err);
-    return res.status(500).json({ success: false, message: 'Failed to process TA action', error: err.message });
+    console.error('[TA-Action] Error:', {
+      message: err?.message,
+      stack: err?.stack,
+      name: err?.name
+    });
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to process TA action', 
+      error: err?.message 
+    });
   }
 });
 

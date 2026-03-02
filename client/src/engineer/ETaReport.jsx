@@ -47,9 +47,9 @@ const ETaReport = () => {
     // Helper to determine status color
     const getStatusStyles = (status) => {
         const s = String(status).toLowerCase();
-        if (s.includes('approved') && s.includes('pending')) return 'bg-orange-100 text-orange-700 border-orange-200';
         if (s === 'approved') return 'bg-green-100 text-green-700 border-green-200';
         if (s === 'rejected') return 'bg-red-100 text-red-700 border-red-200';
+        if (s === 'pending') return 'bg-blue-100 text-blue-700 border-blue-200';
         return 'bg-blue-100 text-blue-700 border-blue-200';
     };
 

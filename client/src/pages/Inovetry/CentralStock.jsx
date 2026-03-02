@@ -15,6 +15,10 @@ export default function CentralStock() {
     engineerId: '',
     assignQuantity: 0
   });
+  const [currentEngineerStock, setCurrentEngineerStock] = useState(0); // Track engineer's current stock
+  const [loadingEngineerStock, setLoadingEngineerStock] = useState(false);
+  const [bulkCurrentStock, setBulkCurrentStock] = useState(0); // For bulk mode
+  const [loadingBulkStock, setLoadingBulkStock] = useState(false);
   const [users, setUsers] = useState([]);
   const [submitMessage, setSubmitMessage] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -78,39 +82,118 @@ export default function CentralStock() {
     })();
   }, []);
 
+  // Fetch engineer's current stock for selected product
+  useEffect(() => {
+    async function fetchEngineerStock() {
+      if (!form.productName || !form.engineerId) {
+        setCurrentEngineerStock(0);
+        return;
+      }
+
+      setLoadingEngineerStock(true);
+      try {
+        const response = await axios.get(`/api/stock/engineer-stock/${form.engineerId}/${encodeURIComponent(form.productName)}`);
+        setCurrentEngineerStock(response.data?.quantity || 0);
+      } catch (err) {
+        console.error('Failed to fetch engineer stock', err);
+        setCurrentEngineerStock(0);
+      } finally {
+        setLoadingEngineerStock(false);
+      }
+    }
+    fetchEngineerStock();
+  }, [form.productName, form.engineerId]);
+
+  // Fetch engineer's current stock for bulk mode
+  useEffect(() => {
+    async function fetchBulkEngineerStock() {
+      if (!bulkStockProduct || !bulkStockEngineer) {
+        setBulkCurrentStock(0);
+        return;
+      }
+
+      setLoadingBulkStock(true);
+      try {
+        const response = await axios.get(`/api/stock/engineer-stock/${bulkStockEngineer}/${encodeURIComponent(bulkStockProduct)}`);
+        setBulkCurrentStock(response.data?.quantity || 0);
+      } catch (err) {
+        console.error('Failed to fetch bulk engineer stock', err);
+        setBulkCurrentStock(0);
+      } finally {
+        setLoadingBulkStock(false);
+      }
+    }
+    fetchBulkEngineerStock();
+  }, [bulkStockProduct, bulkStockEngineer]);
+
+  // Helper function to render Current Stock display card
+  function renderCurrentStockCard(product, engineerId, currentStock, isLoading) {
+    if (!product || !engineerId) return null;
+
+    const engineer = users.find(u => u.id === engineerId);
+    return (
+      <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">Current Stock Status</h3>
+        <div className="flex items-center justify-between p-3 bg-white rounded border border-blue-100">
+          <div>
+            <p className="text-sm text-gray-600">Current Quantity for <strong>{product}</strong></p>
+            <p className="text-xs text-gray-500">Available to {engineer?.name || 'selected engineer'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isLoading ? (
+              <div className="animate-spin">⟳</div>
+            ) : (
+              <>
+                <span className={`text-2xl font-bold ${currentStock === 0 ? 'text-red-600' : currentStock <= 5 ? 'text-orange-600' : 'text-green-600'}`}>
+                  {currentStock}
+                </span>
+                <span className="text-sm font-medium px-3 py-1 rounded-full bg-white border border-gray-200">
+                  {currentStock === 0 ? '🔴 Empty' : currentStock <= 5 ? '🟡 Low' : '🟢 Healthy'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        {currentStock === 0 && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+            <p className="text-xs text-red-800"><strong>⚠️ Stock is empty!</strong> Assign stock immediately.</p>
+          </div>
+        )}
+        {currentStock > 0 && currentStock <= 5 && (
+          <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded">
+            <p className="text-xs text-orange-800"><strong>⚡ Low stock!</strong> Consider restocking.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     try {
-      const q = Number(form.quantity ?? 0);
-      const th = Number(form.threshold ?? 0);
-      if (Number.isNaN(q) || Number.isNaN(th) || q < 0 || th < 0) {
-        return alert('Quantity and Threshold must be non-negative numbers');
+      // Validate required fields
+      if (!form.name.trim()) {
+        return alert('Please enter item name');
       }
-      if (th > q) {
-        const ok = window.confirm('Threshold is greater than Quantity — this item is already low. Do you want to continue saving?');
-        if (!ok) return;
-      }
-
-      // Engineer assignment is mandatory
       if (!form.engineerId) {
         return alert('Please select an engineer to assign stock to');
       }
       const assignQty = Number(form.assignQuantity ?? 0);
       if (Number.isNaN(assignQty) || assignQty < 0 || assignQty === 0) {
-        return alert('Assign Quantity must be a positive number');
+        return alert('Quantity must be a positive number');
       }
 
-      // Use combined endpoint - engineer assignment is mandatory
+      // Direct engineer assignment - no central stock created
       await axios.post('/api/stock/items-with-assign', {
         name: form.name,
         description: form.description,
-        quantity: q,
-        threshold: th,
+        quantity: assignQty,
+        threshold: 1,
         engineerId: form.engineerId,
         assignQuantity: assignQty
       });
       
-      setSubmitMessage(`✓ Stock item created and assigned to engineer!`);
+      setSubmitMessage(`✓ Stock item assigned to engineer!`);
 
       // Reset form
       setForm({ 
@@ -352,19 +435,24 @@ export default function CentralStock() {
           {!bulkStockMode ? (
             // NORMAL MODE - Single Item
             <form onSubmit={handleSubmit} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                {/* Step 1: Select Product */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Product</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Step 1: Select Product <span className="text-red-500">*</span></label>
                   <select 
                     value={form.productName}
                     onChange={e => {
                       setForm(f => ({
                         ...f,
                         productName: e.target.value,
-                        name: e.target.value
+                        name: e.target.value,
+                        engineerId: '', // Reset engineer when product changes
+                        assignQuantity: 0
                       }));
+                      setCurrentEngineerStock(0);
                     }}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                    required
                   >
                     <option value="">Select Product</option>
                     {productItems.map(product => (
@@ -375,62 +463,15 @@ export default function CentralStock() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                  <input 
-                    value={form.name}
-                    onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter item name"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                  <input 
-                    value={form.description}
-                    onChange={e => setForm(f => ({...f, description: e.target.value}))}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter item description"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
-                  <input 
-                    type="number"
-                    min="0"
-                    value={form.quantity}
-                    onChange={e => setForm(f => ({...f, quantity: Number(e.target.value)}))}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter quantity"
-                  />
-                  <p className="mt-1 text-sm text-gray-500">Current stock level</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Threshold</label>
-                  <input 
-                    type="number"
-                    min="0"
-                    value={form.threshold}
-                    onChange={e => setForm(f => ({...f, threshold: Number(e.target.value)}))}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter threshold"
-                  />
-                  <p className="mt-1 text-sm text-gray-500">Minimum stock level before reorder</p>
-                </div>
-              </div>
-
-              {/* Engineer Assignment Section - Mandatory */}
-              <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-4">Assign to Engineer (Required)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Step 2: Select Engineer */}
+                {form.productName && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Engineer <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Step 2: Select Engineer <span className="text-red-500">*</span></label>
                     <select 
                       value={form.engineerId}
-                      onChange={e => setForm(f => ({...f, engineerId: e.target.value}))}
+                      onChange={e => {
+                        setForm(f => ({...f, engineerId: e.target.value, assignQuantity: 0}));
+                      }}
                       className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
                       required
                     >
@@ -440,43 +481,62 @@ export default function CentralStock() {
                       ))}
                     </select>
                   </div>
+                )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Quantity to Assign <span className="text-red-500">*</span></label>
-                    <input 
-                      type="number"
-                      min="1"
-                      value={form.assignQuantity}
-                      onChange={e => setForm(f => ({...f, assignQuantity: Number(e.target.value)}))}
-                      className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                      placeholder="Enter quantity for engineer"
-                      required
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Will be deducted from central stock</p>
-                  </div>
-                </div>
-              </div>
+                {/* Step 3: Show Current Stock */}
+                {form.productName && form.engineerId && (
+                  <>
+                    {renderCurrentStockCard(form.productName, form.engineerId, currentEngineerStock, loadingEngineerStock)}
 
-              <div className="mt-6 flex gap-3">
-                <button 
-                  type="submit"
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Add Item
-                </button>
-                {submitMessage && (
-                  <div className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium ${
-                    submitMessage.startsWith('✓') 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {submitMessage}
-                  </div>
+                    {/* Step 4: Assign Additional Stock */}
+                    <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-4">Add Stock</h3>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Quantity to Assign <span className="text-red-500">*</span></label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="number"
+                            min="1"
+                            value={form.assignQuantity}
+                            onChange={e => setForm(f => ({...f, assignQuantity: Number(e.target.value)}))}
+                            className="flex-1 rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                            placeholder="How much to assign?"
+                            required
+                          />
+                          <div className="text-right pt-2">
+                            <p className="text-lg font-bold text-green-600">{currentEngineerStock + (form.assignQuantity || 0)}</p>
+                            <p className="text-xs text-gray-500">New total</p>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-600">📊 Current: <strong>{currentEngineerStock}</strong> + Assign: <strong>{form.assignQuantity || 0}</strong> = <strong>{currentEngineerStock + (form.assignQuantity || 0)}</strong></p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
+
+              {form.productName && form.engineerId && (
+                <div className="mt-8 flex gap-3">
+                  <button 
+                    type="submit"
+                    className="inline-flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Assign Stock
+                  </button>
+                  {submitMessage && (
+                    <div className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium ${
+                      submitMessage.startsWith('✓') 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {submitMessage}
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           ) : (
             // BULK MODE - Multiple Items per Product
@@ -513,6 +573,13 @@ export default function CentralStock() {
                     </select>
                   </div>
                 </div>
+
+                {/* Current Stock Display for Bulk Mode */}
+                {bulkStockProduct && bulkStockEngineer && (
+                  <>
+                    {renderCurrentStockCard(bulkStockProduct, bulkStockEngineer, bulkCurrentStock, loadingBulkStock)}
+                  </>
+                )}
 
                 <div className="border-t pt-6">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">Add Items for {bulkStockProduct || 'this product'}</h3>

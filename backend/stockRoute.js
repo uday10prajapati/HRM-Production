@@ -69,6 +69,32 @@ router.get('/items', async (req, res) => {
   }
 });
 
+// Get engineer's current stock for a specific product
+router.get('/engineer-stock/:engineerId/:productName', async (req, res) => {
+  try {
+    const { engineerId, productName } = req.params;
+
+    // Query to find the stock quantity for the engineer for the specific product
+    const result = await pool.query(
+      `SELECT COALESCE(es.quantity, 0) as quantity
+       FROM stock_items si
+       LEFT JOIN engineer_stock es ON si.id = es.stock_item_id AND es.engineer_id = $1
+       WHERE si.name = $2
+       LIMIT 1`,
+      [engineerId, decodeURIComponent(productName)]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ quantity: 0 });
+    }
+
+    res.json({ quantity: result.rows[0].quantity || 0 });
+  } catch (err) {
+    console.error('Error fetching engineer stock:', err);
+    res.status(500).json({ error: 'Failed to fetch engineer stock', quantity: 0 });
+  }
+});
+
 // Create or update item
 router.post('/items', async (req, res) => {
   try {
@@ -134,11 +160,14 @@ router.post('/items-with-assign', async (req, res) => {
       );
       assignedToEngineer = assignResult.rows[0];
 
-      // Deduct from central stock
-      await client.query(
-        'UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2',
-        [Number(assignQuantity || 0), createdItem.id]
-      );
+      // For direct assignment (quantity = assignQuantity), keep the quantity in central stock
+      // Only deduct if there's more than what's being assigned
+      if (quantity > assignQuantity) {
+        await client.query(
+          'UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2',
+          [Number(assignQuantity || 0), createdItem.id]
+        );
+      }
     }
 
     await client.query('COMMIT');

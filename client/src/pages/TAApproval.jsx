@@ -23,6 +23,7 @@ const TAApproval = () => {
     const [selectedTA, setSelectedTA] = useState(null);
     const [approvalNotes, setApprovalNotes] = useState('');
     const [approvalAction, setApprovalAction] = useState('approve');
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -85,10 +86,10 @@ const TAApproval = () => {
         // Filter by status
         if (filterStatus && filterStatus !== 'all') {
             filtered = filtered.filter(ta => {
-                const statusLower = (ta.ta_status || '').toLowerCase();
-                if (filterStatus === 'pending') return statusLower.includes('pending');
-                if (filterStatus === 'approved') return statusLower.includes('approved');
-                if (filterStatus === 'rejected') return statusLower.includes('reject');
+                const status = getSimpleStatus(ta);
+                if (filterStatus === 'pending') return status === 'Pending';
+                if (filterStatus === 'approved') return status === 'Approved';
+                if (filterStatus === 'rejected') return status === 'Rejected';
                 return true;
             });
         }
@@ -119,14 +120,25 @@ const TAApproval = () => {
 
     const handleOpenModal = (ta) => {
         setSelectedTA(ta);
-        setApprovalNotes('');
-        setApprovalAction('approve');
+        setApprovalNotes(ta.ta_rejection_notes || ta.ta_hr_approval_notes || ta.ta_admin_approval_notes || '');
+        
+        // Pre-fill action based on current status
+        const status = getSimpleStatus(ta);
+        if (status === 'Rejected') {
+            setApprovalAction('reject');
+        } else if (status === 'Approved') {
+            setApprovalAction('approve');
+        } else {
+            setApprovalAction('approve'); // Default to approve for pending
+        }
+        
         setShowModal(true);
     };
 
     const handleSubmitApproval = async () => {
-        if (!selectedTA) return;
+        if (!selectedTA || submitting) return;
 
+        setSubmitting(true);
         try {
             const user = JSON.parse(localStorage.getItem('user') || '{}');
             const userId = user.id;
@@ -144,30 +156,41 @@ const TAApproval = () => {
             if (res.data.success) {
                 alert(`TA ${approvalAction}d successfully!`);
                 setShowModal(false);
-                fetchTARecords();
+                setSubmitting(false);
+                await fetchTARecords();
             } else {
                 alert(res.data.message || 'Failed to process approval');
+                setSubmitting(false);
             }
         } catch (err) {
             console.error('Error processing approval:', err);
             alert(err.response?.data?.message || 'Failed to process approval');
+            setSubmitting(false);
         }
     };
 
     const getStatusColor = (status) => {
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('reject')) return 'bg-red-100 text-red-800 border-red-200';
-        if (statusLower.includes('approved')) return 'bg-green-100 text-green-800 border-green-200';
-        if (statusLower.includes('pending')) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        if (statusLower === 'approved') return 'bg-green-100 text-green-800 border-green-200';
+        if (statusLower === 'pending') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
         return 'bg-gray-100 text-gray-800 border-gray-200';
     };
 
-    const getSimpleStatus = (status) => {
-        const statusLower = (status || '').toLowerCase();
-        if (statusLower.includes('reject')) return 'Rejected';
-        if (statusLower.includes('approved')) return 'Approved';
-        if (statusLower.includes('pending')) return 'Pending';
-        return status || 'Unknown';
+    const getSimpleStatus = (ta) => {
+        // Use final_ta_status from backend if available
+        if (ta.final_ta_status) {
+            return ta.final_ta_status;
+        }
+        // Fallback: calculate locally
+        if (ta.ta_rejected_by) return 'Rejected';
+        if (ta.ta_hr_approved || ta.ta_admin_approved) return 'Approved';
+        return 'Pending';
+    };
+    const getApprovalDetails = (ta) => {
+        const hr = ta.ta_hr_approved ? '✓ HR' : '○ HR';
+        const admin = ta.ta_admin_approved ? '✓ Admin' : '○ Admin';
+        return `${hr} | ${admin}`;
     };
 
     const isPending = (status) => {
@@ -297,21 +320,34 @@ const TAApproval = () => {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`px-3 py-1.5 rounded-full text-xs font-bold border ${getStatusColor(ta.ta_status)}`}>
-                                                        {getSimpleStatus(ta.ta_status)}
-                                                    </span>
+                                                    <div>
+                                                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold border ${getStatusColor(getSimpleStatus(ta))}`}>
+                                                            {getSimpleStatus(ta)}
+                                                        </span>
+                                                        <div className="text-xs text-slate-500 mt-1">{getApprovalDetails(ta)}</div>
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {isPending(ta.ta_status) ? (
-                                                        <button
-                                                            onClick={() => handleOpenModal(ta)}
-                                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors"
-                                                        >
-                                                            Review
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-slate-400 text-sm">Processed</span>
-                                                    )}
+                                                    <div className="flex gap-2">
+                                                        {getSimpleStatus(ta) === 'Pending' ? (
+                                                            <button
+                                                                onClick={() => handleOpenModal(ta)}
+                                                                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors"
+                                                            >
+                                                                Review
+                                                            </button>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleOpenModal(ta)}
+                                                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <span className="text-slate-400 text-sm px-2 py-2">Processed</span>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -332,7 +368,9 @@ const TAApproval = () => {
             {showModal && selectedTA && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
                     <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-8">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-6">Review TA Voucher</h2>
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6">
+                            {getSimpleStatus(selectedTA) === 'Pending' ? 'Review TA Voucher' : 'Edit TA Approval'}
+                        </h2>
 
                         {/* TA Details */}
                         <div className="bg-slate-50 rounded-lg p-4 mb-6 space-y-3">
@@ -359,6 +397,30 @@ const TAApproval = () => {
                             <div className="flex justify-between">
                                 <span className="text-slate-600 font-medium">Travel Mode:</span>
                                 <span className="text-slate-900">{selectedTA.ta_travel_mode || 'N/A'}</span>
+                            </div>
+                            <div className="border-t border-slate-200 pt-3 mt-3">
+                                <div className="text-sm font-semibold text-slate-700 mb-2">Approval Status:</div>
+                                
+                                {/* Show rejection status if rejected */}
+                                {selectedTA.ta_rejected_by && (
+                                    <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded">
+                                        <p className="text-xs font-semibold text-red-800">🔴 REJECTED</p>
+                                        <p className="text-xs text-red-700">Rejected by: {selectedTA.ta_rejected_by}</p>
+                                        {selectedTA.ta_rejection_notes && (
+                                            <p className="text-xs text-red-600 mt-1">Reason: {selectedTA.ta_rejection_notes}</p>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                <div className="flex gap-4 text-sm">
+                                    <div className={`px-3 py-1 rounded ${selectedTA.ta_hr_approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                                        {selectedTA.ta_hr_approved ? '✓' : '○'} HR {selectedTA.ta_hr_approved ? 'Approved' : 'Pending'}
+                                    </div>
+                                    <div className={`px-3 py-1 rounded ${selectedTA.ta_admin_approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                                        {selectedTA.ta_admin_approved ? '✓' : '○'} Admin {selectedTA.ta_admin_approved ? 'Approved' : 'Pending'}
+                                    </div>
+                                </div>
+                                <div className="mt-2 text-xs text-slate-500">Either HR or Admin approval required for final approval</div>
                             </div>
                         </div>
 
