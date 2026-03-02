@@ -32,20 +32,13 @@ const EDashboard = () => {
         try {
             const res = await axios.get('/api/service-calls/assigned-calls');
             if (res.data.success) {
-                // Calculate DDMMYY/sequence for ALL calls before filtering
+                // Use formatted_call_id directly from database
                 const sorted = [...res.data.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-                const dateCounts = {};
-                const callsWithId = sorted.map(c => {
-                    const d = new Date(c.created_at);
-                    const dd = String(d.getDate()).padStart(2, '0');
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const yy = String(d.getFullYear()).slice(-2);
-                    const dateKey = `${dd}${mm}${yy}`;
-
-                    if (!dateCounts[dateKey]) dateCounts[dateKey] = 0;
-                    dateCounts[dateKey]++;
-                    return { ...c, sequence_id: `${dateKey}/${dateCounts[dateKey]}` };
-                });
+                
+                const callsWithId = sorted.map(c => ({
+                    ...c,
+                    sequence_id: c.formatted_call_id || `${c.call_type === 'PM Call' ? 'P-' : 'S-'}${c.call_id}`
+                }));
 
                 const engineerCalls = callsWithId.filter(c => String(c.id) === String(user.id));
                 setAllCalls(engineerCalls);
