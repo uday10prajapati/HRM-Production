@@ -351,7 +351,6 @@ const TAApproval = () => {
                                                                 >
                                                                     Edit
                                                                 </button>
-                                                                <span className="text-slate-400 text-sm px-2 py-2">Processed</span>
                                                             </>
                                                         )}
                                                     </div>
