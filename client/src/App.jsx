@@ -32,6 +32,7 @@ import AssignedCalls from './pages/AssignCalls';
 import PendingTasks from './pages/PendingTasks';
 import AttendanceCorrectionPage from "./pages/AttReport";
 import LiveTracker from "./components/LiveTracker";
+import TAApproval from "./pages/TAApproval";
 import { resumeLocationTrackingIfNeeded } from "./services/backgroundLocationService";
 import 'leaflet/dist/leaflet.css';
 
@@ -83,6 +84,7 @@ function App() {
         <Route path="/assigned-calls" element={<AssignedCalls />} />
         <Route path="/tasks/pending" element={<PendingTasks />} />
         <Route path="/corrections" element={<AttendanceCorrectionPage />} />
+        <Route path="/ta-approval" element={<ProtectedRoute><TAApproval /></ProtectedRoute>} />
       </Routes>
     </Router>
   );

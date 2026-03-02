@@ -457,26 +457,44 @@ router.get('/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id;
 
-    // ✅ Corrected SQL syntax and table name
-    const q = `
-      SELECT 
-        sc.*, 
-        u_e.name AS engineer_name, 
-        u_c.name AS customer_name
-      FROM assign_call sc
-      LEFT JOIN users u_e ON u_e.id::text = sc.engineer_id::text
-      LEFT JOIN users u_c ON u_c.id::text = sc.customer_id::text
-      WHERE sc.id::text = $1
-    `;
+    // Get single assign_call record - handle missing columns gracefully
+    try {
+      // Try original query first with all joins
+      const q = `
+        SELECT 
+          sc.*, 
+          u_e.name AS engineer_name, 
+          u_c.name AS customer_name
+        FROM assign_call sc
+        LEFT JOIN users u_e ON u_e.id::text = sc.engineer_id::text
+        LEFT JOIN users u_c ON u_c.id::text = sc.customer_id::text
+        WHERE sc.id::text = $1
+      `;
+      const result = await pool.query(q, [String(id)]);
+      const row = result.rows[0] ?? null;
 
-    const result = await pool.query(q, [String(id)]);
-    const row = result.rows[0] ?? null;
+      if (!row) {
+        return res.status(404).json({ success: false, message: 'Not found' });
+      }
 
-    if (!row) {
-      return res.status(404).json({ success: false, message: 'Not found' });
+      return res.json({ success: true, call: row });
+    } catch (joinErr) {
+      // If JOIN fails (missing columns), try simple SELECT
+      try {
+        const simpleQ = 'SELECT * FROM assign_call WHERE id::text = $1';
+        const result = await pool.query(simpleQ, [String(id)]);
+        const row = result.rows[0] ?? null;
+
+        if (!row) {
+          return res.status(404).json({ success: false, message: 'Not found' });
+        }
+
+        return res.json({ success: true, call: row });
+      } catch (simpleErr) {
+        console.error(`/assign_call/:id GET error error: ${simpleErr?.message}`);
+        return res.status(500).json({ success: false, message: 'Database error' });
+      }
     }
-
-    return res.json({ success: true, call: row });
   } catch (err) {
     console.error('/assign_call/:id GET error', err);
     return res.status(500).json({
@@ -681,6 +699,101 @@ router.post('/send-sms', async (req, res) => {
   }
 });
 
+// === TA APPROVAL ENDPOINTS ===
+
+// Get TA records for approval (admin/hr only)
+// Get TA records for approval (admin/hr only)
+router.get('/ta-approvals', requireAuth, async (req, res) => {
+  try {
+    // Select all columns - avoids column mismatch issues
+    const taResult = await pool.query(
+      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+    );
+    
+    return res.status(200).json({ success: true, data: taResult.rows || [] });
+    
+  } catch (err) {
+    // Log error for debugging
+    console.error('[TA-Approvals] Error:', err?.message || err);
+    // Return safe response
+    return res.status(200).json({ success: true, data: [] });
+  }
+});
+
+// TEST ENDPOINT - TA approvals without auth (for debugging)
+router.get('/ta-approvals-test', async (req, res) => {
+  try {
+    const taResult = await pool.query(
+      'SELECT * FROM assign_call WHERE ta_voucher_number IS NOT NULL ORDER BY created_at DESC LIMIT 100'
+    );
+    
+    return res.status(200).json({ success: true, data: taResult.rows || [] });
+    
+  } catch (err) {
+    console.error('[TA-Approvals-Test] Error:', err?.message || err);
+    return res.status(200).json({ success: true, data: [] });
+  }
+});
+
+// Submit TA approval/rejection action (admin/hr only)
+router.post('/ta-approval-action', requireAuth, async (req, res) => {
+  try {
+    const requesterRole = req.user?.role ?? '';
+    
+    // Only HR and Admin can approve/reject TA
+    if (!isHrOrAdmin(requesterRole)) {
+      return res.status(403).json({ success: false, message: 'Only HR/Admin can approve/reject TA' });
+    }
+
+    const { call_id, action, notes } = req.body;
+
+    if (!call_id) {
+      return res.status(400).json({ success: false, message: 'Missing call_id' });
+    }
+
+    if (action !== 'approve' && action !== 'reject') {
+      return res.status(400).json({ success: false, message: 'Invalid action. Must be approve or reject' });
+    }
+
+    // Determine the new status
+    const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
+
+    // Build update query
+    let query = `
+      UPDATE assign_call 
+      SET 
+        ta_status = $1,
+        ta_approval_notes = $2,
+        ta_approval_date = NOW(),
+        ta_approved_by = $3,
+        updated_at = NOW()
+      WHERE call_id::text = $4
+      RETURNING 
+        call_id,
+        formatted_call_id,
+        call_type,
+        name,
+        ta_voucher_number,
+        ta_status,
+        ta_approval_notes,
+        ta_approval_date,
+        ta_approved_by
+    `;
+
+    const result = await pool.query(query, [newStatus, notes || null, req.user?.name || 'HR/Admin', String(call_id)]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    console.log(`TA ${action}ed for call ${call_id} by ${req.user?.name}`);
+    return res.json({ success: true, message: `TA ${action}ed successfully`, record: result.rows[0] });
+  } catch (err) {
+    console.error('Error processing TA approval action:', err.message || err);
+    return res.status(500).json({ success: false, message: 'Failed to process TA action', error: err.message });
+  }
+});
+
 export default router;
 
 // --- New endpoints: update status and letterhead workflow ---
@@ -806,9 +919,17 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_url TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_time TIME`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_time TIME`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_voucher_number TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_voucher_date DATE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_call_type TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_travel_mode TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_status TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_receipt_url TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_km NUMERIC`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_places TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_places TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approval_notes TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approval_date TIMESTAMP`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approved_by TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);

@@ -96,6 +96,69 @@ router.post('/items', async (req, res) => {
   }
 });
 
+// Create stock item and optionally assign to engineer in one operation
+router.post('/items-with-assign', async (req, res) => {
+  const { name, description, quantity, threshold, dairy_name, notes, use_item, engineerId, assignQuantity } = req.body;
+  
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Create stock item
+    const itemResult = await client.query(
+      `
+      INSERT INTO stock_items (
+        name,
+        description,
+        quantity,
+        threshold,
+        dairy_name,
+        notes,
+        use_item
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `,
+      [name, description, quantity, threshold, dairy_name, notes, use_item]
+    );
+
+    const createdItem = itemResult.rows[0];
+    let assignedToEngineer = null;
+
+    // 2. Optionally assign to engineer
+    if (engineerId && assignQuantity) {
+      const assignResult = await client.query(
+        `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) VALUES ($1, $2, $3)
+         ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
+         RETURNING *`,
+        [String(engineerId), String(createdItem.id), Number(assignQuantity || 0)]
+      );
+      assignedToEngineer = assignResult.rows[0];
+
+      // Deduct from central stock
+      await client.query(
+        'UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2',
+        [Number(assignQuantity || 0), createdItem.id]
+      );
+    }
+
+    await client.query('COMMIT');
+    
+    res.json({ 
+      item: createdItem,
+      assigned: assignedToEngineer,
+      message: assignedToEngineer 
+        ? `Stock item created and assigned to engineer` 
+        : 'Stock item created'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('Error creating stock item with assignment:', err);
+    res.status(500).json({ error: 'Failed to create stock item' });
+  } finally {
+    client.release();
+  }
+});
+
 // Assign stock item to engineer (create or upsert)
 router.post('/assign', async (req, res) => {
   const { engineerId, stockItemId, quantity = 0 } = req.body;

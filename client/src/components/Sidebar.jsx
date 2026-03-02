@@ -72,7 +72,8 @@ const Sidebar = () => {
           children: [
             { to: "/attendance", label: "Time & Attendance" },
             { to: "/leave-management", label: "Leave Management" },
-            { to: "/inventory", label: "Inventory & Stock" }
+            { to: "/inventory", label: "Inventory & Stock" },
+            { to: "/ta-approval", label: "TA Approvals" }
           ]
         },
         {
