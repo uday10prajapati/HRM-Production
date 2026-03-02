@@ -11,7 +11,7 @@ export default function CentralStock() {
     name: '', 
     description: '', 
     quantity: 0, 
-    threshold: 5,
+    threshold: 1,
     engineerId: '',
     assignQuantity: 0
   });
@@ -22,7 +22,7 @@ export default function CentralStock() {
     name: '',
     description: '',
     quantity: 0,
-    threshold: 5
+    threshold: 1
   });
 
   // Fetch product items from database
@@ -102,7 +102,7 @@ export default function CentralStock() {
         name: '', 
         description: '', 
         quantity: 0, 
-        threshold: 5,
+        threshold: 1,
         engineerId: '',
         assignQuantity: 0
       });
