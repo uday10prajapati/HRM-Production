@@ -37,7 +37,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         Log.d(TAG, "app destroyed");
         super.onDestroy();
     }
