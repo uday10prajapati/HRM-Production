@@ -1,5 +1,6 @@
 import { Geolocation } from '@capacitor/geolocation';
 import { App as CapacitorApp } from '@capacitor/app';
+import { registerPlugin } from '@capacitor/core';
 import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
 import { Capacitor } from '@capacitor/core';
@@ -10,54 +11,51 @@ let appIsPaused = false;
 // Add debug tag for console logs
 const DEBUG_TAG = '[LOCATION]';
 
-// Try to import background geolocation for true background tracking
+// Register the background geolocation plugin
+// This works on native platforms; on web it will be undefined
 let BackgroundGeolocation = null;
 let pluginLoadAttempted = false;
 
 const initBackgroundGeolocation = async () => {
     if (BackgroundGeolocation) {
-        console.log(DEBUG_TAG, '✅ Background Geolocation already cached');
+        console.log(DEBUG_TAG, '✅ Background plugin already loaded');
         return BackgroundGeolocation;
     }
     
     if (pluginLoadAttempted) {
-        console.log(DEBUG_TAG, '⚠️ Plugin already attempted to load, not available');
+        // Silent - already tried
         return null;
     }
     
     pluginLoadAttempted = true;
     
     try {
-        console.log(DEBUG_TAG, '🔧 Attempting to load background geolocation plugin...');
-        
-        // Use require instead of import to avoid Vite build-time resolution
-        // This ensures lazy loading at runtime only
-        try {
-            // Try CommonJS require first (works better with Capacitor plugins)
-            BackgroundGeolocation = require('@capacitor-community/background-geolocation')?.BackgroundGeolocation;
-        } catch (reqErr) {
-            console.log(DEBUG_TAG, '  → CommonJS require failed, trying ES import...');
-            // Fallback to dynamic ES import with error handling
-            const module = await import(
-                /* webpackIgnore: true */ 
-                '@capacitor-community/background-geolocation'
-            ).catch((err) => {
-                console.debug(DEBUG_TAG, '  → ES import error:', err?.message);
-                return null;
-            });
-            BackgroundGeolocation = module?.BackgroundGeolocation;
-        }
-        
-        if (!BackgroundGeolocation) {
-            console.warn(DEBUG_TAG, '⚠️ Background geolocation plugin not available on this platform');
-            console.info(DEBUG_TAG, '   → App will use fallback GPS polling (may drain battery)');
+        // Only attempt on native platforms
+        if (!Capacitor.isNativePlatform()) {
             return null;
         }
         
-        console.log(DEBUG_TAG, '✅ Background Geolocation plugin loaded successfully');
-        return BackgroundGeolocation;
+        console.log(DEBUG_TAG, '🔧 Initializing native background location service...');
+        
+        // Use Capacitor's registerPlugin to access the plugin
+        if (Capacitor.isNativePlatform()) {
+            try {
+                BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
+                
+                // Test if plugin is actually available
+                if (BackgroundGeolocation && typeof BackgroundGeolocation.configure === 'function') {
+                    console.log(DEBUG_TAG, '✅ Background plugin available via native bridge');
+                    return BackgroundGeolocation;
+                }
+            } catch (regError) {
+                // Silent - plugin not available via bridge
+                return null;
+            }
+        }
+        
+        return null;
     } catch (error) {
-        console.error(DEBUG_TAG, '❌ Error loading background geolocation:', error?.message);
+        // Silent - expected on some platforms
         return null;
     }
 };
@@ -101,15 +99,18 @@ async function requestLocationPermissions() {
 
 /**
  * Start true background geolocation (runs even when app is closed)
+ * Falls back to interval tracking if native plugin not available
  */
 async function startBackgroundGeolocation(userId) {
-    console.log(DEBUG_TAG, '🟢 ===== STARTING BACKGROUND GEOLOCATION =====');
+    console.log(DEBUG_TAG, '🟢 ===== STARTING LOCATION TRACKING =====');
+    console.log(DEBUG_TAG, '📱 Platform:', Capacitor.getPlatform());
     try {
-        console.log(DEBUG_TAG, '1️⃣ Initializing background geolocation plugin...');
+        console.log(DEBUG_TAG, '1️⃣ Checking for background geolocation plugin...');
         const BGGeo = await initBackgroundGeolocation();
         
         if (!BGGeo) {
-            console.error(DEBUG_TAG, '❌ BackgroundGeolocation plugin not available - using interval tracking only');
+            console.log(DEBUG_TAG, '📍 Native plugin unavailable - using JavaScript interval tracking');
+            console.log(DEBUG_TAG, '⚠️ Note: Interval tracking will pause when app is backgrounded');
             return false;
         }
 
@@ -562,8 +563,8 @@ export async function startLocationTracking(userId) {
             }
         }
 
-        // Set up AGGRESSIVE interval tracking as backup (every 5 seconds)
-        // This ensures we get frequent location updates even if native plugin fails
+        // Set up AGGRESSIVE interval tracking (every 5 seconds)
+        // This ensures frequent location updates while app is running
         locationTrackingInterval = setInterval(async () => {
             try {
                 const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
@@ -599,6 +600,8 @@ export async function startLocationTracking(userId) {
             }
         }, 5000); // Check every 5 seconds for continuous tracking
 
+        console.log(DEBUG_TAG, '✅ Location tracking with 5-second interval established');
+        
         // Start heartbeat to monitor tracking health
         startTrackingHeartbeat(userId);
     }
