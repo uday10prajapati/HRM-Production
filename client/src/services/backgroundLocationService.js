@@ -9,7 +9,7 @@ const initBackgroundGeolocation = async () => {
     if (BackgroundGeolocation) return BackgroundGeolocation;
     try {
         const moduleName = '@capacitor-community/background-geolocation';
-        const module = await import(moduleName).catch(() => null);
+        const module = await import(/* @vite-ignore */ moduleName).catch(() => null);
         BackgroundGeolocation = module?.BackgroundGeolocation;
         return BackgroundGeolocation;
     } catch (error) {
@@ -253,7 +253,7 @@ async function backgroundLocationTask(userId) {
         // Dynamically import BackgroundTask only on native platforms
         // Use variable for module name so Vite doesn't try to resolve it statically
         const moduleName = '@capacitor/background-task';
-        const BackgroundTaskModule = await import(moduleName).catch(() => null);
+        const BackgroundTaskModule = await import(/* @vite-ignore */ moduleName).catch(() => null);
         const BackgroundTask = BackgroundTaskModule?.BackgroundTask;
         
         if (!BackgroundTask) {

@@ -36,14 +36,8 @@ export default function CentralStock() {
     quantity: 0
   });
   const [bulkStockMode, setBulkStockMode] = useState(false);
-  const [bulkStockList, setBulkStockList] = useState([]);
-  const [bulkStockProduct, setBulkStockProduct] = useState('');
   const [bulkStockEngineer, setBulkStockEngineer] = useState('');
-  const [currentBulkItem, setCurrentBulkItem] = useState({
-    description: '',
-    quantity: 0,
-    threshold: 1
-  });
+  const [bulkProductStocks, setBulkProductStocks] = useState({}); // {productName: {selected: bool, quantity: num, threshold: num}}
 
   // Fetch product items from database
   useEffect(() => {
@@ -104,33 +98,30 @@ export default function CentralStock() {
     fetchEngineerStock();
   }, [form.productName, form.engineerId]);
 
-  // Fetch engineer's current stock for bulk mode
+  // Initialize bulk product stocks when engineer selected
   useEffect(() => {
-    async function fetchBulkEngineerStock() {
-      if (!bulkStockProduct || !bulkStockEngineer) {
-        setBulkCurrentStock(0);
-        return;
-      }
-
-      setLoadingBulkStock(true);
-      try {
-        const response = await axios.get(`/api/stock/engineer-stock/${bulkStockEngineer}/${encodeURIComponent(bulkStockProduct)}`);
-        setBulkCurrentStock(response.data?.quantity || 0);
-      } catch (err) {
-        console.error('Failed to fetch bulk engineer stock', err);
-        setBulkCurrentStock(0);
-      } finally {
-        setLoadingBulkStock(false);
-      }
+    if (bulkStockMode && bulkStockEngineer && productItems.length > 0) {
+      const defaultStocks = {};
+      productItems.forEach(product => {
+        const productName = product['Product Name'];
+        defaultStocks[productName] = {
+          selected: false,
+          quantity: 0,
+          threshold: 1
+        };
+      });
+      setBulkProductStocks(defaultStocks);
+    } else if (!bulkStockEngineer || productItems.length === 0) {
+      setBulkProductStocks({});
     }
-    fetchBulkEngineerStock();
-  }, [bulkStockProduct, bulkStockEngineer]);
+  }, [bulkStockEngineer, bulkStockMode, productItems]);
 
   // Helper function to render Current Stock display card
-  function renderCurrentStockCard(product, engineerId, currentStock, isLoading) {
+  function renderCurrentStockCard(product, engineerId, currentStock, isLoading, unit = 'NOS') {
     if (!product || !engineerId) return null;
 
     const engineer = users.find(u => u.id === engineerId);
+    const displayUnit = unit || 'NOS';
     return (
       <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
         <h3 className="text-sm font-semibold text-gray-800 mb-3">Current Stock Status</h3>
@@ -139,14 +130,17 @@ export default function CentralStock() {
             <p className="text-sm text-gray-600">Current Quantity for <strong>{product}</strong></p>
             <p className="text-xs text-gray-500">Available to {engineer?.name || 'selected engineer'}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {isLoading ? (
               <div className="animate-spin">⟳</div>
             ) : (
               <>
-                <span className={`text-2xl font-bold ${currentStock === 0 ? 'text-red-600' : currentStock <= 5 ? 'text-orange-600' : 'text-green-600'}`}>
-                  {currentStock}
-                </span>
+                <div className="text-center">
+                  <span className={`text-3xl font-bold block ${currentStock === 0 ? 'text-red-600' : currentStock <= 5 ? 'text-orange-600' : 'text-green-600'}`}>
+                    {currentStock}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-600 mt-1 block">{displayUnit}</span>
+                </div>
                 <span className="text-sm font-medium px-3 py-1 rounded-full bg-white border border-gray-200">
                   {currentStock === 0 ? '🔴 Empty' : currentStock <= 5 ? '🟡 Low' : '🟢 Healthy'}
                 </span>
@@ -166,6 +160,12 @@ export default function CentralStock() {
         )}
       </div>
     );
+  }
+
+  // Get unit for a product
+  function getProductUnit(productName) {
+    const product = productItems.find(p => p['Product Name'] === productName);
+    return product?.unit || 'NOS';
   }
 
   async function handleSubmit(e) {
@@ -327,69 +327,69 @@ export default function CentralStock() {
     }
   }
 
-  function addToBulkStockList() {
-    const q = Number(currentBulkItem.quantity ?? 0);
-    const th = Number(currentBulkItem.threshold ?? 0);
-    
-    if (!currentBulkItem.description) {
-      return alert('Please enter a description');
-    }
-    if (Number.isNaN(q) || q < 1) {
-      return alert('Quantity must be at least 1');
-    }
-    if (Number.isNaN(th) || th < 0) {
-      return alert('Threshold must be non-negative');
-    }
-
-    setBulkStockList([
-      ...bulkStockList,
-      {
-        id: Date.now(),
-        description: currentBulkItem.description,
-        quantity: q,
-        threshold: th
+  function toggleBulkProductSelect(productName) {
+    setBulkProductStocks(prev => ({
+      ...prev,
+      [productName]: {
+        ...prev[productName],
+        selected: !prev[productName]?.selected
       }
-    ]);
-
-    setCurrentBulkItem({ description: '', quantity: 0, threshold: 1 });
+    }));
   }
 
-  function removeFromBulkStockList(id) {
-    setBulkStockList(bulkStockList.filter(item => item.id !== id));
+  function updateBulkProductField(productName, field, value) {
+    setBulkProductStocks(prev => ({
+      ...prev,
+      [productName]: {
+        ...prev[productName],
+        [field]: Number(value)
+      }
+    }));
   }
 
   async function submitBulkStock() {
-    if (!bulkStockProduct) {
-      return alert('Please select a product');
-    }
     if (!bulkStockEngineer) {
       return alert('Please select an engineer');
     }
-    if (bulkStockList.length === 0) {
-      return alert('Please add at least one item');
+
+    const selectedProducts = Object.entries(bulkProductStocks)
+      .filter(([_, data]) => data.selected)
+      .map(([productName, data]) => ({
+        productName,
+        quantity: Number(data.quantity || 0),
+        threshold: Number(data.threshold || 1)
+      }));
+
+    if (selectedProducts.length === 0) {
+      return alert('Please select at least one product');
+    }
+
+    // Validate quantities
+    for (const product of selectedProducts) {
+      if (product.quantity < 1) {
+        return alert(`Quantity for ${product.productName} must be at least 1`);
+      }
     }
 
     try {
-      for (const item of bulkStockList) {
+      for (const product of selectedProducts) {
         await axios.post('/api/stock/items-with-assign', {
-          name: bulkStockProduct,
-          description: item.description,
-          quantity: item.quantity,
-          threshold: item.threshold,
+          name: product.productName,
+          description: product.productName,
+          quantity: product.quantity,
+          threshold: product.threshold,
           engineerId: bulkStockEngineer,
-          assignQuantity: item.quantity
+          assignQuantity: product.quantity
         });
       }
 
-      setSubmitMessage(`✓ Created and assigned ${bulkStockList.length} stock item(s)!`);
+      setSubmitMessage(`✓ Created and assigned ${selectedProducts.length} product(s) to engineer!`);
       setTimeout(() => setSubmitMessage(''), 3000);
       
       // Reset bulk stock mode
       setBulkStockMode(false);
-      setBulkStockList([]);
-      setBulkStockProduct('');
+      setBulkProductStocks({});
       setBulkStockEngineer('');
-      setCurrentBulkItem({ description: '', quantity: 0, threshold: 1 });
       
       await fetchItems();
     } catch (err) {
@@ -419,10 +419,8 @@ export default function CentralStock() {
                   onChange={(e) => {
                     setBulkStockMode(e.target.checked);
                     if (!e.target.checked) {
-                      setBulkStockList([]);
-                      setBulkStockProduct('');
+                      setBulkProductStocks({});
                       setBulkStockEngineer('');
-                      setCurrentBulkItem({ description: '', quantity: 0, threshold: 1 });
                     }
                   }}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -486,7 +484,7 @@ export default function CentralStock() {
                 {/* Step 3: Show Current Stock */}
                 {form.productName && form.engineerId && (
                   <>
-                    {renderCurrentStockCard(form.productName, form.engineerId, currentEngineerStock, loadingEngineerStock)}
+                    {renderCurrentStockCard(form.productName, form.engineerId, currentEngineerStock, loadingEngineerStock, getProductUnit(form.productName))}
 
                     {/* Step 4: Assign Additional Stock */}
                     <div className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -503,12 +501,15 @@ export default function CentralStock() {
                             placeholder="How much to assign?"
                             required
                           />
+                          <div className="pt-2 px-3 py-2 bg-white rounded-lg border border-gray-300 text-sm font-semibold text-gray-700">
+                            {getProductUnit(form.productName)}
+                          </div>
                           <div className="text-right pt-2">
                             <p className="text-lg font-bold text-green-600">{currentEngineerStock + (form.assignQuantity || 0)}</p>
                             <p className="text-xs text-gray-500">New total</p>
                           </div>
                         </div>
-                        <p className="mt-2 text-xs text-gray-600">📊 Current: <strong>{currentEngineerStock}</strong> + Assign: <strong>{form.assignQuantity || 0}</strong> = <strong>{currentEngineerStock + (form.assignQuantity || 0)}</strong></p>
+                        <p className="mt-2 text-xs text-gray-600">📊 Current: <strong>{currentEngineerStock} {getProductUnit(form.productName)}</strong> + Assign: <strong>{form.assignQuantity || 0} {getProductUnit(form.productName)}</strong> = <strong>{currentEngineerStock + (form.assignQuantity || 0)} {getProductUnit(form.productName)}</strong></p>
                       </div>
                     </div>
                   </>
@@ -539,145 +540,145 @@ export default function CentralStock() {
               )}
             </form>
           ) : (
-            // BULK MODE - Multiple Items per Product
+            // BULK MODE - Multiple Products with quantities
             <div className="p-6">
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Product <span className="text-red-500">*</span></label>
-                    <select 
-                      value={bulkStockProduct}
-                      onChange={e => setBulkStockProduct(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                    >
-                      <option value="">Select Product</option>
-                      {productItems.map(product => (
-                        <option key={product['Product Name']} value={product['Product Name']}>
-                          {product['Product Name']}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Engineer <span className="text-red-500">*</span></label>
-                    <select 
-                      value={bulkStockEngineer}
-                      onChange={e => setBulkStockEngineer(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                    >
-                      <option value="">Choose engineer</option>
-                      {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Step 1: Select Engineer */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Step 1: Select Engineer</h3>
+                  <select 
+                    value={bulkStockEngineer}
+                    onChange={e => setBulkStockEngineer(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                  >
+                    <option value="">Choose engineer</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Current Stock Display for Bulk Mode */}
-                {bulkStockProduct && bulkStockEngineer && (
-                  <>
-                    {renderCurrentStockCard(bulkStockProduct, bulkStockEngineer, bulkCurrentStock, loadingBulkStock)}
-                  </>
+                {/* Step 2: Product Selection Table */}
+                {bulkStockEngineer && (
+                  <div className="border-t pt-6">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-4">Step 2: Select Products & Enter Quantities</h3>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={Object.values(bulkProductStocks).filter(p => p).length > 0 && Object.values(bulkProductStocks).every(p => p.selected || !p)}
+                                onChange={e => {
+                                  setBulkProductStocks(prev => 
+                                    Object.fromEntries(
+                                      Object.entries(prev).map(([k, v]) => [k, {...v, selected: e.target.checked}])
+                                    )
+                                  );
+                                }}
+                                className="rounded border-gray-300 text-blue-600"
+                              />
+                            </th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-700">Product Name</th>
+                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Unit</th>
+                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Quantity</th>
+                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Threshold</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {productItems.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="px-4 py-6 text-center text-sm text-gray-500">
+                                No products available
+                              </td>
+                            </tr>
+                          ) : (
+                            productItems.map(product => {
+                              const productName = product['Product Name'];
+                              const productData = bulkProductStocks[productName] || {selected: false, quantity: 0, threshold: 1};
+                              return (
+                                <tr key={productName} className={productData.selected ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={productData.selected || false}
+                                      onChange={() => toggleBulkProductSelect(productName)}
+                                      className="rounded border-gray-300 text-blue-600"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                    {productName}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className="inline-flex items-center px-2 py-1 rounded bg-gray-100 text-xs font-medium text-gray-800">
+                                      {product.unit || 'NOS'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      disabled={!productData.selected}
+                                      value={productData.quantity || ''}
+                                      onChange={e => updateBulkProductField(productName, 'quantity', e.target.value)}
+                                      placeholder="0"
+                                      className="w-full text-center rounded border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-2 py-1 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      disabled={!productData.selected}
+                                      value={productData.threshold || ''}
+                                      onChange={e => updateBulkProductField(productName, 'threshold', e.target.value)}
+                                      placeholder="1"
+                                      className="w-full text-center rounded border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-2 py-1 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-xs text-gray-700">
+                        <strong>Selected Products:</strong> {Object.entries(bulkProductStocks).filter(([_, p]) => p?.selected).map(([name, p]) => `${p.quantity} ${productItems.find(pr => pr['Product Name'] === name)?.unit || 'NOS'} ${name}`).join(' + ') || 'None selected'}
+                      </p>
+                    </div>
+                  </div>
                 )}
 
-                <div className="border-t pt-6">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Add Items for {bulkStockProduct || 'this product'}</h3>
-                  
-                  <div className="space-y-4 mb-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Description <span className="text-red-500">*</span></label>
-                      <input 
-                        type="text"
-                        value={currentBulkItem.description}
-                        onChange={e => setCurrentBulkItem(f => ({...f, description: e.target.value}))}
-                        className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                        placeholder="Enter item description"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-500">*</span></label>
-                        <input 
-                          type="number"
-                          min="1"
-                          value={currentBulkItem.quantity}
-                          onChange={e => setCurrentBulkItem(f => ({...f, quantity: Number(e.target.value)}))}
-                          className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                          placeholder="Enter quantity"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Threshold</label>
-                        <input 
-                          type="number"
-                          min="0"
-                          value={currentBulkItem.threshold}
-                          onChange={e => setCurrentBulkItem(f => ({...f, threshold: Number(e.target.value)}))}
-                          className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
-                          placeholder="Enter threshold"
-                        />
-                      </div>
-                    </div>
-
+                {/* Action Buttons */}
+                {bulkStockEngineer && (
+                  <div className="flex gap-3 pt-6 border-t">
                     <button
                       type="button"
-                      onClick={addToBulkStockList}
-                      className="w-full px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors font-medium"
+                      onClick={() => {
+                        setBulkStockMode(false);
+                        setBulkProductStocks({});
+                        setBulkStockEngineer('');
+                      }}
+                      className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg transition-colors font-medium"
                     >
-                      + Add Item to List
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitBulkStock}
+                      disabled={Object.values(bulkProductStocks).filter(p => p?.selected).length === 0}
+                      className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Assign Stock ({Object.values(bulkProductStocks).filter(p => p?.selected).length})
                     </button>
                   </div>
-
-                  {bulkStockList.length > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">Items to Create ({bulkStockList.length})</label>
-                      <div className="space-y-2 bg-gray-50 rounded-lg p-4 max-h-80 overflow-y-auto">
-                        {bulkStockList.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200 hover:bg-blue-50">
-                            <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{item.description}</div>
-                              <div className="text-xs text-gray-500">Qty: {item.quantity} | Threshold: {item.threshold}</div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeFromBulkStockList(item.id)}
-                              className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded transition-colors"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBulkStockMode(false);
-                      setBulkStockList([]);
-                      setBulkStockProduct('');
-                      setBulkStockEngineer('');
-                      setCurrentBulkItem({ description: '', quantity: 0, threshold: 1 });
-                    }}
-                    className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={submitBulkStock}
-                    disabled={bulkStockList.length === 0 || !bulkStockProduct || !bulkStockEngineer}
-                    className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Create {bulkStockList.length} Item(s)
-                  </button>
-                </div>
+                )}
 
                 {submitMessage && (
                   <div className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium w-full justify-center ${

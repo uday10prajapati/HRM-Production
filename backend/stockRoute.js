@@ -399,7 +399,7 @@ router.get('/overview/full', async (req, res) => {
 router.get('/product-items', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT "Product Name"
+      SELECT "Product Name", unit
       FROM product_items 
       ORDER BY "Product Name" ASC
     `);
@@ -534,10 +534,11 @@ router.delete('/items/:id', async (req, res) => {
 
 // Add new product item (name) to standard list
 router.post('/product-items', async (req, res) => {
-  const { name } = req.body; // Expecting { "name": "Product Name" }
+  const { name, unit } = req.body; // Expecting { "name": "Product Name", "unit": "NOS|METER|KG|LITER|PAIR" }
   if (!name) return res.status(400).json({ error: 'Product Name is required' });
   try {
-    const q = await pool.query('INSERT INTO product_items ("Product Name") VALUES ($1) RETURNING *', [name]);
+    const unitValue = unit || 'NOS';
+    const q = await pool.query('INSERT INTO product_items ("Product Name", unit) VALUES ($1, $2) RETURNING *', [name, unitValue]);
     res.json(q.rows[0]);
   } catch (err) {
     console.error('Failed to add product item:', err);

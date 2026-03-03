@@ -5,6 +5,7 @@ export default function ManageStockModal({ isOpen, onClose }) {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [newItemName, setNewItemName] = useState('');
+    const [newItemUnit, setNewItemUnit] = useState('NOS');
     const [isAdding, setIsAdding] = useState(false);
 
     useEffect(() => {
@@ -12,6 +13,7 @@ export default function ManageStockModal({ isOpen, onClose }) {
             fetchProducts();
             setIsAdding(false);
             setNewItemName('');
+            setNewItemUnit('NOS');
         }
     }, [isOpen]);
 
@@ -33,8 +35,12 @@ export default function ManageStockModal({ isOpen, onClose }) {
         e.preventDefault();
         if (!newItemName.trim()) return;
         try {
-            await axios.post('/api/stock/product-items', { name: newItemName.trim() });
+            await axios.post('/api/stock/product-items', { 
+                name: newItemName.trim(),
+                unit: newItemUnit || 'NOS'
+            });
             setNewItemName('');
+            setNewItemUnit('NOS');
             setIsAdding(false);
             fetchProducts();
         } catch (err) {
@@ -105,6 +111,20 @@ export default function ManageStockModal({ isOpen, onClose }) {
                                         className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 placeholder-slate-300 font-medium text-slate-900 transition-all px-4 py-3"
                                         required
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Measurement Unit</label>
+                                    <select
+                                        value={newItemUnit}
+                                        onChange={e => setNewItemUnit(e.target.value)}
+                                        className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 font-medium text-slate-900 transition-all px-4 py-3"
+                                    >
+                                        <option value="NOS">NOS (Numbers/Pieces)</option>
+                                        <option value="METER">METER (Meters)</option>
+                                        {/* <option value="KG">KG (Kilograms)</option>
+                                        <option value="LITER">LITER (Liters)</option>
+                                        <option value="PAIR">PAIR (Pairs)</option> */}
+                                    </select>
                                 </div>
                                 <div className="flex justify-end gap-3 pt-2">
                                     <button type="button" onClick={() => setIsAdding(false)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">
