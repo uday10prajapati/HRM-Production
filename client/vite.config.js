@@ -15,11 +15,11 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    exclude: ['@capacitor/background-task']
+    exclude: ['@capacitor/background-task', '@capacitor-community/background-geolocation']
   },
   build: {
     rollupOptions: {
-      external: ['@capacitor/background-task']
+      external: ['@capacitor/background-task', '@capacitor-community/background-geolocation']
     }
   }
 })

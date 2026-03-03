@@ -12,28 +12,45 @@ const DEBUG_TAG = '[LOCATION]';
 
 // Try to import background geolocation for true background tracking
 let BackgroundGeolocation = null;
+let pluginLoadAttempted = false;
+
 const initBackgroundGeolocation = async () => {
     if (BackgroundGeolocation) {
-        console.log(DEBUG_TAG, '✅ Background Geolocation already loaded');
+        console.log(DEBUG_TAG, '✅ Background Geolocation already cached');
         return BackgroundGeolocation;
     }
+    
+    if (pluginLoadAttempted) {
+        console.log(DEBUG_TAG, '⚠️ Plugin already attempted to load, not available');
+        return null;
+    }
+    
+    pluginLoadAttempted = true;
+    
     try {
         console.log(DEBUG_TAG, '🔧 Attempting to load background geolocation plugin...');
-        const moduleName = '@capacitor-community/background-geolocation';
-        const module = await import(/* @vite-ignore */ moduleName).catch((err) => {
-            console.error(DEBUG_TAG, '❌ Failed to import plugin:', err?.message);
-            return null;
-        });
         
-        if (!module) {
-            console.error(DEBUG_TAG, '❌ Module import failed');
-            return null;
+        // Use require instead of import to avoid Vite build-time resolution
+        // This ensures lazy loading at runtime only
+        try {
+            // Try CommonJS require first (works better with Capacitor plugins)
+            BackgroundGeolocation = require('@capacitor-community/background-geolocation')?.BackgroundGeolocation;
+        } catch (reqErr) {
+            console.log(DEBUG_TAG, '  → CommonJS require failed, trying ES import...');
+            // Fallback to dynamic ES import with error handling
+            const module = await import(
+                /* webpackIgnore: true */ 
+                '@capacitor-community/background-geolocation'
+            ).catch((err) => {
+                console.debug(DEBUG_TAG, '  → ES import error:', err?.message);
+                return null;
+            });
+            BackgroundGeolocation = module?.BackgroundGeolocation;
         }
         
-        BackgroundGeolocation = module?.BackgroundGeolocation;
-        
         if (!BackgroundGeolocation) {
-            console.error(DEBUG_TAG, '❌ BackgroundGeolocation not found in module');
+            console.warn(DEBUG_TAG, '⚠️ Background geolocation plugin not available on this platform');
+            console.info(DEBUG_TAG, '   → App will use fallback GPS polling (may drain battery)');
             return null;
         }
         

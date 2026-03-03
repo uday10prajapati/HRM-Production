@@ -39,7 +39,8 @@ import 'leaflet/dist/leaflet.css';
 
 /**
  * Pre-initialize background geolocation plugin on app startup
- * This ensures the native service is ready before any js code runs
+ * NOTE: Plugin is loaded lazily during location tracking, not at app startup
+ * This avoids build-time module resolution issues with native-only plugins
  */
 async function preInitializeBackgroundGeolocation() {
     if (!Capacitor.isNativePlatform()) {
@@ -48,16 +49,11 @@ async function preInitializeBackgroundGeolocation() {
     }
 
     try {
-        console.log('[init] 🔧 Pre-initializing background geolocation plugin...');
+        console.log('[init] 🔧 Background geolocation plugin will be loaded on demand during location tracking...');
         
-        // Dynamically import the plugin to trigger its initialization
-        const moduleName = '@capacitor-community/background-geolocation';
-        const BGGeoModule = await import(/* @vite-ignore */ moduleName).catch((err) => {
-            console.warn('[init] ⚠️ Background geolocation plugin not available:', err?.message);
-            return null;
-        });
-        
-        if (!BGGeoModule?.BackgroundGeolocation) {
+        // Plugin is now loaded lazily in backgroundLocationService when punch-in occurs
+        // This avoids Vite build-time module resolution issues
+        if (false) {
             console.warn('[init] ⚠️ BackgroundGeolocation not found in module');
             return;
         }
