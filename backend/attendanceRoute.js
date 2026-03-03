@@ -439,7 +439,7 @@ router.get('/summary/all', requireAuth, async (req, res) => {
       // HR can see engineers, employees, and their own data
       rows = rows.filter(r => {
         const role = (r.role || '').toString().toLowerCase();
-        return role === 'engineer' || role === 'employee' || String(r.user_id) === String(requesterId);
+        return role === 'engineer' || role === 'employee' || role === 'developer' || String(r.user_id) === String(requesterId);
       });
       console.log('Filtered for HR:', rows.length);
     } else if (requesterRole === 'admin') {
@@ -534,7 +534,7 @@ router.get('/records', requireAuth, async (req, res) => {
     }
 
     if (requesterRole === 'hr') {
-      rows = rows.filter(r => ((r.user_role || '').toString().toLowerCase() === 'engineer' || (r.user_role || '').toString().toLowerCase() === 'employee'));
+      rows = rows.filter(r => ((r.user_role || '').toString().toLowerCase() === 'engineer' || (r.user_role || '').toString().toLowerCase() === 'employee' || (r.user_role || '').toString().toLowerCase() === 'developer'));
     }
 
     return res.json({ success: true, rows });
@@ -644,7 +644,7 @@ router.get('/engineers', requireAuth, async (req, res) => {
           )
         ) as locations
       FROM users u
-      WHERE u.role IN ('engineer', 'employee')
+      WHERE u.role IN ('engineer', 'employee', 'developer')
       ORDER BY u.name;
     `);
 

@@ -47,7 +47,7 @@ const ELogin = () => {
                     name: data.user?.name || "",
                     email: data.user?.email || payload.email,
                     mobile_number: data.user?.mobile_number || payload.mobile_number,
-                    role: data.role || 'engineer', // Force role to engineer for this view if needed
+                    role: data.role || 'engineer' || 'developer', // Force role to engineer for this view if needed
                 };
 
                 // Store user and token

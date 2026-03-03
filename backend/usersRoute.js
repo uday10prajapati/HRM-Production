@@ -673,7 +673,7 @@ router.get('/engineers', async (req, res) => {
                 mobile_number,
                 role
             FROM users 
-            WHERE LOWER(role) = 'engineer'
+            WHERE LOWER(role) = 'engineer' OR LOWER(role) = 'developer'
             ORDER BY name ASC
         `);
     res.json(result.rows);
