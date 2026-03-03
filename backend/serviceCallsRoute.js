@@ -1074,6 +1074,8 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
 (async function ensureAssignCallColumns() {
   try {
     const queries = [
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS call_type VARCHAR(50) DEFAULT 'Service Call'`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS formatted_call_id VARCHAR(50)`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem1 TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem2 TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS solutions TEXT`,
@@ -1100,7 +1102,15 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_revised_places TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approval_notes TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approval_date TIMESTAMP`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approved_by TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ta_approved_by TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS stock_items TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS places_visited TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS kms_traveled NUMERIC`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS return_to_home BOOLEAN`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_date DATE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_date DATE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_received BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem TEXT`
     ];
     for (const q of queries) {
       await pool.query(q);
