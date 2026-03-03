@@ -11,53 +11,29 @@ let appIsPaused = false;
 // Add debug tag for console logs
 const DEBUG_TAG = '[LOCATION]';
 
-// Register the background geolocation plugin
+// Register the background geolocation plugin ONCE at module load
 // This works on native platforms; on web it will be undefined
 let BackgroundGeolocation = null;
-let pluginLoadAttempted = false;
+
+// Try to register plugin at module load time (before any function calls)
+try {
+    if (Capacitor.isNativePlatform()) {
+        BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
+        console.log(DEBUG_TAG, '✅ Background plugin registered at startup');
+    }
+} catch (err) {
+    // Silent - plugin may not be available
+    console.log(DEBUG_TAG, '📝 Background plugin note:', err?.message?.substring(0, 50));
+}
 
 const initBackgroundGeolocation = async () => {
     if (BackgroundGeolocation) {
-        console.log(DEBUG_TAG, '✅ Background plugin already loaded');
+        console.log(DEBUG_TAG, '✅ Background plugin ready');
         return BackgroundGeolocation;
     }
     
-    if (pluginLoadAttempted) {
-        // Silent - already tried
-        return null;
-    }
-    
-    pluginLoadAttempted = true;
-    
-    try {
-        // Only attempt on native platforms
-        if (!Capacitor.isNativePlatform()) {
-            return null;
-        }
-        
-        console.log(DEBUG_TAG, '🔧 Initializing native background location service...');
-        
-        // Use Capacitor's registerPlugin to access the plugin
-        if (Capacitor.isNativePlatform()) {
-            try {
-                BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
-                
-                // Test if plugin is actually available
-                if (BackgroundGeolocation && typeof BackgroundGeolocation.configure === 'function') {
-                    console.log(DEBUG_TAG, '✅ Background plugin available via native bridge');
-                    return BackgroundGeolocation;
-                }
-            } catch (regError) {
-                // Silent - plugin not available via bridge
-                return null;
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        // Silent - expected on some platforms
-        return null;
-    }
+    // Plugin not available on this platform
+    return null;
 };
 
 /**
@@ -178,7 +154,11 @@ async function startBackgroundGeolocation(userId) {
         console.log(DEBUG_TAG, '4️⃣ Calling BGGeo.configure()...');
         
         try {
-            await BGGeo.configure(config);
+            // Some Capacitor plugins don't return Promises
+            const configResult = BGGeo.configure(config);
+            if (configResult && typeof configResult.then === 'function') {
+                await configResult;
+            }
             console.log(DEBUG_TAG, '✅ Configure completed');
         } catch (configError) {
             console.error(DEBUG_TAG, '❌ Configure failed:', configError?.message);
@@ -225,7 +205,10 @@ async function startBackgroundGeolocation(userId) {
         // Start tracking
         console.log(DEBUG_TAG, '6️⃣ Calling BGGeo.start()...');
         try {
-            await BGGeo.start();
+            const startResult = BGGeo.start();
+            if (startResult && typeof startResult.then === 'function') {
+                await startResult;
+            }
             console.log(DEBUG_TAG, '✅ Background geolocation started successfully');
             console.log(DEBUG_TAG, '🟢 ===== BACKGROUND GEOLOCATION FULLY INITIALIZED =====');
             return true;
@@ -247,7 +230,10 @@ async function stopBackgroundGeolocation() {
     try {
         const BGGeo = await initBackgroundGeolocation();
         if (BGGeo) {
-            await BGGeo.stop();
+            const stopResult = BGGeo.stop();
+            if (stopResult && typeof stopResult.then === 'function') {
+                await stopResult;
+            }
             console.log('🔴 Background geolocation stopped');
         }
     } catch (error) {
@@ -491,7 +477,11 @@ async function initializeAppLifecycleListeners() {
                 const BGGeo = await initBackgroundGeolocation();
                 if (BGGeo) {
                     try {
-                        const isRunning = await BGGeo.isTracking?.();
+                        const trackingResult = BGGeo.isTracking?.();
+                        let isRunning = trackingResult;
+                        if (trackingResult && typeof trackingResult.then === 'function') {
+                            isRunning = await trackingResult;
+                        }
                         console.log('📍 Background geolocation running:', isRunning);
                     } catch (error) {
                         console.warn('Could not verify geolocation status:', error?.message);
