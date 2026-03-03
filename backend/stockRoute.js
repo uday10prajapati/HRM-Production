@@ -253,41 +253,37 @@ router.get('/engineer/:id', async (req, res) => {
   }
 });
 
-// Consume stock (engineer uses part). This will deduct from engineer_stock if exists, otherwise from central stock.
+// Consume stock (engineer uses part). This will deduct from engineer_stock and ALSO from central stock.
 router.post('/consume', async (req, res) => {
   const { engineerId, stockItemId, quantity = 1, note } = req.body;
   if (!stockItemId || !quantity) return res.status(400).json({ error: 'stockItemId and quantity required' });
-  const q = await pool.query('BEGIN').catch(() => null);
+  
   try {
-    // Prefer deducting from engineer stock
+    // Deduct from engineer stock first
     const es = await pool.query(
-      'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2 FOR UPDATE',
+      'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2',
       [engineerId != null ? String(engineerId) : null, stockItemId != null ? String(stockItemId) : null]
     );
-    if (es.rowCount > 0 && es.rows[0].quantity >= quantity) {
-      await pool.query('UPDATE engineer_stock SET quantity = quantity - $1 WHERE id = $2', [quantity, es.rows[0].id]);
-    } else {
-      // deduct from central stock
-      await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [quantity, stockItemId]);
-      // if engineer had some, reduce as much as possible
-      if (es.rowCount > 0 && es.rows[0].quantity > 0) {
-        const toDeduct = Math.min(es.rows[0].quantity, quantity);
-        await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [toDeduct, es.rows[0].id]);
-      }
+    
+    if (es.rowCount > 0) {
+      // Update engineer stock
+      await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [quantity, es.rows[0].id]);
     }
+    
+    // ALSO deduct from central stock so it reflects actual reduced inventory
+    await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [quantity, stockItemId]);
 
-    // record consumption
+    // Record consumption for audit trail
     const ins = await pool.query(
       'INSERT INTO stock_consumption (engineer_id, stock_item_id, quantity, note) VALUES ($1,$2,$3,$4) RETURNING *',
       [engineerId || null, stockItemId, Number(quantity), note || null]
     );
 
-    await pool.query('COMMIT');
+    console.log(`✅ Stock consumed: ${quantity} units of item ${stockItemId} for engineer ${engineerId}`);
     res.json({ consumed: ins.rows[0] });
   } catch (err) {
-    await pool.query('ROLLBACK').catch(() => null);
-    console.error(err);
-    res.status(500).json({ error: 'Failed to consume stock' });
+    console.error('❌ Stock consume error:', err);
+    res.status(500).json({ error: 'Failed to consume stock: ' + err.message });
   }
 });
 
