@@ -32,16 +32,22 @@ const EDashboard = () => {
         try {
             const res = await axios.get('/api/service-calls/assigned-calls');
             if (res.data.success) {
-                // Use formatted_call_id directly from database
-                const sorted = [...res.data.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                // Filter calls assigned to THIS engineer
+                const engineerCalls = res.data.calls.filter(call => {
+                    // Check engineer_id column (new schema) or fall back to id (old schema for backward compat)
+                    return String(call.engineer_id) === String(user.id) || String(call.id) === String(user.id);
+                });
+
+                // Sort by creation date
+                const sorted = [...engineerCalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                 
+                // Map with formatted call ID
                 const callsWithId = sorted.map(c => ({
                     ...c,
                     sequence_id: c.formatted_call_id || `${c.call_type === 'PM Call' ? 'P-' : 'S-'}${c.call_id}`
                 }));
 
-                const engineerCalls = callsWithId.filter(c => String(c.id) === String(user.id));
-                setAllCalls(engineerCalls);
+                setAllCalls(callsWithId);
             }
         } catch (err) {
             console.error('Error fetching assigned calls:', err);
