@@ -325,7 +325,7 @@ async function storeLocation(latitude, longitude, userId, retries = 3) {
     for (let attempt = 0; attempt < retries; attempt++) {
         try {
             console.log(`📡 Storing location (attempt ${attempt + 1}/${retries})...`);
-            const response = await axios.post('/api/live-locations/upsert', {
+            const response = await axios.post('/api/live_locations/upsert', {
                 userId,
                 latitude,
                 longitude
