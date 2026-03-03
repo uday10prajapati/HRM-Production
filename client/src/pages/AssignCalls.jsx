@@ -214,6 +214,22 @@ const AssignCalls = () => {
         }
     };
 
+    const updatePriority = async (callId, newPriority) => {
+        try {
+            const response = await axios.put(
+                `/api/service-calls/update-status/${callId}`,
+                { priority: newPriority }
+            );
+
+            if (response.data.success) {
+                fetchAssignedCalls();
+            }
+        } catch (err) {
+            console.error('Error updating priority:', err);
+            alert(err.response?.data?.message || 'Failed to update priority');
+        }
+    };
+
     const markLetterheadReceived = async (callId) => {
         try {
             const response = await axios.put(`/api/service-calls/assign-call/${callId}/letterhead`, { action: 'receive' });
@@ -566,8 +582,8 @@ const AssignCalls = () => {
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 gap-6">
-                                            {assignedCalls.map(call => (
-                                                <div key={call.id} className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] p-6 hover:shadow-md transition-all group overflow-hidden relative">
+                                            {assignedCalls.map((call, idx) => (
+                                                <div key={`${call.call_id || call.id}-${idx}`} className="bg-white rounded-3xl border border-slate-100 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] p-6 hover:shadow-md transition-all group overflow-hidden relative">
                                                     {call.status === 'new' && <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-400" />}
                                                     {call.status === 'pending' && <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-400" />}
                                                     {call.status === 'in_progress' && <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500" />}
@@ -637,12 +653,24 @@ const AssignCalls = () => {
                                                                 </div>
                                                                 <div>
                                                                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Priority</p>
-                                                                    <div className="mt-0.5 px-3 py-1.5 rounded-lg inline-block text-xs font-bold uppercase tracking-wider" style={{
-                                                                        backgroundColor: call.priority === 'High' ? '#fee2e2' : call.priority === 'Medium' ? '#fef3c7' : '#dcfce7',
-                                                                        color: call.priority === 'High' ? '#991b1b' : call.priority === 'Medium' ? '#92400e' : '#166534'
-                                                                    }}>
-                                                                        {call.priority === 'High' ? '🔴' : call.priority === 'Medium' ? '🟡' : '🟢'} {call.priority || 'Medium'}
-                                                                    </div>
+                                                                    {isHrOrAdmin(userRole) ? (
+                                                                        <select
+                                                                            className="w-full sm:w-auto mt-0.5 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold bg-slate-50 text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-colors uppercase tracking-wide cursor-pointer"
+                                                                            value={call.priority || 'Medium'}
+                                                                            onChange={(e) => updatePriority(call.call_id || call.id, e.target.value)}
+                                                                        >
+                                                                            <option value="Low">🟢 Low</option>
+                                                                            <option value="Medium">🟡 Medium</option>
+                                                                            <option value="High">🔴 High</option>
+                                                                        </select>
+                                                                    ) : (
+                                                                        <div className="mt-0.5 px-3 py-1.5 rounded-lg inline-block text-xs font-bold uppercase tracking-wider" style={{
+                                                                            backgroundColor: call.priority === 'High' ? '#fee2e2' : call.priority === 'Medium' ? '#fef3c7' : '#dcfce7',
+                                                                            color: call.priority === 'High' ? '#991b1b' : call.priority === 'Medium' ? '#92400e' : '#166534'
+                                                                        }}>
+                                                                            {call.priority === 'High' ? '🔴' : call.priority === 'Medium' ? '🟡' : '🟢'} {call.priority || 'Medium'}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
 

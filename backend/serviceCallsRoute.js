@@ -996,14 +996,12 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
     const callId = req.params.callId;
     const body = req.body;
 
-    if (!body.status) return res.status(400).json({ success: false, message: 'Missing status' });
-
     let fields = [];
     let values = [];
     let idx = 1;
 
     const allowedFields = [
-      'status', 'appointment_date', 'visit_start_date', 'visit_end_date',
+      'status', 'priority', 'appointment_date', 'visit_start_date', 'visit_end_date',
       'visit_start_time', 'visit_end_time',
       'places_visited', 'kms_traveled', 'return_to_home', 'return_place',
       'return_km', 'problem1', 'problem2', 'solutions', 'part_used',
@@ -1011,6 +1009,12 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
       'return_part_name', 'return_serial_number', 'letterhead_received',
       'letterhead_url'
     ];
+
+    // Enforce role permissions: only HR/Admin may update priority
+    const requesterRole = req.user?.role ?? '';
+    if (body.priority !== undefined && !isHrOrAdmin(requesterRole)) {
+      return res.status(403).json({ success: false, message: 'Only HR/Admin can update priority' });
+    }
 
     for (const key of allowedFields) {
       if (body[key] !== undefined) {
