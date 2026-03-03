@@ -239,7 +239,7 @@ const EAssignCall = () => {
     };
 
     // Add a new stock item to the list
-    const handleAddStockItem = () => {
+    const handleAddStockItem = async () => {
         if (isResolved) return;
         if (currentItemName && !currentSerialNumber) {
             toast.error('Serial Number is mandatory if an item is selected!');
@@ -263,6 +263,30 @@ const EAssignCall = () => {
             return_part_name: currentReturnPartName,
             return_serial_number: currentReturnSerialNumber
         };
+
+        // Find the stock item and deduct immediately if item is selected
+        if (currentItemName) {
+            try {
+                const usedStock = stocks.find(s => s.name === currentItemName);
+                if (usedStock && usedStock.id) {
+                    const userObj = JSON.parse(localStorage.getItem('user'));
+                    const deductRes = await axios.post('/api/stock/consume', {
+                        engineerId: userObj.id || userObj._id,
+                        stockItemId: usedStock.id,  // Use the stock_item ID (stock_items.id), not engineer_stock_id
+                        quantity: parseInt(currentQuantity) || 1,
+                        note: `Used in Assign Call - ${callData?.formatted_call_id || callData?.call_id}`
+                    });
+                    
+                    // Refresh the stock list to show updated quantities
+                    await fetchEngineerStocks(userObj.id || userObj._id);
+                    
+                    toast.success(`Stock deducted: ${currentItemName} (Qty: ${currentQuantity})`);
+                }
+            } catch (err) {
+                console.error('Failed to deduct stock:', err);
+                toast.error('Stock item added but could not deduct from inventory: ' + (err.response?.data?.error || err.message));
+            }
+        }
 
         setStockItems([...stockItems, newItem]);
         toast.success('Stock item added!');
@@ -380,26 +404,8 @@ const EAssignCall = () => {
             const res = await axios.put(`/api/service-calls/update-status/${callId}`, payload);
 
             if (res.data.success) {
-                // Automatically consume all stock items if marked as resolved
-                if (callStatus === 'resolved' && stockItems.length > 0) {
-                    try {
-                        const userObj = JSON.parse(localStorage.getItem('user'));
-                        for (const item of stockItems) {
-                            const usedStock = stocks.find(s => s.name === item.part_used);
-                            if (userObj && usedStock && usedStock.id) {
-                                await axios.post('/api/stock/consume', {
-                                    engineerId: userObj.id || userObj._id,
-                                    stockItemId: usedStock.id,
-                                    quantity: parseInt(item.quantity_used) || 1,
-                                    note: `Used in Assign Call - ${callId}`
-                                });
-                            }
-                        }
-                    } catch (err) {
-                        console.error('Failed to deduct stock:', err);
-                        // Continuing with success regardless since call update worked
-                    }
-                }
+                // Stock items were already deducted when added to the call
+                // No need to deduct again here
 
                 toast.success(`Call status updated to ${callStatus}!`);
                 setTimeout(() => navigate(-1), 1500);
@@ -593,43 +599,11 @@ const EAssignCall = () => {
 
                     {activeSection === 'STOCK' && (
                         <div className={`flex flex-col gap-4 animate-fadeIn ${readOnlyClasses}`}>
-                            {/* Added Stock Items List */}
-                            {stockItems.length > 0 && (
-                                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-                                    <h3 className="font-bold text-green-700 mb-3 flex items-center gap-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" className="w-5 h-5"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5.951-1.488 5.951 1.488a1 1 0 001.169-1.409l-7-14z" /></svg>
-                                        Added Stock Items ({stockItems.length})
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {stockItems.map((item) => (
-                                            <div key={item.id} className="bg-white p-3 rounded-lg flex justify-between items-start border border-green-200">
-                                                <div className="flex-1">
-                                                    <p className="font-semibold text-gray-800">{item.part_used}</p>
-                                                    <p className="text-xs text-gray-600">Qty: {item.quantity_used} | S/N: {item.serial_number}</p>
-                                                    {item.under_warranty === 'Yes' && (
-                                                        <p className="text-xs text-amber-600 font-medium mt-1">♻️ Warranty - Return: {item.return_part_name} (S/N: {item.return_serial_number})</p>
-                                                    )}
-                                                </div>
-                                                {!isResolved && (
-                                                    <button onClick={() => handleRemoveStockItem(item.id)} className="ml-2 p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
                             {/* Form to Add New Stock Item */}
                             {!isResolved && (
                                 <div>
                                     <h3 className="font-bold text-gray-800 mb-3 text-sm">➕ Add Stock Item</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 border border-blue-200 p-4 rounded-xl">
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-sm font-semibold text-gray-600">Item Type</label>
-                                            <input type="text" value={currentStockItemType} readOnly className="p-2.5 rounded-xl border border-gray-300 bg-gray-100 text-gray-500 outline-none" />
-                                        </div>
                                         <div className="flex flex-col gap-1">
                                             <label className="text-sm font-semibold text-gray-600">Item Name</label>
                                             <select value={currentItemName} onChange={e => setCurrentItemName(e.target.value)} className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
@@ -681,6 +655,34 @@ const EAssignCall = () => {
                                         <button onClick={handleAddStockItem} className="md:col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors shadow-sm active:scale-95">
                                             + Add This Item
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Added Stock Items List - Now shown BELOW the form */}
+                            {stockItems.length > 0 && (
+                                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-6 mb-4">
+                                    <h3 className="font-bold text-green-700 mb-3 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" className="w-5 h-5"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5.951-1.488 5.951 1.488a1 1 0 001.169-1.409l-7-14z" /></svg>
+                                        Added Stock Items ({stockItems.length})
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {stockItems.map((item) => (
+                                            <div key={item.id} className="bg-white p-3 rounded-lg flex justify-between items-start border border-green-200">
+                                                <div className="flex-1">
+                                                    <p className="font-semibold text-gray-800">{item.part_used}</p>
+                                                    <p className="text-xs text-gray-600">Qty: {item.quantity_used} | S/N: {item.serial_number}</p>
+                                                    {item.under_warranty === 'Yes' && (
+                                                        <p className="text-xs text-amber-600 font-medium mt-1">♻️ Warranty - Return: {item.return_part_name} (S/N: {item.return_serial_number})</p>
+                                                    )}
+                                                </div>
+                                                {!isResolved && (
+                                                    <button onClick={() => handleRemoveStockItem(item.id)} className="ml-2 p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             )}

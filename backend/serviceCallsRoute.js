@@ -1067,10 +1067,10 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
       'status', 'priority', 'appointment_date', 'visit_start_date', 'visit_end_date',
       'visit_start_time', 'visit_end_time',
       'places_visited', 'kms_traveled', 'return_to_home', 'return_place',
-      'return_km', 'problem1', 'problem2', 'solutions', 'part_used',
+      'return_km', 'problem', 'problem1', 'problem2', 'solutions', 'part_used',
       'quantity_used', 'serial_number', 'remarks', 'under_warranty',
       'return_part_name', 'return_serial_number', 'letterhead_received',
-      'letterhead_url'
+      'letterhead_url', 'stock_items', 'call_type', 'formatted_call_id'
     ];
 
     // Enforce role permissions: only HR/Admin may update priority
@@ -1091,7 +1091,7 @@ router.put('/update-status/:callId', requireAuth, async (req, res) => {
     }
 
     values.push(String(callId));
-    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} RETURNING *`;
+    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} OR id::text = $${idx} OR formatted_call_id = $${idx} RETURNING *`;
 
     const result = await pool.query(q, values);
     if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
@@ -1208,7 +1208,7 @@ router.put('/assign-call/:callId/basic-details', requireAuth, async (req, res) =
         mobile_number = $3,
         problem = $4,
         description = $5
-      WHERE call_id::text = $6 OR id = $6 OR formatted_call_id = $6
+      WHERE call_id::text = $6 OR id::text = $6 OR formatted_call_id = $6
       RETURNING *
     `;
 
@@ -1248,7 +1248,7 @@ router.put('/assign-call/:callId/resolved-details', requireAuth, async (req, res
     }
 
     values.push(String(callId));
-    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} OR id = $${idx} OR formatted_call_id = $${idx} RETURNING *`;
+    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} OR id::text = $${idx} OR formatted_call_id = $${idx} RETURNING *`;
 
     const result = await pool.query(q, values);
 
@@ -1279,7 +1279,7 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Only engineers can mark letterhead received' });
       }
 
-      const q = `UPDATE assign_call SET letterhead_received = true WHERE call_id::text = $1 OR id = $1 OR formatted_call_id = $1 RETURNING *`;
+      const q = `UPDATE assign_call SET letterhead_received = true WHERE call_id::text = $1 OR id::text = $1 OR formatted_call_id = $1 RETURNING *`;
       const result = await pool.query(q, [String(callId)]);
       if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
       return res.json({ success: true, call: result.rows[0] });
@@ -1291,7 +1291,7 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Only HR/Admin can mark letterhead submitted' });
       }
 
-      const q = `UPDATE assign_call SET letterhead_submitted = true, status = $1 WHERE call_id::text = $2 OR id = $2 OR formatted_call_id = $2 RETURNING *`;
+      const q = `UPDATE assign_call SET letterhead_submitted = true, status = $1 WHERE call_id::text = $2 OR id::text = $2 OR formatted_call_id = $2 RETURNING *`;
       const newStatus = 'letterhead_received_by_hr';
       const result = await pool.query(q, [newStatus, String(callId)]);
       if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
