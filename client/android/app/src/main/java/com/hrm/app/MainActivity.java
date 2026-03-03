@@ -25,6 +25,10 @@ public class MainActivity extends BridgeActivity {
         if (trackingActive && userId != null) {
             Log.d(TAG, "📍 Resuming location tracking for user: " + userId);
             
+            // Re-enable storage when resuming (in case it was disabled)
+            prefs.edit().putBoolean("location_storage_enabled", true).apply();
+            Log.d(TAG, "✅ Storage enabled for resumed tracking");
+            
             // Start the location tracking service
             Intent serviceIntent = new Intent(this, LocationTrackingService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

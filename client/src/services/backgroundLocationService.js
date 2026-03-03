@@ -3,7 +3,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
 import { Capacitor } from '@capacitor/core';
-import { startNativeLocationTracking, stopNativeLocationTracking } from './nativeLocationTracking';
+import { startNativeLocationTracking, stopNativeLocationTracking, enableLocationStorage, disableLocationStorage } from './nativeLocationTracking';
 
 // Track app pause/resume state
 let appIsPaused = false;
@@ -419,6 +419,8 @@ export async function startLocationTracking(userId) {
         try {
             console.log('🟢 Starting native Android background location service...');
             await startNativeLocationTracking(userId);
+            // Enable storage on the native service (start storing locations on punch-in)
+            await enableLocationStorage();
             console.log('✅ Native background service started - will track even when app is closed');
         } catch (error) {
             console.warn('⚠️ Could not start native service:', error?.message);
@@ -448,6 +450,8 @@ export async function stopLocationTracking() {
     // Stop native Android service
     if (Capacitor.getPlatform() === 'android') {
         try {
+            // Disable storage first (stop storing on punch-out)
+            await disableLocationStorage();
             await stopNativeLocationTracking();
             console.log('✅ Native background service stopped');
         } catch (error) {

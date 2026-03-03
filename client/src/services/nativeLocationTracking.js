@@ -78,3 +78,53 @@ export async function stopNativeLocationTracking() {
         console.error('[NATIVE] ❌ Error stopping native tracking:', error?.message);
     }
 }
+
+/**
+ * Enable location storage (on punch-in)
+ * Service continues running but starts storing location data
+ */
+export async function enableLocationStorage() {
+    try {
+        console.log('[NATIVE] 📍 Enabling location storage (punch-in)');
+        
+        // Try to use plugin if available
+        try {
+            const LocationTrackingPlugin = registerPlugin('LocationTrackingPlugin');
+            if (LocationTrackingPlugin && LocationTrackingPlugin.setStorageEnabled) {
+                await LocationTrackingPlugin.setStorageEnabled({ enabled: true });
+                console.log('[NATIVE] ✅ Storage enabled successfully');
+                return;
+            }
+        } catch (pluginError) {
+            console.log('[NATIVE] 📝 Plugin not available for storage control');
+        }
+        
+    } catch (error) {
+        console.error('[NATIVE] ❌ Error enabling storage:', error?.message);
+    }
+}
+
+/**
+ * Disable location storage (on punch-out)
+ * Service continues running but stops storing location data
+ */
+export async function disableLocationStorage() {
+    try {
+        console.log('[NATIVE] 🛑 Disabling location storage (punch-out)');
+        
+        // Try to use plugin if available
+        try {
+            const LocationTrackingPlugin = registerPlugin('LocationTrackingPlugin');
+            if (LocationTrackingPlugin && LocationTrackingPlugin.setStorageEnabled) {
+                await LocationTrackingPlugin.setStorageEnabled({ enabled: false });
+                console.log('[NATIVE] ✅ Storage disabled successfully');
+                return;
+            }
+        } catch (pluginError) {
+            console.log('[NATIVE] 📝 Plugin not available for storage control');
+        }
+        
+    } catch (error) {
+        console.error('[NATIVE] ❌ Error disabling storage:', error?.message);
+    }
+}

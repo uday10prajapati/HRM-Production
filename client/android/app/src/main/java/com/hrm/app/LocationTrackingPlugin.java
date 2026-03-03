@@ -77,6 +77,7 @@ public class LocationTrackingPlugin extends Plugin {
             SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = prefs.edit();
             editor.putBoolean("tracking_active", false);
+            editor.putBoolean("location_storage_enabled", false);
             editor.apply();
             
             Log.d(TAG, "📝 Tracking preferences cleared");
@@ -94,6 +95,42 @@ public class LocationTrackingPlugin extends Plugin {
             
         } catch (Exception e) {
             Log.e(TAG, "Error stopping tracking: " + e.getMessage());
+            JSObject error = new JSObject();
+            error.put("success", false);
+            error.put("message", e.getMessage());
+            call.resolve(error);
+        }
+    }
+
+    /**
+     * Enable or disable location storage (without stopping the service)
+     * Use this to control punch-in/out without restarting the service
+     */
+    @org.jetbrains.annotations.NotNull
+    public void setStorageEnabled(PluginCall call) {
+        Boolean enabled = call.getBoolean("enabled", true);
+        
+        if (enabled == null) {
+            call.reject("enabled parameter is required");
+            return;
+        }
+        
+        try {
+            SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putBoolean("location_storage_enabled", enabled);
+            editor.apply();
+            
+            String state = enabled ? "ENABLED" : "DISABLED";
+            Log.d(TAG, "📝 Location storage " + state);
+            
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("message", "Location storage " + state);
+            call.resolve(result);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting storage state: " + e.getMessage());
             JSObject error = new JSObject();
             error.put("success", false);
             error.put("message", e.getMessage());

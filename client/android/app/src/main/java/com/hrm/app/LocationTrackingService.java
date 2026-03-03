@@ -47,18 +47,26 @@ public class LocationTrackingService extends Service {
     private double lastLat = 0;
     private double lastLng = 0;
     private float lastAccuracy = Float.MAX_VALUE;
+    private SharedPreferences prefs;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "🟢 LocationTrackingService started");
         
         // Get user ID and API URL from shared preferences or intent extras
-        SharedPreferences prefs = getSharedPreferences("HRM_PREFS", Context.MODE_PRIVATE);
+        prefs = getSharedPreferences("HRM_PREFS", Context.MODE_PRIVATE);
         userId = prefs.getString("tracking_user_id", null);
         apiUrl = prefs.getString("api_base_url", "https://hrms.sandjglobaltech.com");
         
         // Save to prefs that tracking is active (for MainActivity on next start)
         prefs.edit().putBoolean("tracking_active", true).apply();
+        
+        // Ensure storage is enabled if tracking is active
+        // (This handles app resume/restart scenarios)
+        if (!prefs.contains("location_storage_enabled")) {
+            prefs.edit().putBoolean("location_storage_enabled", true).apply();
+            Log.d(TAG, "📍 Storage enabled by default for active tracking");
+        }
         
         if (userId == null) {
             Log.w(TAG, "No userId found, stopping service");
@@ -189,6 +197,13 @@ public class LocationTrackingService extends Service {
 
     private void storeLocation(double latitude, double longitude) {
         try {
+            // Check if storage is enabled (based on punch state)
+            boolean storageEnabled = prefs.getBoolean("location_storage_enabled", true);
+            if (!storageEnabled) {
+                Log.d(TAG, "⏭️ Storage disabled by user - skipping location store");
+                return;
+            }
+            
             JSONObject body = new JSONObject();
             body.put("userId", userId);
             body.put("latitude", latitude);

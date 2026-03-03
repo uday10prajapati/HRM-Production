@@ -65,15 +65,30 @@ const EAssignCall = () => {
     const [solution, setSolution] = useState(callData?.solutions || '');
 
     // --- MODULE 3: Stock Entry State ---
+    const [stockItems, setStockItems] = useState([]); // Array of stock items instead of single
     const [stocks, setStocks] = useState([]);
-    const [itemType, setItemType] = useState(callData?.item_type || 'Auto Fetch Component');
-    const [itemName, setItemName] = useState(callData?.part_used || '');
-    const [quantity, setQuantity] = useState(callData?.quantity_used || 1);
-    const [serialNumber, setSerialNumber] = useState(callData?.serial_number || '');
-    const [remarks, setRemarks] = useState(callData?.remarks || '');
-    const [underWarranty, setUnderWarranty] = useState(callData?.under_warranty || 'No');
-    const [returnPartName, setReturnPartName] = useState(callData?.return_part_name || '');
-    const [returnSerialNumber, setReturnSerialNumber] = useState(callData?.return_serial_number || '');
+    const [currentStockItemType, setCurrentStockItemType] = useState('Auto Fetch Component');
+    const [currentItemName, setCurrentItemName] = useState('');
+    const [currentQuantity, setCurrentQuantity] = useState(1);
+    const [currentSerialNumber, setCurrentSerialNumber] = useState('');
+    const [currentRemarks, setCurrentRemarks] = useState('');
+    const [currentUnderWarranty, setCurrentUnderWarranty] = useState('No');
+    const [currentReturnPartName, setCurrentReturnPartName] = useState('');
+    const [currentReturnSerialNumber, setCurrentReturnSerialNumber] = useState('');
+
+    // Initialize stock items from callData if they exist
+    useEffect(() => {
+        if (callData?.stock_items) {
+            try {
+                const items = typeof callData.stock_items === 'string' 
+                    ? JSON.parse(callData.stock_items) 
+                    : callData.stock_items;
+                setStockItems(Array.isArray(items) ? items : []);
+            } catch (e) {
+                console.error("Failed to parse stock items", e);
+            }
+        }
+    }, [callData?.stock_items]);
 
     useEffect(() => {
         const storedUser = localStorage.getItem("user");
@@ -157,8 +172,39 @@ const EAssignCall = () => {
             toast.error('Return Places (From/To) and Return KM are mandatory when Return Home is Yes!');
             return;
         }
-        toast.success('Visit Entry Saved successfully!');
-        setActiveSection('RESOLUTION');
+
+        // Save visit entry data to backend
+        const saveVisitData = async () => {
+            try {
+                const callId = callData?.call_id || callData?.id;
+                const placesJson = JSON.stringify(places);
+                const returnPlaceJson = (returnPlaceFrom || returnPlaceTo)
+                    ? JSON.stringify({ from: returnPlaceFrom, to: returnPlaceTo })
+                    : null;
+                const totalKm = places.reduce((sum, p) => sum + (parseFloat(p.distance) || 0), 0);
+
+                await axios.put(`/api/service-calls/update-status/${callId}`, {
+                    appointment_date: appointmentDate || null,
+                    visit_start_date: startDate || null,
+                    visit_end_date: endDate || null,
+                    visit_start_time: startTime || null,
+                    visit_end_time: endTime || null,
+                    places_visited: placesJson,
+                    kms_traveled: totalKm || null,
+                    return_to_home: returnHome === 'Yes',
+                    return_place: returnPlaceJson,
+                    return_km: returnKm ? parseFloat(returnKm) : null
+                });
+
+                toast.success('Visit Entry Saved!');
+                setActiveSection('RESOLUTION');
+            } catch (error) {
+                console.error('Error saving visit entry:', error);
+                toast.error('Failed to save visit entry');
+            }
+        };
+
+        saveVisitData();
     };
 
     const handleSaveProblemSolution = () => {
@@ -170,8 +216,72 @@ const EAssignCall = () => {
             toast.error('Problem 1 and Solution are mandatory!');
             return;
         }
-        toast.success('Problem & Solution saved! Navigating to Stock Screen...');
-        setActiveSection('STOCK');
+
+        // Save problem & solution to backend
+        const saveProblemData = async () => {
+            try {
+                const callId = callData?.call_id || callData?.id;
+                await axios.put(`/api/service-calls/update-status/${callId}`, {
+                    problem: problem1,
+                    problem2: problem2,
+                    solutions: solution
+                });
+
+                toast.success('Problem & Solution Saved!');
+                setActiveSection('STOCK');
+            } catch (error) {
+                console.error('Error saving problem & solution:', error);
+                toast.error('Failed to save problem & solution');
+            }
+        };
+
+        saveProblemData();
+    };
+
+    // Add a new stock item to the list
+    const handleAddStockItem = () => {
+        if (isResolved) return;
+        if (currentItemName && !currentSerialNumber) {
+            toast.error('Serial Number is mandatory if an item is selected!');
+            return;
+        }
+        if (currentUnderWarranty === 'Yes') {
+            if (!currentReturnPartName || !currentReturnSerialNumber) {
+                toast.error('Old Part Name and Serial Number are mandatory for Warranty items!');
+                return;
+            }
+        }
+
+        const newItem = {
+            id: Date.now(), // Temporary ID
+            item_type: currentStockItemType,
+            part_used: currentItemName,
+            quantity_used: parseInt(currentQuantity) || 1,
+            serial_number: currentSerialNumber,
+            remarks: currentRemarks,
+            under_warranty: currentUnderWarranty,
+            return_part_name: currentReturnPartName,
+            return_serial_number: currentReturnSerialNumber
+        };
+
+        setStockItems([...stockItems, newItem]);
+        toast.success('Stock item added!');
+
+        // Clear form
+        setCurrentItemName('');
+        setCurrentQuantity(1);
+        setCurrentSerialNumber('');
+        setCurrentRemarks('');
+        setCurrentUnderWarranty('No');
+        setCurrentReturnPartName('');
+        setCurrentReturnSerialNumber('');
+    };
+
+    // Remove a stock item from the list
+    const handleRemoveStockItem = (itemId) => {
+        if (isResolved) return;
+        setStockItems(stockItems.filter(item => item.id !== itemId));
+        toast.info('Stock item removed');
     };
 
     const handleSaveStock = () => {
@@ -179,18 +289,26 @@ const EAssignCall = () => {
             setActiveSection('STATUS');
             return;
         }
-        if (itemName && !serialNumber) {
-            toast.error('Serial Number is mandatory if an item is selected!');
-            return;
-        }
-        if (underWarranty === 'Yes') {
-            if (!returnPartName || !returnSerialNumber) {
-                toast.error('Old Part Name and Serial Number are mandatory for Warranty items!');
-                return;
+
+        // Save stock items to backend
+        const saveStockData = async () => {
+            try {
+                const callId = callData?.call_id || callData?.id;
+                const stockItemsJson = JSON.stringify(stockItems);
+
+                await axios.put(`/api/service-calls/update-status/${callId}`, {
+                    stock_items: stockItemsJson
+                });
+
+                toast.success('Stock Entry saved!');
+                setActiveSection('STATUS');
+            } catch (error) {
+                console.error('Error saving stock entry:', error);
+                toast.error('Failed to save stock entry');
             }
-        }
-        toast.success('Stock Entry saved successfully!');
-        setActiveSection('STATUS');
+        };
+
+        saveStockData();
     };
 
     const handleSubmitStatus = async () => {
@@ -253,33 +371,29 @@ const EAssignCall = () => {
                 return_to_home: isReturnHome,
                 return_place: returnPlaceJson,
                 return_km: returnKm ? parseFloat(returnKm) : null,
-                problem1: problem1,
+                problem: problem1,
                 problem2: problem2,
                 solutions: solution,
-                part_used: itemName,
-                quantity_used: quantity ? parseInt(quantity) : null,
-                serial_number: serialNumber,
-                remarks: remarks,
-                under_warranty: underWarranty,
-                return_part_name: returnPartName,
-                return_serial_number: returnSerialNumber
+                stock_items: JSON.stringify(stockItems)
             };
 
             const res = await axios.put(`/api/service-calls/update-status/${callId}`, payload);
 
             if (res.data.success) {
-                // Automatically consume stock if marked as resolved and an item is selected
-                if (callStatus === 'resolved' && itemName && quantity > 0) {
+                // Automatically consume all stock items if marked as resolved
+                if (callStatus === 'resolved' && stockItems.length > 0) {
                     try {
                         const userObj = JSON.parse(localStorage.getItem('user'));
-                        const usedStock = stocks.find(s => s.name === itemName);
-                        if (userObj && usedStock && usedStock.id) {
-                            await axios.post('/api/stock/consume', {
-                                engineerId: userObj.id || userObj._id,
-                                stockItemId: usedStock.id,
-                                quantity: parseInt(quantity),
-                                note: `Used in Assign Call - ${callId}`
-                            });
+                        for (const item of stockItems) {
+                            const usedStock = stocks.find(s => s.name === item.part_used);
+                            if (userObj && usedStock && usedStock.id) {
+                                await axios.post('/api/stock/consume', {
+                                    engineerId: userObj.id || userObj._id,
+                                    stockItemId: usedStock.id,
+                                    quantity: parseInt(item.quantity_used) || 1,
+                                    note: `Used in Assign Call - ${callId}`
+                                });
+                            }
                         }
                     } catch (err) {
                         console.error('Failed to deduct stock:', err);
@@ -479,64 +593,101 @@ const EAssignCall = () => {
 
                     {activeSection === 'STOCK' && (
                         <div className={`flex flex-col gap-4 animate-fadeIn ${readOnlyClasses}`}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Item Type</label>
-                                    <input type="text" value={itemType} readOnly className="p-2.5 rounded-xl border border-gray-300 bg-gray-100 text-gray-500 outline-none" />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Item Name</label>
-                                    <select value={itemName} onChange={e => setItemName(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">Select Item...</option>
-                                        {stocks.map(stock => (
-                                            <option key={stock.engineer_stock_id} value={stock.name}>
-                                                {stock.name} (Qty: {stock.engineer_quantity})
-                                            </option>
+                            {/* Added Stock Items List */}
+                            {stockItems.length > 0 && (
+                                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+                                    <h3 className="font-bold text-green-700 mb-3 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" className="w-5 h-5"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5.951-1.488 5.951 1.488a1 1 0 001.169-1.409l-7-14z" /></svg>
+                                        Added Stock Items ({stockItems.length})
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {stockItems.map((item) => (
+                                            <div key={item.id} className="bg-white p-3 rounded-lg flex justify-between items-start border border-green-200">
+                                                <div className="flex-1">
+                                                    <p className="font-semibold text-gray-800">{item.part_used}</p>
+                                                    <p className="text-xs text-gray-600">Qty: {item.quantity_used} | S/N: {item.serial_number}</p>
+                                                    {item.under_warranty === 'Yes' && (
+                                                        <p className="text-xs text-amber-600 font-medium mt-1">♻️ Warranty - Return: {item.return_part_name} (S/N: {item.return_serial_number})</p>
+                                                    )}
+                                                </div>
+                                                {!isResolved && (
+                                                    <button onClick={() => handleRemoveStockItem(item.id)} className="ml-2 p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                )}
+                                            </div>
                                         ))}
-                                        {itemName && !stocks.find(s => s.name === itemName) && <option value={itemName}>{itemName}</option>}
-                                    </select>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Quantity</label>
-                                    <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} disabled={isResolved} min="1" className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" />
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-sm font-semibold text-gray-600">Serial Number {!isResolved && <span className="text-red-500">*</span>}</label>
-                                    <input type="text" value={serialNumber} onChange={e => setSerialNumber(e.target.value)} disabled={isResolved} placeholder="S/N..." className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none border-red-200" />
-                                </div>
-                                <div className="flex flex-col gap-1 md:col-span-2">
-                                    <label className="text-sm font-semibold text-gray-600">Under Warranty</label>
-                                    <select value={underWarranty} onChange={e => setUnderWarranty(e.target.value)} disabled={isResolved} className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="No">No</option>
-                                        <option value="Yes">Yes</option>
-                                    </select>
-                                </div>
-                                {underWarranty === 'Yes' && (
-                                    <div className="md:col-span-2 flex flex-col gap-4 bg-amber-50 border border-amber-200 p-4 rounded-xl">
-                                        <div className="flex items-center gap-3 text-amber-800 text-sm font-medium">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                            Return Entry required for Warranty items. Please provide the old part details.
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-sm font-semibold text-amber-900">Old Part Name {!isResolved && <span className="text-red-500">*</span>}</label>
-                                                <input type="text" value={returnPartName} onChange={e => setReturnPartName(e.target.value)} disabled={isResolved} placeholder="Name of old part..." className="p-2.5 rounded-xl border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none" />
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-sm font-semibold text-amber-900">Old Part S/N {!isResolved && <span className="text-red-500">*</span>}</label>
-                                                <input type="text" value={returnSerialNumber} onChange={e => setReturnSerialNumber(e.target.value)} disabled={isResolved} placeholder="Old part S/N..." className="p-2.5 rounded-xl border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none" />
-                                            </div>
-                                        </div>
                                     </div>
-                                )}
-                                <div className="flex flex-col gap-1 md:col-span-2">
-                                    <label className="text-sm font-semibold text-gray-600">Remarks</label>
-                                    <textarea value={remarks} onChange={e => setRemarks(e.target.value)} disabled={isResolved} rows="2" className="p-2.5 rounded-xl border border-gray-300 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Any additional notes..."></textarea>
                                 </div>
-                            </div>
-                            <div className="flex justify-end pt-2 border-t border-gray-100 mt-2 pointer-events-auto">
+                            )}
+
+                            {/* Form to Add New Stock Item */}
+                            {!isResolved && (
+                                <div>
+                                    <h3 className="font-bold text-gray-800 mb-3 text-sm">➕ Add Stock Item</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 border border-blue-200 p-4 rounded-xl">
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-sm font-semibold text-gray-600">Item Type</label>
+                                            <input type="text" value={currentStockItemType} readOnly className="p-2.5 rounded-xl border border-gray-300 bg-gray-100 text-gray-500 outline-none" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-sm font-semibold text-gray-600">Item Name</label>
+                                            <select value={currentItemName} onChange={e => setCurrentItemName(e.target.value)} className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option value="">Select Item...</option>
+                                                {stocks.map(stock => (
+                                                    <option key={stock.engineer_stock_id} value={stock.name}>
+                                                        {stock.name} (Qty: {stock.engineer_quantity})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-sm font-semibold text-gray-600">Quantity</label>
+                                            <input type="number" value={currentQuantity} onChange={e => setCurrentQuantity(e.target.value)} min="1" className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-sm font-semibold text-gray-600">Serial Number <span className="text-red-500">*</span></label>
+                                            <input type="text" value={currentSerialNumber} onChange={e => setCurrentSerialNumber(e.target.value)} placeholder="S/N..." className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                                        </div>
+                                        <div className="flex flex-col gap-1 md:col-span-2">
+                                            <label className="text-sm font-semibold text-gray-600">Under Warranty</label>
+                                            <select value={currentUnderWarranty} onChange={e => setCurrentUnderWarranty(e.target.value)} className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option value="No">No</option>
+                                                <option value="Yes">Yes</option>
+                                            </select>
+                                        </div>
+                                        {currentUnderWarranty === 'Yes' && (
+                                            <div className="md:col-span-2 flex flex-col gap-4 bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                                                <div className="flex items-center gap-3 text-amber-800 text-sm font-medium">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                    Return Entry required. Please provide the old part details.
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-sm font-semibold text-amber-900">Old Part Name <span className="text-red-500">*</span></label>
+                                                        <input type="text" value={currentReturnPartName} onChange={e => setCurrentReturnPartName(e.target.value)} placeholder="Name of old part..." className="p-2.5 rounded-xl border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-sm font-semibold text-amber-900">Old Part S/N <span className="text-red-500">*</span></label>
+                                                        <input type="text" value={currentReturnSerialNumber} onChange={e => setCurrentReturnSerialNumber(e.target.value)} placeholder="Old part S/N..." className="p-2.5 rounded-xl border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="flex flex-col gap-1 md:col-span-2">
+                                            <label className="text-sm font-semibold text-gray-600">Remarks</label>
+                                            <textarea value={currentRemarks} onChange={e => setCurrentRemarks(e.target.value)} rows="2" className="p-2.5 rounded-xl border border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Any additional notes..."></textarea>
+                                        </div>
+                                        <button onClick={handleAddStockItem} className="md:col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors shadow-sm active:scale-95">
+                                            + Add This Item
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end pt-2 border-t border-gray-100 mt-4 pointer-events-auto">
                                 <button onClick={handleSaveStock} className="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2.5 px-6 rounded-xl transition-colors shadow-sm active:scale-95">
-                                    {isResolved ? 'Next Section' : 'Save Stock Entry'}
+                                    {isResolved ? 'Next Section' : 'Save & Go to Status'}
                                 </button>
                             </div>
                         </div>
