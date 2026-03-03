@@ -1193,7 +1193,6 @@ router.put('/assign-call/:callId/basic-details', requireAuth, async (req, res) =
   try {
     const { callId } = req.params;
     const {
-      id,
       name,
       role,
       mobile_number,
@@ -1204,18 +1203,17 @@ router.put('/assign-call/:callId/basic-details', requireAuth, async (req, res) =
     const query = `
       UPDATE assign_call 
       SET 
-        id = $1,
-        name = $2,
-        role = $3,
-        mobile_number = $4,
-        problem = $5,
-        description = $6
-      WHERE call_id::text = $7 OR id = $7
+        name = $1,
+        role = $2,
+        mobile_number = $3,
+        problem = $4,
+        description = $5
+      WHERE call_id::text = $6 OR id = $6 OR formatted_call_id = $6
       RETURNING *
     `;
 
     const result = await pool.query(query, [
-      id, name, role, mobile_number, problem, description, String(callId)
+      name, role, mobile_number, problem, description, String(callId)
     ]);
 
     if (!result.rows || result.rows.length === 0) {
@@ -1250,7 +1248,7 @@ router.put('/assign-call/:callId/resolved-details', requireAuth, async (req, res
     }
 
     values.push(String(callId));
-    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} RETURNING *`;
+    const q = `UPDATE assign_call SET ${fields.join(', ')} WHERE call_id::text = $${idx} OR id = $${idx} OR formatted_call_id = $${idx} RETURNING *`;
 
     const result = await pool.query(q, values);
 
@@ -1281,7 +1279,7 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Only engineers can mark letterhead received' });
       }
 
-      const q = `UPDATE assign_call SET letterhead_received = true WHERE call_id::text = $1 RETURNING *`;
+      const q = `UPDATE assign_call SET letterhead_received = true WHERE call_id::text = $1 OR id = $1 OR formatted_call_id = $1 RETURNING *`;
       const result = await pool.query(q, [String(callId)]);
       if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
       return res.json({ success: true, call: result.rows[0] });
@@ -1293,7 +1291,7 @@ router.put('/assign-call/:callId/letterhead', requireAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Only HR/Admin can mark letterhead submitted' });
       }
 
-      const q = `UPDATE assign_call SET letterhead_submitted = true, status = $1 WHERE call_id::text = $2 RETURNING *`;
+      const q = `UPDATE assign_call SET letterhead_submitted = true, status = $1 WHERE call_id::text = $2 OR id = $2 OR formatted_call_id = $2 RETURNING *`;
       const newStatus = 'letterhead_received_by_hr';
       const result = await pool.query(q, [newStatus, String(callId)]);
       if (!result.rows || result.rows.length === 0) return res.status(404).json({ success: false, message: 'Not found' });
