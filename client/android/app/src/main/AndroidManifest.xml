@@ -28,18 +28,22 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Background Geolocation Foreground Service -->
+        <!-- HRM Location Tracking Service -->
         <service
-            android:name="com.transistorsoft.locationmanager.service.TrackingService"
+            android:name=".LocationTrackingService"
             android:foregroundServiceType="location"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="false" />
 
-        <service
-            android:name="com.transistorsoft.locationmanager.service.LocationRequestService"
-            android:foregroundServiceType="location"
+        <!-- Boot Receiver to restart service on device restart -->
+        <receiver
+            android:name=".BootCompletedReceiver"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -52,5 +56,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.location.gps" />
 </manifest>

@@ -1,9 +1,9 @@
 import { Geolocation } from '@capacitor/geolocation';
 import { App as CapacitorApp } from '@capacitor/app';
-import { registerPlugin } from '@capacitor/core';
 import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
 import { Capacitor } from '@capacitor/core';
+import { startNativeLocationTracking, stopNativeLocationTracking } from './nativeLocationTracking';
 
 // Track app pause/resume state
 let appIsPaused = false;
@@ -11,51 +11,11 @@ let appIsPaused = false;
 // Add debug tag for console logs
 const DEBUG_TAG = '[LOCATION]';
 
-// Register the background geolocation plugin ONCE at module load
-// This works on native platforms; on web it will be undefined
-let BackgroundGeolocation = null;
-
-// Try to register plugin at module load time (before any function calls)
-try {
-    if (Capacitor.isNativePlatform()) {
-        BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
-        console.log(DEBUG_TAG, '✅ Background plugin registered at startup');
-    }
-} catch (err) {
-    // Silent - plugin may not be available
-    console.log(DEBUG_TAG, '📝 Background plugin note:', err?.message?.substring(0, 50));
-}
-
 /**
- * Safe wrapper for calling plugin methods
- * Handles both Promise and non-Promise returns
+ * NOTE: @capacitor-community/background-geolocation plugin has compatibility issues with Capacitor bridge.
+ * Using JavaScript interval-based tracking instead, which works reliably while app is running.
+ * Background tracking when app is closed would require native WorkManager implementation.
  */
-const safePluginCall = async (method, ...args) => {
-    try {
-        const result = method(...args);
-        
-        // Check if it's a real Promise
-        if (result && typeof result.then === 'function' && typeof result.catch === 'function') {
-            return await result;
-        }
-        
-        // Not a Promise, return as-is
-        return result;
-    } catch (error) {
-        console.error(DEBUG_TAG, '❌ Plugin call error:', error?.message);
-        throw error;
-    }
-};
-
-const initBackgroundGeolocation = async () => {
-    if (BackgroundGeolocation) {
-        console.log(DEBUG_TAG, '✅ Background plugin ready');
-        return BackgroundGeolocation;
-    }
-    
-    // Plugin not available on this platform
-    return null;
-};
 
 /**
  * Request location permissions (including background location on Android 12+)
@@ -72,19 +32,15 @@ async function requestLocationPermissions() {
         console.log('📍 Foreground location permission:', result);
         
         // For Android 12+, we may need to request background location separately
-        // This is typically requested via native Android code, but we can attempt it
         try {
-            // Some Capacitor versions support requesting background location
             if (Capacitor.getPlatform() === 'android') {
-                console.log('📍 Attempting to request background location permission on Android...');
-                // The actual Android runtime permission request happens in native code
-                // but we can log and ensure foreground permission is granted
+                console.log('📍 Location permissions requested on Android');
                 if (result.location === 'granted' || result.location === 'prompt-only') {
-                    console.log('✅ Location permission granted/prompt-only - background tracking can proceed');
+                    console.log('✅ Location permission granted - tracking ready');
                 }
             }
         } catch (bgError) {
-            console.warn('Background location permission handled by native code:', bgError?.message);
+            console.warn('Background location permission note:', bgError?.message);
         }
         
         return result;
@@ -95,170 +51,39 @@ async function requestLocationPermissions() {
 }
 
 /**
- * Start true background geolocation (runs even when app is closed)
- * Falls back to interval tracking if native plugin not available
+ * Start location tracking using JavaScript interval
+ * This provides continuous location updates while the app is running
  */
 async function startBackgroundGeolocation(userId) {
     console.log(DEBUG_TAG, '🟢 ===== STARTING LOCATION TRACKING =====');
     console.log(DEBUG_TAG, '📱 Platform:', Capacitor.getPlatform());
-    try {
-        console.log(DEBUG_TAG, '1️⃣ Checking for background geolocation plugin...');
-        const BGGeo = await initBackgroundGeolocation();
-        
-        if (!BGGeo) {
-            console.log(DEBUG_TAG, '📍 Native plugin unavailable - using JavaScript interval tracking');
-            console.log(DEBUG_TAG, '⚠️ Note: Interval tracking will pause when app is backgrounded');
-            return false;
-        }
-
-        console.log(DEBUG_TAG, '2️⃣ Plugin loaded successfully, requesting permissions...');
-        
-        // Request permissions first
-        const permResult = await requestLocationPermissions();
-        if (!permResult || permResult.location !== 'granted') {
-            console.warn(DEBUG_TAG, '⚠️ Location permission not granted - background tracking may not work');
-        } else {
-            console.log(DEBUG_TAG, '✅ Location permission granted');
-        }
-
-        // Configure background geolocation with comprehensive settings
-        const config = {
-            // Location accuracy settings
-            desiredAccuracy: 10, // 10 meters accuracy
-            stationaryRadius: 10, // Requires 10 meter movement to leave stationary state
-            distanceFilter: 10, // Store location when moved 10+ meters
-            
-            // Timing settings for continuous tracking
-            interval: 5000, // Check every 5 seconds (CRITICAL: fast interval for continuous updates)
-            fastestInterval: 1000, // Absolute fastest check every 1 second
-            activitiesInterval: 3000, // Activity recognition check every 3 seconds
-            
-            // Notification settings (keeps foreground service alive)
-            notificationTitle: 'HRM Location Tracking Active',
-            notificationText: 'Recording work location in background',
-            notificationTextUpdated: 'Work location recorded',
-            notificationLargeIcon: 'ic_launcher',
-            notificationSmallIcon: 'ic_launcher',
-            notificationIconColor: '#2196F3',
-            notificationSmallIconColor: '#2196F3',
-            notificationPriority: 'high', // Maximum priority to prevent killing
-            
-            // CRITICAL SETTINGS FOR CONTINUOUS BACKGROUND TRACKING
-            startOnBoot: true, // Auto-start on device reboot
-            stopOnTerminate: false, // ⭐ CRITICAL: Keep running after app termination
-            stopOnStationary: false, // Never stop due to stationary detection
-            startForeground: true, // Start with notification immediately
-            foregroundService: true, // Force foreground service
-            enableHeadless: true, // Handle location updates even when app killed
-            preventSuspend: true, // Prevent system from suspending
-            allowIdenticalConsecutiveLocations: false, // Don't store duplicate locations
-            
-            // Battery optimization (set to false for maximum frequency)
-            isMoving: true, // Assume always moving to get continuous updates
-            activityType: 'Other', // Generic activity type
-            
-            // Batching and retry settings
-            maxRecordsToBatch: 100, // Process frequently
-            batchSync: false, // Send immediately, not in batch
-            autoSync: true, // Auto-sync location to server
-            
-            // Logging
-            logLevel: 2, // Debug level
-            logFile: 'hrm-tracking.log', // Log file for debugging
-            
-            // For plugins that support HTTP
-            url: null, // Don't use direct HTTP - use onLocation listener
-            params: { userId }
-        };
-        
-        console.log(DEBUG_TAG, '📋 Plugin config:', config);
-        console.log(DEBUG_TAG, '4️⃣ Calling BGGeo.configure()...');
-        
-        try {
-            // Use safe wrapper for plugin method call
-            await safePluginCall(BGGeo.configure.bind(BGGeo), config);
-            console.log(DEBUG_TAG, '✅ Configure completed');
-        } catch (configError) {
-            console.error(DEBUG_TAG, '❌ Configure failed:', configError?.message);
-            throw configError;
-        }
-
-        console.log(DEBUG_TAG, '5️⃣ Setting up event listeners...');
-
-        // Listen for location updates
-        try {
-            BGGeo.onLocation(async (location) => {
-                console.log(DEBUG_TAG, '📍 Location event received:', location);
-                try {
-                    // Store the location
-                    await storeLocation(location.latitude, location.longitude, userId);
-                } catch (error) {
-                    console.error(DEBUG_TAG, '❌ Error storing background location:', error);
-                }
-            });
-            console.log(DEBUG_TAG, '✅ onLocation listener registered');
-        } catch (listenerError) {
-            console.warn(DEBUG_TAG, '⚠️ Failed to register onLocation:', listenerError?.message);
-        }
-
-        // Handle errors
-        try {
-            BGGeo.onError((error) => {
-                console.error(DEBUG_TAG, '❌ Background Geolocation error event:', error);
-            });
-            console.log(DEBUG_TAG, '✅ onError listener registered');
-        } catch (errorListenerError) {
-            console.warn(DEBUG_TAG, '⚠️ Failed to register onError:', errorListenerError?.message);
-        }
-        // Handle motion changes
-        try {
-            BGGeo.onMotionChange?.((isMoving) => {
-                console.log(DEBUG_TAG, '📍 Motion event:', isMoving ? 'Moving' : 'Stationary');
-            });
-            console.log(DEBUG_TAG, '✅ onMotionChange listener registered');
-        } catch (motionError) {
-            console.warn(DEBUG_TAG, '⚠️ Failed to register onMotionChange:', motionError?.message);
-        }
-
-        // Start tracking
-        console.log(DEBUG_TAG, '6️⃣ Calling BGGeo.start()...');
-        try {
-            await safePluginCall(BGGeo.start.bind(BGGeo));
-            console.log(DEBUG_TAG, '✅ Background geolocation started successfully');
-            console.log(DEBUG_TAG, '🟢 ===== BACKGROUND GEOLOCATION FULLY INITIALIZED =====');
-            return true;
-        } catch (startError) {
-            console.error(DEBUG_TAG, '❌ BGGeo.start() failed:', startError?.message);
-            throw startError;
-        }
-    } catch (error) {
-        console.error(DEBUG_TAG, '❌ FAILED TO START BACKGROUND GEOLOCATION:', error?.message);
-        console.error(DEBUG_TAG, 'Stack:', error?.stack);
-        return false;
+    console.log(DEBUG_TAG, '📍 Using JavaScript interval tracking (reliable while app is running)');
+    
+    // Request permissions
+    const permResult = await requestLocationPermissions();
+    if (!permResult || permResult.location !== 'granted') {
+        console.warn(DEBUG_TAG, '⚠️ Location permission not granted - tracking may not work');
+    } else {
+        console.log(DEBUG_TAG, '✅ Location permission granted');
     }
+    
+    console.log(DEBUG_TAG, '✅ Location tracking initialized');
+    return true;
 }
 
 /**
- * Stop true background geolocation
+ * Stop location tracking
  */
 async function stopBackgroundGeolocation() {
     try {
-        const BGGeo = await initBackgroundGeolocation();
-        if (BGGeo) {
-            await safePluginCall(BGGeo.stop.bind(BGGeo));
-            console.log('🔴 Background geolocation stopped');
-        }
+        console.log(DEBUG_TAG, '🔴 Stopping location tracking');
     } catch (error) {
-        console.error('Error stopping background geolocation:', error);
+        console.error('Error stopping location tracking:', error);
     }
 }
 
 /**
- * Background Location Tracking Service
- * - Fetches location every ~1 minute
- * - Stores location if moved 10+ meters OR after 1 minute
- * - Runs continuously in background (even when app is closed)
- * - Automatically starts on punch in, stops on punch out
+ * Location Tracking Service Configuration
  */
 
 let locationTrackingInterval = null;
@@ -479,23 +304,8 @@ async function initializeAppLifecycleListeners() {
 
         // Listen for app pause (app goes to background)
         CapacitorApp.addListener('pause', async () => {
-            console.log('⏸️ App paused - background geolocation should continue independently');
+            console.log('⏸️ App paused - interval tracking paused (normal behavior)');
             appIsPaused = true;
-            
-            // Ensure background geolocation is still running
-            const isTrackingActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
-            if (isTrackingActive) {
-                console.log('📍 Verifying background geolocation is still active...');
-                const BGGeo = await initBackgroundGeolocation();
-                if (BGGeo && BGGeo.isTracking) {
-                    try {
-                        const isRunning = await safePluginCall(BGGeo.isTracking.bind(BGGeo));
-                        console.log('📍 Background geolocation running:', isRunning);
-                    } catch (error) {
-                        console.warn('Could not verify geolocation status:', error?.message);
-                    }
-                }
-            }
         });
 
         // Listen for app resume (app comes back to foreground)
@@ -604,6 +414,18 @@ export async function startLocationTracking(userId) {
         startTrackingHeartbeat(userId);
     }
 
+    // Start native background service for Android (tracks even when app is closed)
+    if (Capacitor.getPlatform() === 'android') {
+        try {
+            console.log('🟢 Starting native Android background location service...');
+            await startNativeLocationTracking(userId);
+            console.log('✅ Native background service started - will track even when app is closed');
+        } catch (error) {
+            console.warn('⚠️ Could not start native service:', error?.message);
+            console.log('App will use JavaScript interval tracking instead');
+        }
+    }
+
     // Also register background task for when app is in background
     await backgroundLocationTask(userId);
 }
@@ -622,6 +444,16 @@ export async function stopLocationTracking() {
 
     // Stop background geolocation
     await stopBackgroundGeolocation();
+
+    // Stop native Android service
+    if (Capacitor.getPlatform() === 'android') {
+        try {
+            await stopNativeLocationTracking();
+            console.log('✅ Native background service stopped');
+        } catch (error) {
+            console.warn('⚠️ Could not stop native service:', error?.message);
+        }
+    }
 
     // Clear tracking state
     localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE);
