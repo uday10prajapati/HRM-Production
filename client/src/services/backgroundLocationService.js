@@ -26,6 +26,27 @@ try {
     console.log(DEBUG_TAG, '📝 Background plugin note:', err?.message?.substring(0, 50));
 }
 
+/**
+ * Safe wrapper for calling plugin methods
+ * Handles both Promise and non-Promise returns
+ */
+const safePluginCall = async (method, ...args) => {
+    try {
+        const result = method(...args);
+        
+        // Check if it's a real Promise
+        if (result && typeof result.then === 'function' && typeof result.catch === 'function') {
+            return await result;
+        }
+        
+        // Not a Promise, return as-is
+        return result;
+    } catch (error) {
+        console.error(DEBUG_TAG, '❌ Plugin call error:', error?.message);
+        throw error;
+    }
+};
+
 const initBackgroundGeolocation = async () => {
     if (BackgroundGeolocation) {
         console.log(DEBUG_TAG, '✅ Background plugin ready');
@@ -154,11 +175,8 @@ async function startBackgroundGeolocation(userId) {
         console.log(DEBUG_TAG, '4️⃣ Calling BGGeo.configure()...');
         
         try {
-            // Some Capacitor plugins don't return Promises
-            const configResult = BGGeo.configure(config);
-            if (configResult && typeof configResult.then === 'function') {
-                await configResult;
-            }
+            // Use safe wrapper for plugin method call
+            await safePluginCall(BGGeo.configure.bind(BGGeo), config);
             console.log(DEBUG_TAG, '✅ Configure completed');
         } catch (configError) {
             console.error(DEBUG_TAG, '❌ Configure failed:', configError?.message);
@@ -205,10 +223,7 @@ async function startBackgroundGeolocation(userId) {
         // Start tracking
         console.log(DEBUG_TAG, '6️⃣ Calling BGGeo.start()...');
         try {
-            const startResult = BGGeo.start();
-            if (startResult && typeof startResult.then === 'function') {
-                await startResult;
-            }
+            await safePluginCall(BGGeo.start.bind(BGGeo));
             console.log(DEBUG_TAG, '✅ Background geolocation started successfully');
             console.log(DEBUG_TAG, '🟢 ===== BACKGROUND GEOLOCATION FULLY INITIALIZED =====');
             return true;
@@ -230,10 +245,7 @@ async function stopBackgroundGeolocation() {
     try {
         const BGGeo = await initBackgroundGeolocation();
         if (BGGeo) {
-            const stopResult = BGGeo.stop();
-            if (stopResult && typeof stopResult.then === 'function') {
-                await stopResult;
-            }
+            await safePluginCall(BGGeo.stop.bind(BGGeo));
             console.log('🔴 Background geolocation stopped');
         }
     } catch (error) {
@@ -475,13 +487,9 @@ async function initializeAppLifecycleListeners() {
             if (isTrackingActive) {
                 console.log('📍 Verifying background geolocation is still active...');
                 const BGGeo = await initBackgroundGeolocation();
-                if (BGGeo) {
+                if (BGGeo && BGGeo.isTracking) {
                     try {
-                        const trackingResult = BGGeo.isTracking?.();
-                        let isRunning = trackingResult;
-                        if (trackingResult && typeof trackingResult.then === 'function') {
-                            isRunning = await trackingResult;
-                        }
+                        const isRunning = await safePluginCall(BGGeo.isTracking.bind(BGGeo));
                         console.log('📍 Background geolocation running:', isRunning);
                     } catch (error) {
                         console.warn('Could not verify geolocation status:', error?.message);
