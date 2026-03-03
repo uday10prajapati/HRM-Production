@@ -239,7 +239,18 @@ router.get('/engineer/:id', async (req, res) => {
   try {
     // Accept both UUID and legacy integer-like engineer IDs by comparing as text.
     const q = await pool.query(
-      `SELECT es.id as engineer_stock_id, es.engineer_id, es.quantity as engineer_quantity, si.*
+      `SELECT 
+        es.id as engineer_stock_id, 
+        es.engineer_id, 
+        es.quantity as engineer_quantity,
+        es.stock_item_id,
+        si.id,
+        si.name,
+        si.sku,
+        si.description,
+        si.quantity,
+        si.threshold,
+        si.created_at
        FROM engineer_stock es
        JOIN stock_items si ON si.id = es.stock_item_id
        WHERE es.engineer_id::text = $1
@@ -263,6 +274,18 @@ router.post('/consume', async (req, res) => {
     const numStockItemId = parseInt(stockItemId);
     const numQuantity = parseInt(quantity);
     
+    console.log(`📝 Consume request - Item ID: ${numStockItemId}, Qty: ${numQuantity}, Engineer: ${engineerId}`);
+    
+    // FIRST: Check what's in stock_items table
+    const checkBefore = await pool.query('SELECT id, name, quantity FROM stock_items WHERE id = $1', [numStockItemId]);
+    if (checkBefore.rowCount === 0) {
+      console.error(`❌ CRITICAL: Stock item with id ${numStockItemId} does NOT exist in stock_items table!`);
+      const allItems = await pool.query('SELECT id, name FROM stock_items');
+      console.log(`📋 All stock items in database:`, allItems.rows);
+    } else {
+      console.log(`🔍 Stock item BEFORE update:`, checkBefore.rows[0]);
+    }
+    
     // Deduct from engineer stock first
     const es = await pool.query(
       'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2',
@@ -271,11 +294,27 @@ router.post('/consume', async (req, res) => {
     
     if (es.rowCount > 0) {
       // Update engineer stock
-      await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, es.rows[0].id]);
+      const esUpdate = await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, es.rows[0].id]);
+      console.log(`✅ Engineer stock updated: ${esUpdate.rowCount} rows affected`);
+    } else {
+      console.log(`⚠️  No engineer_stock record found for engineer ${engineerId} and item ${numStockItemId}`);
     }
     
     // ALSO deduct from central stock so it reflects actual reduced inventory
-    await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, numStockItemId]);
+    const ciUpdate = await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, numStockItemId]);
+    console.log(`✅ Central stock UPDATE: ${ciUpdate.rowCount} rows affected`);
+    
+    // CHECK what happened after the update
+    const checkAfter = await pool.query('SELECT id, name, quantity FROM stock_items WHERE id = $1', [numStockItemId]);
+    if (checkAfter.rowCount === 0) {
+      console.error(`❌ After update: Stock item ${numStockItemId} still not found!`);
+    } else {
+      console.log(`🔍 Stock item AFTER update:`, checkAfter.rows[0]);
+    }
+    
+    if (ciUpdate.rowCount === 0) {
+      console.error(`❌ WARNING: Central stock UPDATE touched 0 rows!`);
+    }
 
     // Record consumption for audit trail
     const ins = await pool.query(
@@ -283,7 +322,7 @@ router.post('/consume', async (req, res) => {
       [engineerId || null, numStockItemId, numQuantity, note || null]
     );
 
-    console.log(`✅ Stock consumed: ${numQuantity} units of item ${numStockItemId} for engineer ${engineerId}`);
+    console.log(`✅ Stock consumed: ${numQuantity} units of item ${numStockItemId}`);
     res.json({ consumed: ins.rows[0] });
   } catch (err) {
     console.error('❌ Stock consume error:', err);

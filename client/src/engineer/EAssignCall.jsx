@@ -267,9 +267,21 @@ const EAssignCall = () => {
         // Find the stock item and deduct immediately if item is selected
         if (currentItemName) {
             try {
+                console.log('🔍 Looking for stock item:', currentItemName);
+                console.log('📦 Available stocks:', stocks);
+                
                 const usedStock = stocks.find(s => s.name === currentItemName);
+                console.log('✅ Found stock:', usedStock);
+                
                 if (usedStock && usedStock.id) {
                     const userObj = JSON.parse(localStorage.getItem('user'));
+                    console.log('👤 User:', userObj);
+                    console.log('📤 Sending consume request:', {
+                        engineerId: userObj.id || userObj._id,
+                        stockItemId: usedStock.id,
+                        quantity: parseInt(currentQuantity) || 1
+                    });
+                    
                     const deductRes = await axios.post('/api/stock/consume', {
                         engineerId: userObj.id || userObj._id,
                         stockItemId: usedStock.id,  // Use the stock_item ID (stock_items.id), not engineer_stock_id
@@ -277,15 +289,21 @@ const EAssignCall = () => {
                         note: `Used in Assign Call - ${callData?.formatted_call_id || callData?.call_id}`
                     });
                     
+                    console.log('✔️ Consume response:', deductRes.data);
+                    
                     // Refresh the stock list to show updated quantities
                     await fetchEngineerStocks(userObj.id || userObj._id);
                     
                     toast.success(`Stock deducted: ${currentItemName} (Qty: ${currentQuantity})`);
+                } else {
+                    console.warn('⚠️ Stock item not found or missing ID:', usedStock);
                 }
             } catch (err) {
-                console.error('Failed to deduct stock:', err);
+                console.error('❌ Failed to deduct stock:', err);
                 toast.error('Stock item added but could not deduct from inventory: ' + (err.response?.data?.error || err.message));
             }
+        } else {
+            console.log('⏭️ No item name selected, skipping stock deduction');
         }
 
         setStockItems([...stockItems, newItem]);
