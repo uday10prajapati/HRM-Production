@@ -259,27 +259,31 @@ router.post('/consume', async (req, res) => {
   if (!stockItemId || !quantity) return res.status(400).json({ error: 'stockItemId and quantity required' });
   
   try {
+    // Convert to proper types
+    const numStockItemId = parseInt(stockItemId);
+    const numQuantity = parseInt(quantity);
+    
     // Deduct from engineer stock first
     const es = await pool.query(
       'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2',
-      [engineerId != null ? String(engineerId) : null, stockItemId != null ? String(stockItemId) : null]
+      [engineerId != null ? String(engineerId) : null, String(numStockItemId)]
     );
     
     if (es.rowCount > 0) {
       // Update engineer stock
-      await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [quantity, es.rows[0].id]);
+      await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, es.rows[0].id]);
     }
     
     // ALSO deduct from central stock so it reflects actual reduced inventory
-    await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [quantity, stockItemId]);
+    await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, numStockItemId]);
 
     // Record consumption for audit trail
     const ins = await pool.query(
       'INSERT INTO stock_consumption (engineer_id, stock_item_id, quantity, note) VALUES ($1,$2,$3,$4) RETURNING *',
-      [engineerId || null, stockItemId, Number(quantity), note || null]
+      [engineerId || null, numStockItemId, numQuantity, note || null]
     );
 
-    console.log(`✅ Stock consumed: ${quantity} units of item ${stockItemId} for engineer ${engineerId}`);
+    console.log(`✅ Stock consumed: ${numQuantity} units of item ${numStockItemId} for engineer ${engineerId}`);
     res.json({ consumed: ins.rows[0] });
   } catch (err) {
     console.error('❌ Stock consume error:', err);
