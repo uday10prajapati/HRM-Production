@@ -1,76 +1,223 @@
 import { Geolocation } from '@capacitor/geolocation';
+import { App as CapacitorApp } from '@capacitor/app';
 import axios from 'axios';
 import { LOCATION_TRACKING_CONFIG } from './locationTrackingConfig';
 import { Capacitor } from '@capacitor/core';
 
+// Track app pause/resume state
+let appIsPaused = false;
+
+// Add debug tag for console logs
+const DEBUG_TAG = '[LOCATION]';
+
 // Try to import background geolocation for true background tracking
 let BackgroundGeolocation = null;
 const initBackgroundGeolocation = async () => {
-    if (BackgroundGeolocation) return BackgroundGeolocation;
+    if (BackgroundGeolocation) {
+        console.log(DEBUG_TAG, '✅ Background Geolocation already loaded');
+        return BackgroundGeolocation;
+    }
     try {
+        console.log(DEBUG_TAG, '🔧 Attempting to load background geolocation plugin...');
         const moduleName = '@capacitor-community/background-geolocation';
-        const module = await import(/* @vite-ignore */ moduleName).catch(() => null);
+        const module = await import(/* @vite-ignore */ moduleName).catch((err) => {
+            console.error(DEBUG_TAG, '❌ Failed to import plugin:', err?.message);
+            return null;
+        });
+        
+        if (!module) {
+            console.error(DEBUG_TAG, '❌ Module import failed');
+            return null;
+        }
+        
         BackgroundGeolocation = module?.BackgroundGeolocation;
+        
+        if (!BackgroundGeolocation) {
+            console.error(DEBUG_TAG, '❌ BackgroundGeolocation not found in module');
+            return null;
+        }
+        
+        console.log(DEBUG_TAG, '✅ Background Geolocation plugin loaded successfully');
         return BackgroundGeolocation;
     } catch (error) {
-        console.warn('Background Geolocation not available');
+        console.error(DEBUG_TAG, '❌ Error loading background geolocation:', error?.message);
         return null;
     }
 };
 
 /**
+ * Request location permissions (including background location on Android 12+)
+ */
+async function requestLocationPermissions() {
+    try {
+        console.log('🔐 Requesting location permissions...');
+        
+        // First request foreground location permissions
+        const result = await Geolocation.requestPermissions({
+            permissions: ['coarseLocation', 'fineLocation']
+        });
+        
+        console.log('📍 Foreground location permission:', result);
+        
+        // For Android 12+, we may need to request background location separately
+        // This is typically requested via native Android code, but we can attempt it
+        try {
+            // Some Capacitor versions support requesting background location
+            if (Capacitor.getPlatform() === 'android') {
+                console.log('📍 Attempting to request background location permission on Android...');
+                // The actual Android runtime permission request happens in native code
+                // but we can log and ensure foreground permission is granted
+                if (result.location === 'granted' || result.location === 'prompt-only') {
+                    console.log('✅ Location permission granted/prompt-only - background tracking can proceed');
+                }
+            }
+        } catch (bgError) {
+            console.warn('Background location permission handled by native code:', bgError?.message);
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('Error requesting location permissions:', error);
+        return null;
+    }
+}
+
+/**
  * Start true background geolocation (runs even when app is closed)
  */
 async function startBackgroundGeolocation(userId) {
+    console.log(DEBUG_TAG, '🟢 ===== STARTING BACKGROUND GEOLOCATION =====');
     try {
+        console.log(DEBUG_TAG, '1️⃣ Initializing background geolocation plugin...');
         const BGGeo = await initBackgroundGeolocation();
+        
         if (!BGGeo) {
-            console.warn('BackgroundGeolocation plugin not available, falling back to interval tracking');
+            console.error(DEBUG_TAG, '❌ BackgroundGeolocation plugin not available - using interval tracking only');
             return false;
         }
 
-        console.log('🟢 Starting true background geolocation tracking');
+        console.log(DEBUG_TAG, '2️⃣ Plugin loaded successfully, requesting permissions...');
+        
+        // Request permissions first
+        const permResult = await requestLocationPermissions();
+        if (!permResult || permResult.location !== 'granted') {
+            console.warn(DEBUG_TAG, '⚠️ Location permission not granted - background tracking may not work');
+        } else {
+            console.log(DEBUG_TAG, '✅ Location permission granted');
+        }
 
-        // Configure background geolocation
-        await BGGeo.configure({
-            desiredAccuracy: 10, // 10 meters
-            stationaryRadius: 5, // 5 meters
-            distanceFilter: 5, // 5 meters - store every 5m moved
-            interval: 30000, // Check every 30 seconds
-            fastestInterval: 10000, // Fastest check every 10 seconds
-            activitiesInterval: 30000, // Activity check interval
-            notificationTitle: 'Location Tracking',
-            notificationText: 'Tracking work location',
-            startOnBoot: true,
-            stopOnTerminate: false, // IMPORTANT: Keep tracking even if app is terminated
-            startForeground: true,
-            allowIdenticalConsecutiveLocations: false,
-            heartbeatInterval: 60000, // Heartbeat every 60 seconds
+        // Configure background geolocation with comprehensive settings
+        const config = {
+            // Location accuracy settings
+            desiredAccuracy: 10, // 10 meters accuracy
+            stationaryRadius: 10, // Requires 10 meter movement to leave stationary state
+            distanceFilter: 10, // Store location when moved 10+ meters
+            
+            // Timing settings for continuous tracking
+            interval: 5000, // Check every 5 seconds (CRITICAL: fast interval for continuous updates)
+            fastestInterval: 1000, // Absolute fastest check every 1 second
+            activitiesInterval: 3000, // Activity recognition check every 3 seconds
+            
+            // Notification settings (keeps foreground service alive)
+            notificationTitle: 'HRM Location Tracking Active',
+            notificationText: 'Recording work location in background',
+            notificationTextUpdated: 'Work location recorded',
+            notificationLargeIcon: 'ic_launcher',
+            notificationSmallIcon: 'ic_launcher',
+            notificationIconColor: '#2196F3',
+            notificationSmallIconColor: '#2196F3',
+            notificationPriority: 'high', // Maximum priority to prevent killing
+            
+            // CRITICAL SETTINGS FOR CONTINUOUS BACKGROUND TRACKING
+            startOnBoot: true, // Auto-start on device reboot
+            stopOnTerminate: false, // ⭐ CRITICAL: Keep running after app termination
+            stopOnStationary: false, // Never stop due to stationary detection
+            startForeground: true, // Start with notification immediately
+            foregroundService: true, // Force foreground service
+            enableHeadless: true, // Handle location updates even when app killed
+            preventSuspend: true, // Prevent system from suspending
+            allowIdenticalConsecutiveLocations: false, // Don't store duplicate locations
+            
+            // Battery optimization (set to false for maximum frequency)
+            isMoving: true, // Assume always moving to get continuous updates
+            activityType: 'Other', // Generic activity type
+            
+            // Batching and retry settings
+            maxRecordsToBatch: 100, // Process frequently
+            batchSync: false, // Send immediately, not in batch
+            autoSync: true, // Auto-sync location to server
+            
+            // Logging
+            logLevel: 2, // Debug level
+            logFile: 'hrm-tracking.log', // Log file for debugging
+            
+            // For plugins that support HTTP
+            url: null, // Don't use direct HTTP - use onLocation listener
             params: { userId }
-        });
+        };
+        
+        console.log(DEBUG_TAG, '📋 Plugin config:', config);
+        console.log(DEBUG_TAG, '4️⃣ Calling BGGeo.configure()...');
+        
+        try {
+            await BGGeo.configure(config);
+            console.log(DEBUG_TAG, '✅ Configure completed');
+        } catch (configError) {
+            console.error(DEBUG_TAG, '❌ Configure failed:', configError?.message);
+            throw configError;
+        }
+
+        console.log(DEBUG_TAG, '5️⃣ Setting up event listeners...');
 
         // Listen for location updates
-        BGGeo.onLocation(async (location) => {
-            console.log('📍 Background location received:', location);
-            try {
-                // Store the location
-                await storeLocation(location.latitude, location.longitude, userId);
-            } catch (error) {
-                console.error('Error storing background location:', error);
-            }
-        });
+        try {
+            BGGeo.onLocation(async (location) => {
+                console.log(DEBUG_TAG, '📍 Location event received:', location);
+                try {
+                    // Store the location
+                    await storeLocation(location.latitude, location.longitude, userId);
+                } catch (error) {
+                    console.error(DEBUG_TAG, '❌ Error storing background location:', error);
+                }
+            });
+            console.log(DEBUG_TAG, '✅ onLocation listener registered');
+        } catch (listenerError) {
+            console.warn(DEBUG_TAG, '⚠️ Failed to register onLocation:', listenerError?.message);
+        }
 
         // Handle errors
-        BGGeo.onError((error) => {
-            console.error('❌ Background Geolocation error:', error);
-        });
+        try {
+            BGGeo.onError((error) => {
+                console.error(DEBUG_TAG, '❌ Background Geolocation error event:', error);
+            });
+            console.log(DEBUG_TAG, '✅ onError listener registered');
+        } catch (errorListenerError) {
+            console.warn(DEBUG_TAG, '⚠️ Failed to register onError:', errorListenerError?.message);
+        }
+        // Handle motion changes
+        try {
+            BGGeo.onMotionChange?.((isMoving) => {
+                console.log(DEBUG_TAG, '📍 Motion event:', isMoving ? 'Moving' : 'Stationary');
+            });
+            console.log(DEBUG_TAG, '✅ onMotionChange listener registered');
+        } catch (motionError) {
+            console.warn(DEBUG_TAG, '⚠️ Failed to register onMotionChange:', motionError?.message);
+        }
 
         // Start tracking
-        await BGGeo.start();
-        console.log('✅ Background geolocation started successfully');
-        return true;
+        console.log(DEBUG_TAG, '6️⃣ Calling BGGeo.start()...');
+        try {
+            await BGGeo.start();
+            console.log(DEBUG_TAG, '✅ Background geolocation started successfully');
+            console.log(DEBUG_TAG, '🟢 ===== BACKGROUND GEOLOCATION FULLY INITIALIZED =====');
+            return true;
+        } catch (startError) {
+            console.error(DEBUG_TAG, '❌ BGGeo.start() failed:', startError?.message);
+            throw startError;
+        }
     } catch (error) {
-        console.error('Failed to start background geolocation:', error);
+        console.error(DEBUG_TAG, '❌ FAILED TO START BACKGROUND GEOLOCATION:', error?.message);
+        console.error(DEBUG_TAG, 'Stack:', error?.stack);
         return false;
     }
 }
@@ -155,22 +302,35 @@ async function getCurrentLocation() {
 }
 
 /**
- * Store location to backend
+ * Store location to backend with retry logic
  */
-async function storeLocation(latitude, longitude, userId) {
-    try {
-        const response = await axios.post('/api/live-locations/upsert', {
-            userId,
-            latitude,
-            longitude
-        });
-        console.log('Location stored:', response.data);
-        return response.data;
-    } catch (error) {
-        console.error('Error storing location:', error);
-        // Don't throw - continue tracking even if storage fails
-        return null;
+async function storeLocation(latitude, longitude, userId, retries = 3) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+            console.log(`📡 Storing location (attempt ${attempt + 1}/${retries})...`);
+            const response = await axios.post('/api/live-locations/upsert', {
+                userId,
+                latitude,
+                longitude
+            }, {
+                timeout: 10000 // 10 second timeout per request
+            });
+            console.log('✅ Location stored:', response.data);
+            return response.data;
+        } catch (error) {
+            console.warn(`⚠️ Location store attempt ${attempt + 1} failed:`, error.message);
+            
+            // If last attempt, log error permanently
+            if (attempt === retries - 1) {
+                console.error('❌ Failed to store location after', retries, 'attempts:', error);
+            } else {
+                // Wait before retrying (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            }
+        }
     }
+    // Don't throw - continue tracking even if storage fails
+    return null;
 }
 
 /**
@@ -287,6 +447,70 @@ async function backgroundLocationTask(userId) {
 }
 
 /**
+ * Initialize app lifecycle listeners for proper background tracking
+ * Ensures tracking continues even when app is paused/closed
+ */
+let lifecycleListenersInitialized = false;
+async function initializeAppLifecycleListeners() {
+    if (lifecycleListenersInitialized) return;
+    
+    try {
+        if (!Capacitor.isNativePlatform()) {
+            return;
+        }
+
+        console.log('🔄 Initializing app lifecycle listeners');
+
+        // Listen for app pause (app goes to background)
+        CapacitorApp.addListener('pause', async () => {
+            console.log('⏸️ App paused - background geolocation should continue independently');
+            appIsPaused = true;
+            
+            // Ensure background geolocation is still running
+            const isTrackingActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
+            if (isTrackingActive) {
+                console.log('📍 Verifying background geolocation is still active...');
+                const BGGeo = await initBackgroundGeolocation();
+                if (BGGeo) {
+                    try {
+                        const isRunning = await BGGeo.isTracking?.();
+                        console.log('📍 Background geolocation running:', isRunning);
+                    } catch (error) {
+                        console.warn('Could not verify geolocation status:', error?.message);
+                    }
+                }
+            }
+        });
+
+        // Listen for app resume (app comes back to foreground)
+        CapacitorApp.addListener('resume', async () => {
+            console.log('▶️ App resumed from background');
+            appIsPaused = false;
+            
+            // Resume location tracking if it was active
+            const isTrackingActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
+            const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
+            
+            if (isTrackingActive && userId && !locationTrackingInterval) {
+                console.log('📍 Resuming location tracking after background...');
+                await startLocationTracking(userId);
+            }
+        });
+
+        // Listen for app will terminate
+        CapacitorApp.addListener('appTerminate', async () => {
+            console.log('🛑 App terminating - background geolocation will continue via plugin');
+            // Note: Background geolocation plugin handles this with stopOnTerminate: false
+        });
+
+        lifecycleListenersInitialized = true;
+        console.log('✅ App lifecycle listeners initialized');
+    } catch (error) {
+        console.warn('Failed to initialize lifecycle listeners:', error?.message);
+    }
+}
+
+/**
  * Start background location tracking
  */
 export async function startLocationTracking(userId) {
@@ -297,6 +521,9 @@ export async function startLocationTracking(userId) {
     }
 
     console.log('🟢 Starting background location tracking for user:', userId);
+
+    // Initialize app lifecycle listeners (only once)
+    await initializeAppLifecycleListeners();
 
     // Save tracking state to localStorage
     currentTrackingUserId = userId;
@@ -318,22 +545,42 @@ export async function startLocationTracking(userId) {
             }
         }
 
-        // Set up interval tracking
+        // Set up AGGRESSIVE interval tracking as backup (every 5 seconds)
+        // This ensures we get frequent location updates even if native plugin fails
         locationTrackingInterval = setInterval(async () => {
             try {
+                const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
+                if (!userId) return; // Stop if tracking was cleared
+                
                 const location = await getCurrentLocation();
 
                 if (location) {
-                    if (shouldStoreLocation(location)) {
-                        await storeLocation(location.latitude, location.longitude, userId);
-                        lastStoredLocation = location;
-                        lastStoredTime = Date.now();
+                    // More aggressive storage - store after just 5 seconds regardless
+                    const timeSinceLastStore = Date.now() - (lastStoredTime || 0);
+                    
+                    // Store if: moved 5+ meters OR 10 seconds passed
+                    const shouldStore = !lastStoredLocation || 
+                        (timeSinceLastStore >= 10000) ||
+                        (calculateDistance(
+                            lastStoredLocation.latitude,
+                            lastStoredLocation.longitude,
+                            location.latitude,
+                            location.longitude
+                        ) >= 5);
+                    
+                    if (shouldStore) {
+                        console.log(`📍 Interval: Storing location (${timeSinceLastStore}ms elapsed)`);
+                        const stored = await storeLocation(location.latitude, location.longitude, userId);
+                        if (stored) {
+                            lastStoredLocation = location;
+                            lastStoredTime = Date.now();
+                        }
                     }
                 }
             } catch (error) {
                 console.error('Error in location tracking interval:', error);
             }
-        }, INTERVAL_MS);
+        }, 5000); // Check every 5 seconds for continuous tracking
 
         // Start heartbeat to monitor tracking health
         startTrackingHeartbeat(userId);

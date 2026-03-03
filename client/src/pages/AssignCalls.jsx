@@ -32,6 +32,21 @@ const AssignCalls = () => {
     const [editProblem1, setEditProblem1] = useState('');
     const [editProblem2, setEditProblem2] = useState('');
     const [editSolutions, setEditSolutions] = useState('');
+    // Visit & Stock editable fields for HR/Admin
+    const [editVisitStartDate, setEditVisitStartDate] = useState('');
+    const [editVisitStartTime, setEditVisitStartTime] = useState('');
+    const [editVisitEndDate, setEditVisitEndDate] = useState('');
+    const [editVisitEndTime, setEditVisitEndTime] = useState('');
+    const [editPlacesVisited, setEditPlacesVisited] = useState('');
+    const [editKmsTraveled, setEditKmsTraveled] = useState('');
+    const [editReturnToHome, setEditReturnToHome] = useState(false);
+    const [editPartUsed, setEditPartUsed] = useState('');
+    const [editQuantityUsed, setEditQuantityUsed] = useState('');
+    const [editSerialNumber, setEditSerialNumber] = useState('');
+    const [editUnderWarranty, setEditUnderWarranty] = useState('No');
+    const [editReturnPartName, setEditReturnPartName] = useState('');
+    const [editReturnSerialNumber, setEditReturnSerialNumber] = useState('');
+    const [editResolvedStatus, setEditResolvedStatus] = useState('resolved');
 
     const [editingBasicCallId, setEditingBasicCallId] = useState(null);
     const [editBasicEngineerId, setEditBasicEngineerId] = useState('');
@@ -269,6 +284,20 @@ const AssignCalls = () => {
         setEditProblem1(call.problem1 || '');
         setEditProblem2(call.problem2 || '');
         setEditSolutions(call.solutions || '');
+        setEditVisitStartDate(call.visit_start_date ? new Date(call.visit_start_date).toISOString().slice(0,10) : '');
+        setEditVisitStartTime(call.visit_start_time || '');
+        setEditVisitEndDate(call.visit_end_date ? new Date(call.visit_end_date).toISOString().slice(0,10) : '');
+        setEditVisitEndTime(call.visit_end_time || '');
+        setEditPlacesVisited(call.places_visited || '');
+        setEditKmsTraveled(call.kms_traveled || '');
+        setEditReturnToHome(!!call.return_to_home);
+        setEditPartUsed(call.part_used || '');
+        setEditQuantityUsed(call.quantity_used || '');
+        setEditSerialNumber(call.serial_number || '');
+        setEditUnderWarranty(call.under_warranty || 'No');
+        setEditReturnPartName(call.return_part_name || '');
+        setEditReturnSerialNumber(call.return_serial_number || '');
+        setEditResolvedStatus(call.status || 'resolved');
         setShowResolvedEditModal(true);
     };
 
@@ -276,14 +305,30 @@ const AssignCalls = () => {
         try {
             if (!editingCall) return;
 
+            // Prepare payload combining visit, stock and resolution fields
+            const payload = {
+                problem1: editProblem1,
+                problem2: editProblem2,
+                solutions: editSolutions,
+                status: editResolvedStatus,
+                visit_start_date: editVisitStartDate || undefined,
+                visit_start_time: editVisitStartTime || undefined,
+                visit_end_date: editVisitEndDate || undefined,
+                visit_end_time: editVisitEndTime || undefined,
+                places_visited: editPlacesVisited || undefined,
+                kms_traveled: editKmsTraveled || undefined,
+                return_to_home: editReturnToHome ? true : undefined,
+                part_used: editPartUsed || undefined,
+                quantity_used: editQuantityUsed || undefined,
+                serial_number: editSerialNumber || undefined,
+                under_warranty: editUnderWarranty || undefined,
+                return_part_name: editReturnPartName || undefined,
+                return_serial_number: editReturnSerialNumber || undefined
+            };
+
             const response = await axios.put(
-                `/api/service-calls/assign-call/${editingCall.call_id || editingCall.id}/resolved-details`,
-                {
-                    problem1: editProblem1,
-                    problem2: editProblem2,
-                    solutions: editSolutions,
-                    status: 'resolved' // Ensure status is set to resolved
-                }
+                `/api/service-calls/update-status/${editingCall.call_id || editingCall.id}`,
+                payload
             );
 
             if (response.data.success) {
@@ -292,6 +337,19 @@ const AssignCalls = () => {
                 setEditProblem1('');
                 setEditProblem2('');
                 setEditSolutions('');
+                setEditVisitStartDate('');
+                setEditVisitStartTime('');
+                setEditVisitEndDate('');
+                setEditVisitEndTime('');
+                setEditPlacesVisited('');
+                setEditKmsTraveled('');
+                setEditReturnToHome(false);
+                setEditPartUsed('');
+                setEditQuantityUsed('');
+                setEditSerialNumber('');
+                setEditUnderWarranty('No');
+                setEditReturnPartName('');
+                setEditReturnSerialNumber('');
                 fetchAssignedCalls();
                 alert('Call details updated successfully!');
             }
@@ -828,6 +886,16 @@ const AssignCalls = () => {
                                                                 )}
                                                             </div>
 
+                                                            {/* HR/Admin: Edit resolution, visit & stock */}
+                                                            {isHrOrAdmin(userRole) && (
+                                                                <button
+                                                                    onClick={() => openResolvedEditModal(call)}
+                                                                    className="w-full py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 shadow-sm"
+                                                                >
+                                                                    Edit Resolution
+                                                                </button>
+                                                            )}
+
                                                             {(isHrOrAdmin(userRole)) && (
                                                                 <button
                                                                     onClick={() => handleDeleteCall(call.call_id || call.id)}
@@ -966,23 +1034,23 @@ const AssignCalls = () => {
                     <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-[fadeIn_0.2s_ease-out]">
                         <div className="px-8 pt-8 pb-4 border-b border-slate-100 flex justify-between items-start">
                             <div>
-                                <h3 className="text-2xl font-bold text-slate-900">Post-Mortem Details</h3>
-                                <p className="text-sm font-medium text-slate-500 mt-1">Log resolutions for <span className="text-fuchsia-600 font-bold">{editingCall.dairy_name}</span></p>
+                                <h3 className="text-2xl font-bold text-slate-900">Resolution Details</h3>
+                                <p className="text-sm font-medium text-slate-500 mt-1">Record visit and resolution details for <span className="text-fuchsia-600 font-bold">{editingCall.dairy_name}</span></p>
                             </div>
                             <button onClick={() => { setShowResolvedEditModal(false); setEditingCall(null); }} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 rounded-full transition-colors mt-1">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
 
-                        <div className="p-8 space-y-5">
+                        <div className="p-8 space-y-5 max-h-[60vh] overflow-y-auto">
                             <div className="bg-fuchsia-50 p-4 rounded-xl border border-fuchsia-100">
-                                <p className="text-xs font-bold uppercase tracking-wider text-fuchsia-900/50 mb-1">Original Issue Handled</p>
+                                <p className="text-xs font-bold uppercase tracking-wider text-fuchsia-900/50 mb-1">Reported Issue</p>
                                 <p className="text-sm font-medium text-fuchsia-900">{editingCall.problem}</p>
                             </div>
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Problem Node 1</label>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Issue Detail 1</label>
                                     <textarea
                                         value={editProblem1}
                                         onChange={(e) => setEditProblem1(e.target.value)}
@@ -993,7 +1061,7 @@ const AssignCalls = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Problem Node 2</label>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Issue Detail 2</label>
                                     <textarea
                                         value={editProblem2}
                                         onChange={(e) => setEditProblem2(e.target.value)}
@@ -1004,7 +1072,7 @@ const AssignCalls = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Implemented Solution</label>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">Resolution Summary</label>
                                     <textarea
                                         value={editSolutions}
                                         onChange={(e) => setEditSolutions(e.target.value)}
@@ -1012,6 +1080,78 @@ const AssignCalls = () => {
                                         placeholder="Detail the steps taken to resolve the issues..."
                                         rows="3"
                                     />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
+                                        <p className="text-xs font-bold uppercase text-indigo-700 mb-2">Visit Start</p>
+                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitStartDate} onChange={(e)=>setEditVisitStartDate(e.target.value)} />
+                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitStartTime} onChange={(e)=>setEditVisitStartTime(e.target.value)} />
+                                    </div>
+                                    <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
+                                        <p className="text-xs font-bold uppercase text-indigo-700 mb-2">Visit End</p>
+                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitEndDate} onChange={(e)=>setEditVisitEndDate(e.target.value)} />
+                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitEndTime} onChange={(e)=>setEditVisitEndTime(e.target.value)} />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-indigo-500 mb-2 ml-1">Places Visited</label>
+                                    <textarea value={editPlacesVisited} onChange={(e)=>setEditPlacesVisited(e.target.value)} className="w-full px-4 py-2 rounded border border-indigo-100" rows="2" placeholder="e.g. Site A -> Site B" />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Distance (km)</label>
+                                        <input type="number" className="w-full px-3 py-2 rounded border" value={editKmsTraveled} onChange={(e)=>setEditKmsTraveled(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Returned Home</label>
+                                        <select className="w-full px-3 py-2 rounded border" value={editReturnToHome ? 'Yes' : 'No'} onChange={(e)=>setEditReturnToHome(e.target.value === 'Yes')}>
+                                            <option value="No">No</option>
+                                            <option value="Yes">Yes</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Status</label>
+                                        <select className="w-full px-3 py-2 rounded border" value={editResolvedStatus} onChange={(e)=>setEditResolvedStatus(e.target.value)}>
+                                            <option value="resolved">Resolved</option>
+                                            <option value="completed">Completed</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 p-3 rounded border border-fuchsia-100 bg-fuchsia-50">
+                                    <p className="text-xs font-bold uppercase text-fuchsia-800 mb-2">Stock Entry</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Part Used</label>
+                                            <input className="w-full px-3 py-2 rounded border" value={editPartUsed} onChange={(e)=>setEditPartUsed(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Quantity</label>
+                                            <input type="number" className="w-full px-3 py-2 rounded border" value={editQuantityUsed} onChange={(e)=>setEditQuantityUsed(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Serial Number</label>
+                                            <input className="w-full px-3 py-2 rounded border" value={editSerialNumber} onChange={(e)=>setEditSerialNumber(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Under Warranty</label>
+                                            <select className="w-full px-3 py-2 rounded border" value={editUnderWarranty} onChange={(e)=>setEditUnderWarranty(e.target.value)}>
+                                                <option value="No">No</option>
+                                                <option value="Yes">Yes</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Return Part Name</label>
+                                            <input className="w-full px-3 py-2 rounded border" value={editReturnPartName} onChange={(e)=>setEditReturnPartName(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Return Serial Number</label>
+                                            <input className="w-full px-3 py-2 rounded border" value={editReturnSerialNumber} onChange={(e)=>setEditReturnSerialNumber(e.target.value)} />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1027,7 +1167,7 @@ const AssignCalls = () => {
                                 onClick={handleUpdateResolvedCallDetails}
                                 className="px-8 py-2.5 bg-fuchsia-600 text-white font-bold text-sm rounded-xl hover:bg-fuchsia-700 shadow-lg shadow-fuchsia-600/20 focus:ring-4 focus:ring-fuchsia-600/20 transition-all w-full sm:w-auto border-b-2 border-fuchsia-800 active:border-b-0 active:translate-y-[2px]"
                             >
-                                Save Post-Mortem
+                                Save Resolution
                             </button>
                         </div>
                     </div>

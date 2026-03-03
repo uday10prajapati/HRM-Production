@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import Login from "./pages/LogIn";
 import ELogin from "./engineer/ELogin";
 import EDashboard from "./engineer/EDashboard";
@@ -36,12 +37,70 @@ import TAApproval from "./pages/TAApproval";
 import { resumeLocationTrackingIfNeeded } from "./services/backgroundLocationService";
 import 'leaflet/dist/leaflet.css';
 
+/**
+ * Pre-initialize background geolocation plugin on app startup
+ * This ensures the native service is ready before any js code runs
+ */
+async function preInitializeBackgroundGeolocation() {
+    if (!Capacitor.isNativePlatform()) {
+        console.log('[init] Not a native platform, skipping background geolocation init');
+        return;
+    }
+
+    try {
+        console.log('[init] 🔧 Pre-initializing background geolocation plugin...');
+        
+        // Dynamically import the plugin to trigger its initialization
+        const moduleName = '@capacitor-community/background-geolocation';
+        const BGGeoModule = await import(/* @vite-ignore */ moduleName).catch((err) => {
+            console.warn('[init] ⚠️ Background geolocation plugin not available:', err?.message);
+            return null;
+        });
+        
+        if (!BGGeoModule?.BackgroundGeolocation) {
+            console.warn('[init] ⚠️ BackgroundGeolocation not found in module');
+            return;
+        }
+
+        console.log('[init] ✅ Background geolocation plugin loaded and ready');
+        
+        // Don't start it here - just ensure it's loaded
+        // It will be configured and started on punch in
+    } catch (error) {
+        console.error('[init] ❌ Error pre-initializing background geolocation:', error);
+    }
+}
+
 function App() {
   React.useEffect(() => {
-    // Auto-resume background location tracking on app initialization (native only)
-    if (Capacitor.isNativePlatform()) {
-      resumeLocationTrackingIfNeeded().catch(err => console.error('Failed to resume location tracking:', err));
-    }
+    // Initialize app and request permissions
+    const initializeApp = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          console.log('[APP] 🚀 Initializing app on native platform...');
+          
+          // Pre-initialize background geolocation first
+          await preInitializeBackgroundGeolocation();
+          
+          // Request location permissions on app startup
+          console.log('[APP] 🔐 Requesting initial location permissions on app startup...');
+          const permResult = await Geolocation.requestPermissions({
+            permissions: ['coarseLocation', 'fineLocation']
+          });
+          console.log('[APP] 📍 Initial permission result:', permResult);
+
+          // Auto-resume background location tracking
+          console.log('[APP] 📍 Attempting to resume background location tracking if needed...');
+          resumeLocationTrackingIfNeeded().catch(err => console.error('[APP] Failed to resume location tracking:', err));
+          
+          console.log('[APP] ✅ App initialization complete');
+        } catch (error) {
+          console.error('[APP] ❌ App initialization error:', error);
+        }
+      }
+    };
+
+    initializeApp();
   }, []);
   return (
     <Router>

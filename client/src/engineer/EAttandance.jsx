@@ -474,8 +474,23 @@ const EAttandance = () => {
                     setPunchState('out'); // Now require punch out
                     
                     // 🟢 START BACKGROUND LOCATION TRACKING ON PUNCH IN
-                    toast.info('📍 Location tracking started', { autoClose: 1500 });
-                    await startLocationTracking(user.id);
+                    // Request permission and start tracking
+                    try {
+                        console.log('📍 Requesting location permissions for tracking...');
+                        const permResult = await Geolocation.requestPermissions({
+                            permissions: ['coarseLocation', 'fineLocation']
+                        });
+                        
+                        if (permResult.location === 'granted') {
+                            toast.info('📍 Location tracking started', { autoClose: 1500 });
+                            await startLocationTracking(user.id);
+                        } else {
+                            toast.warning('Location permission denied - tracking may not work', { autoClose: 2000 });
+                        }
+                    } catch (trackingError) {
+                        console.error('Error starting location tracking:', trackingError);
+                        toast.warning('Could not start location tracking', { autoClose: 1500 });
+                    }
                 } else {
                     setPunchState('in'); // Reset state if they punched out
                     
