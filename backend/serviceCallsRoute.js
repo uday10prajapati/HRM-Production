@@ -28,20 +28,35 @@ const generateBaseCallId = () => {
   return `${dd}${mm}${yy}`;
 };
 
-// Helper function to get next sequence number for the day
-const getNextSequenceNumber = async (baseId, callType) => {
+// Helper function to get next sequence number for the day PER ENGINEER
+const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
   try {
     const prefix = callType === 'PM Call' ? 'P-' : 'S-';
     const pattern = `${prefix}${baseId}/%`;
     
-    const query = `
-      SELECT COUNT(*) as count FROM assign_call 
-      WHERE formatted_call_id LIKE $1
-    `;
+    // Count calls for THIS ENGINEER with same prefix and date
+    // If engineerId provided, count only for this engineer
+    let query, params;
     
-    const result = await pool.query(query, [pattern]);
+    if (engineerId) {
+      query = `
+        SELECT COUNT(*) as count FROM assign_call 
+        WHERE formatted_call_id LIKE $1 AND engineer_id = $2
+      `;
+      params = [pattern, engineerId];
+    } else {
+      // Fallback to old behavior if no engineerId
+      query = `
+        SELECT COUNT(*) as count FROM assign_call 
+        WHERE formatted_call_id LIKE $1
+      `;
+      params = [pattern];
+    }
+    
+    const result = await pool.query(query, params);
     const count = parseInt(result.rows[0]?.count) || 0;
     const nextSequence = count + 1;
+    console.log(`📊 Sequence number for engineer ${engineerId} on ${baseId}: ${nextSequence}`);
     return nextSequence;
   } catch (err) {
     console.error('Error getting sequence number:', err);
@@ -55,11 +70,10 @@ const getNextSequenceNumber = async (baseId, callType) => {
 router.get('/assigned-calls', requireAuth, async (req, res) => {
   try {
     const query = `
-            SELECT ac.*, u.name as engineer_name
-            FROM assign_call ac
-            LEFT JOIN users u ON ac.id = u.id
-            ORDER BY ac.created_at DESC
-        `;
+      SELECT ac.* 
+      FROM assign_call ac
+      ORDER BY ac.created_at DESC
+    `;
     const result = await pool.query(query);
 
     res.json({
@@ -67,10 +81,10 @@ router.get('/assigned-calls', requireAuth, async (req, res) => {
       calls: result.rows
     });
   } catch (err) {
-    console.error('Fetch assigned calls error:', err);
+    console.error('Fetch assigned calls error:', err.message);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch assigned calls'
+      message: 'Failed to fetch assigned calls: ' + err.message
     });
   }
 });
@@ -233,7 +247,14 @@ router.post('/assign-call', requireAuth, async (req, res) => {
     if (!dairy_name || !problem) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields: dairy_name and problem are required'
+      });
+    }
+
+    if (!id || !name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing engineer details: id and name are required'
       });
     }
 
@@ -247,54 +268,96 @@ router.post('/assign-call', requireAuth, async (req, res) => {
 
     // Generate base ID and format with prefix and sequence
     const baseCallId = generateBaseCallId();
-    const sequenceNumber = await getNextSequenceNumber(baseCallId, finalCallType);
+    const sequenceNumber = await getNextSequenceNumber(baseCallId, finalCallType, id); // Pass engineer ID!
     const formattedCallId = formatCallId(baseCallId, finalCallType, sequenceNumber);
 
-    console.log('Assigning call with ID:', formattedCallId, 'Type:', finalCallType);
+    console.log('📞 NEW CALL:', {
+      formattedCallId,
+      callType: finalCallType,
+      engineerId: id,
+      engineerName: name,
+      dairy: dairy_name,
+      sequenceNum: sequenceNumber
+    });
 
-    const query = `
-            INSERT INTO assign_call (
-                id,
-                name,
-                role,
-                mobile_number,
-                dairy_name,
-                problem,
-                description,
-                priority,
-                call_type,
-                formatted_call_id,
-                status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new')
-            RETURNING *
-        `;
+    // Ensure columns exist before inserting
+    console.log('📋 Ensuring columns exist...');
+    try {
+      await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS formatted_call_id VARCHAR(50)`);
+    } catch (e) {}
+    try {
+      await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS call_type VARCHAR(50)`);
+    } catch (e) {}
+    try {
+      await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS engineer_id UUID`);
+    } catch (e) {}
+    // Drop UNIQUE index on formatted_call_id if it exists (since it's now per-engineer, not global)
+    try {
+      await pool.query(`DROP INDEX IF EXISTS idx_formatted_call_id`);
+    } catch (e) {}
+    try {
+      await pool.query(`ALTER TABLE assign_call DROP CONSTRAINT IF EXISTS assign_call_formatted_call_id_key`);
+    } catch (e) {}
 
-    const result = await pool.query(query, [
-      id,
-      name,
-      role,
-      mobile_number,
-      dairy_name,
-      problem,
-      description,
-      finalPriority,
-      finalCallType,
-      formattedCallId
-    ]);
+    // Generate a unique ID for this call (separate from engineer ID)
+    const callId = crypto.randomUUID();
+
+    // Insert with separate call ID and engineer_id
+    const insertQuery = `
+      INSERT INTO assign_call (
+        id, engineer_id, name, role, mobile_number, dairy_name, problem, description, priority, status,
+        formatted_call_id, call_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *
+    `;
+
+    const insertParams = [
+      callId,              // $1: id (new unique ID for this call)
+      id,                  // $2: engineer_id (the engineer's UUID)
+      name,                // $3: name
+      role,                // $4: role
+      mobile_number,       // $5: mobile_number
+      dairy_name,          // $6: dairy_name
+      problem,             // $7: problem
+      description,         // $8: description
+      finalPriority,       // $9: priority
+      'new',               // $10: status
+      formattedCallId,     // $11: formatted_call_id
+      finalCallType        // $12: call_type
+    ];
+
+    console.log('📝 Inserting call with formatted_call_id:', formattedCallId);
+
+    let createdCall;
+    try {
+      const result = await pool.query(insertQuery, insertParams);
+      if (!result.rows || !result.rows[0]) {
+        throw new Error('INSERT returned no rows');
+      }
+      createdCall = result.rows[0];
+      console.log('✅ Call inserted successfully! Formatted ID:', formattedCallId);
+    } catch (insertErr) {
+      console.error('❌ INSERT ERROR:', insertErr.message);
+      console.error('   Query:', insertQuery.substring(0, 100) + '...');
+      console.error('   Params:', insertParams);
+      throw insertErr;
+    }
 
     res.json({
       success: true,
       message: 'Call assigned successfully',
-      data: result.rows[0]
+      data: createdCall
     });
 
   } catch (err) {
-    console.error('Error assigning call - Full Error:', err);
-    console.error('Error message:', err.message);
-    console.error('Error code:', err.code);
+    console.error('❌ Error assigning call:');
+    console.error('  Message:', err.message);
+    console.error('  Code:', err.code);
+    console.error('  Detail:', err.detail || 'N/A');
+
     res.status(500).json({
       success: false,
-      message: 'Failed to assign call: ' + err.message
+      message: 'Failed to assign call: ' + (err.detail || err.message)
     });
   }
 });
@@ -1074,8 +1137,11 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
 (async function ensureAssignCallColumns() {
   try {
     const queries = [
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS call_id VARCHAR(100) UNIQUE`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS engineer_id VARCHAR(100)`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS call_type VARCHAR(50) DEFAULT 'Service Call'`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS formatted_call_id VARCHAR(50)`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'new'`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem1 TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem2 TEXT`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS solutions TEXT`,
@@ -1110,7 +1176,8 @@ router.post('/upload-attachment', requireAuth, upload.single('file'), async (req
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_start_date DATE`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS visit_end_date DATE`,
       `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS letterhead_received BOOLEAN DEFAULT FALSE`,
-      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem TEXT`
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS problem TEXT`,
+      `ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
     ];
     for (const q of queries) {
       await pool.query(q);
