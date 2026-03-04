@@ -110,12 +110,26 @@ const EAttandance = () => {
                 );
 
                 const availableCalls = calls.filter(c => !c.ta_voucher_number || c.ta_voucher_number === 'null');
+                const sortedAvailableCalls = [...availableCalls].sort((a, b) => {
+                    const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+                    const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+                    const safeATime = Number.isNaN(aTime) ? 0 : aTime;
+                    const safeBTime = Number.isNaN(bTime) ? 0 : bTime;
+
+                    if (safeBTime !== safeATime) return safeBTime - safeATime;
+
+                    const aId = Number(a.call_id);
+                    const bId = Number(b.call_id);
+                    if (!Number.isNaN(aId) && !Number.isNaN(bId)) return bId - aId;
+
+                    return String(b.sequence_id || '').localeCompare(String(a.sequence_id || ''));
+                });
 
                 // Keep track of counts for user feedback
                 c_totalResolvedRef.current = calls.length;
                 c_availRef.current = availableCalls.length;
 
-                setResolvedCalls(availableCalls);
+                setResolvedCalls(sortedAvailableCalls);
             }
         } catch (error) {
             console.error("Failed to fetch TA calls:", error);

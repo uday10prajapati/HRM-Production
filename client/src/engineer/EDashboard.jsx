@@ -99,7 +99,22 @@ const EDashboard = () => {
 
     const newCalls = formattedCalls.filter(c => c.status === 'new');
     const pendingCalls = formattedCalls.filter(c => c.status === 'pending');
-    const resolvedCalls = formattedCalls.filter(c => c.status === 'resolved');
+    const resolvedCalls = formattedCalls
+        .filter(c => c.status === 'resolved')
+        .sort((a, b) => {
+            const aTime = new Date(a.rawCall?.updated_at || a.rawCall?.created_at || 0).getTime();
+            const bTime = new Date(b.rawCall?.updated_at || b.rawCall?.created_at || 0).getTime();
+            const safeATime = Number.isNaN(aTime) ? 0 : aTime;
+            const safeBTime = Number.isNaN(bTime) ? 0 : bTime;
+
+            if (safeBTime !== safeATime) return safeBTime - safeATime;
+
+            const aId = Number(a.rawCall?.call_id);
+            const bId = Number(b.rawCall?.call_id);
+            if (!Number.isNaN(aId) && !Number.isNaN(bId)) return bId - aId;
+
+            return String(b.sequenceId || '').localeCompare(String(a.sequenceId || ''));
+        });
 
     const handleStatusChange = async (callId, newStatus) => {
         // Optimistically update
