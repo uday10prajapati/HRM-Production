@@ -130,6 +130,8 @@ router.post('/items-with-assign', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    const { name, description, quantity, threshold, dairy_name, notes, use_item, engineerId, assignQuantity } = req.body;
+
     // 1. Create stock item
     const itemResult = await client.query(
       `
@@ -144,10 +146,10 @@ router.post('/items-with-assign', async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `,
-      [name, description, quantity, threshold, dairy_name, notes, use_item]
+      [name, description, Number(quantity || 0), threshold || 1, dairy_name || null, notes || null, use_item || null]
     );
 
-    const createdItem = itemResult.rows[0];
+    let finalItem = itemResult.rows[0];
     let assignedToEngineer = null;
 
     // 2. Optionally assign to engineer
@@ -156,33 +158,31 @@ router.post('/items-with-assign', async (req, res) => {
         `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) VALUES ($1, $2, $3)
          ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
          RETURNING *`,
-        [String(engineerId), String(createdItem.id), Number(assignQuantity || 0)]
+        [String(engineerId), String(finalItem.id), Number(assignQuantity || 0)]
       );
       assignedToEngineer = assignResult.rows[0];
-
-      // For direct assignment (quantity = assignQuantity), keep the quantity in central stock
-      // Only deduct if there's more than what's being assigned
-      if (quantity > assignQuantity) {
-        await client.query(
-          'UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2',
-          [Number(assignQuantity || 0), createdItem.id]
-        );
-      }
+      console.log(`✅ Assigned ${assignQuantity} units to engineer ${engineerId}. Central stock remains: ${finalItem.quantity}`);
     }
 
     await client.query('COMMIT');
     
     res.json({ 
-      item: createdItem,
+      item: finalItem,
       assigned: assignedToEngineer,
       message: assignedToEngineer 
-        ? `Stock item created and assigned to engineer` 
-        : 'Stock item created'
+        ? `Stock item created with ${quantity} units. Assigned ${assignQuantity} to engineer.` 
+        : `Stock item created with ${quantity} units.`,
+      summary: assignedToEngineer ? {
+        central_stock: finalItem.quantity,
+        engineer_stock: assignQuantity,
+        total_inventory: (finalItem.quantity + assignQuantity),
+        note: 'Central stock unchanged. Only engineer_stock updated.'
+      } : null
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => null);
     console.error('Error creating stock item with assignment:', err);
-    res.status(500).json({ error: 'Failed to create stock item' });
+    res.status(500).json({ error: 'Failed to create stock item: ' + err.message });
   } finally {
     client.release();
   }
@@ -192,44 +192,55 @@ router.post('/items-with-assign', async (req, res) => {
 router.post('/assign', async (req, res) => {
   const { engineerId, stockItemId, quantity = 0 } = req.body;
   if (!engineerId || !stockItemId) return res.status(400).json({ error: 'engineerId and stockItemId required' });
+  
+  const client = await pool.connect();
   try {
-    // Ensure existing schema can accept UUID/text values: if columns are integer type
-    // convert them to TEXT so UUID strings won't break.
-    try {
-      const colRes = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='engineer_stock' AND column_name IN ('engineer_id','stock_item_id')");
-      const colMap = {};
-      for (const r of colRes.rows) colMap[r.column_name] = r.data_type;
-      if (colMap['engineer_id'] && colMap['engineer_id'].toLowerCase().includes('int')) {
-        try {
-          await pool.query("ALTER TABLE engineer_stock ALTER COLUMN engineer_id TYPE TEXT USING engineer_id::text");
-          console.log('Converted engineer_stock.engineer_id to TEXT');
-        } catch (e) {
-          console.warn('Could not convert engineer_id to TEXT', e?.message || e);
-        }
-      }
-      if (colMap['stock_item_id'] && colMap['stock_item_id'].toLowerCase().includes('int')) {
-        try {
-          await pool.query("ALTER TABLE engineer_stock ALTER COLUMN stock_item_id TYPE TEXT USING stock_item_id::text");
-          console.log('Converted engineer_stock.stock_item_id to TEXT');
-        } catch (e) {
-          console.warn('Could not convert stock_item_id to TEXT', e?.message || e);
-        }
-      }
-    } catch (colErr) {
-      // ignore schema check errors and proceed
-      console.warn('Could not inspect engineer_stock columns', colErr?.message || colErr);
-    }
-
-    const up = await pool.query(
-      `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) VALUES ($1,$2,$3)
-       ON CONFLICT (engineer_id, stock_item_id) DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
+    await client.query('BEGIN');
+    
+    // Only assign to engineer_stock using UPSERT
+    // DO NOT modify central stock (stock_items.quantity)
+    const assignResult = await client.query(
+      `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) 
+       VALUES ($1, $2, $3)
+       ON CONFLICT (engineer_id, stock_item_id) 
+       DO UPDATE SET quantity = EXCLUDED.quantity, assigned_at = now()
        RETURNING *`,
       [String(engineerId), String(stockItemId), Number(quantity || 0)]
     );
-    res.json({ assigned: up.rows[0] });
+
+    const getItem = await client.query(
+      'SELECT quantity FROM stock_items WHERE id = $1',
+      [String(stockItemId)]
+    );
+
+    if (getItem.rows.length === 0) {
+      throw new Error(`Stock item ${stockItemId} not found`);
+    }
+
+    const centralQty = getItem.rows[0].quantity;
+    const engineerQty = assignResult.rows[0].quantity;
+
+    await client.query('COMMIT');
+    
+    console.log(`✅ Assigned ${quantity} units to engineer ${engineerId}. Central stock: ${centralQty}, Engineer stock: ${engineerQty}`);
+    
+    res.json({ 
+      engineer_stock: assignResult.rows[0],
+      central_stock_quantity: centralQty,
+      message: `${quantity} units assigned to engineer ${engineerId}`,
+      summary: {
+        central_stock: centralQty,
+        engineer_stock: engineerQty,
+        total_inventory: (centralQty + engineerQty),
+        note: 'Central stock unchanged. Only engineer_stock updated.'
+      }
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to assign stock' });
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('❌ Error assigning stock:', err);
+    res.status(500).json({ error: 'Failed to assign stock: ' + err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -267,66 +278,93 @@ router.get('/engineer/:id', async (req, res) => {
 // Consume stock (engineer uses part). This will deduct from engineer_stock and ALSO from central stock.
 router.post('/consume', async (req, res) => {
   const { engineerId, stockItemId, quantity = 1, note } = req.body;
-  if (!stockItemId || !quantity) return res.status(400).json({ error: 'stockItemId and quantity required' });
-  
+
+  const client = await pool.connect();
+
   try {
-    // Convert to proper types
-    const numStockItemId = parseInt(stockItemId);
-    const numQuantity = parseInt(quantity);
-    
-    console.log(`📝 Consume request - Item ID: ${numStockItemId}, Qty: ${numQuantity}, Engineer: ${engineerId}`);
-    
-    // FIRST: Check what's in stock_items table
-    const checkBefore = await pool.query('SELECT id, name, quantity FROM stock_items WHERE id = $1', [numStockItemId]);
-    if (checkBefore.rowCount === 0) {
-      console.error(`❌ CRITICAL: Stock item with id ${numStockItemId} does NOT exist in stock_items table!`);
-      const allItems = await pool.query('SELECT id, name FROM stock_items');
-      console.log(`📋 All stock items in database:`, allItems.rows);
-    } else {
-      console.log(`🔍 Stock item BEFORE update:`, checkBefore.rows[0]);
-    }
-    
-    // Deduct from engineer stock first
-    const es = await pool.query(
-      'SELECT * FROM engineer_stock WHERE engineer_id::text = $1 AND stock_item_id::text = $2',
-      [engineerId != null ? String(engineerId) : null, String(numStockItemId)]
-    );
-    
-    if (es.rowCount > 0) {
-      // Update engineer stock
-      const esUpdate = await pool.query('UPDATE engineer_stock SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, es.rows[0].id]);
-      console.log(`✅ Engineer stock updated: ${esUpdate.rowCount} rows affected`);
-    } else {
-      console.log(`⚠️  No engineer_stock record found for engineer ${engineerId} and item ${numStockItemId}`);
-    }
-    
-    // ALSO deduct from central stock so it reflects actual reduced inventory
-    const ciUpdate = await pool.query('UPDATE stock_items SET quantity = GREATEST(quantity - $1, 0) WHERE id = $2', [numQuantity, numStockItemId]);
-    console.log(`✅ Central stock UPDATE: ${ciUpdate.rowCount} rows affected`);
-    
-    // CHECK what happened after the update
-    const checkAfter = await pool.query('SELECT id, name, quantity FROM stock_items WHERE id = $1', [numStockItemId]);
-    if (checkAfter.rowCount === 0) {
-      console.error(`❌ After update: Stock item ${numStockItemId} still not found!`);
-    } else {
-      console.log(`🔍 Stock item AFTER update:`, checkAfter.rows[0]);
-    }
-    
-    if (ciUpdate.rowCount === 0) {
-      console.error(`❌ WARNING: Central stock UPDATE touched 0 rows!`);
+    await client.query('BEGIN');
+
+    const numQty = Number(quantity);
+    if (isNaN(numQty) || numQty <= 0) {
+      throw new Error("Quantity must be a positive number");
     }
 
-    // Record consumption for audit trail
-    const ins = await pool.query(
-      'INSERT INTO stock_consumption (engineer_id, stock_item_id, quantity, note) VALUES ($1,$2,$3,$4) RETURNING *',
-      [engineerId || null, numStockItemId, numQuantity, note || null]
+    // 1️⃣ Get engineer stock (lock it for transaction safety)
+    const es = await client.query(
+      `SELECT * FROM engineer_stock 
+       WHERE engineer_id::text = $1 AND stock_item_id::text = $2
+       FOR UPDATE`,
+      [String(engineerId), String(stockItemId)]
     );
 
-    console.log(`✅ Stock consumed: ${numQuantity} units of item ${numStockItemId}`);
-    res.json({ consumed: ins.rows[0] });
+    if (es.rowCount === 0) {
+      throw new Error("Engineer does not have this item");
+    }
+
+    const currentEngineerQty = es.rows[0].quantity;
+    if (currentEngineerQty < numQty) {
+      throw new Error(`Not enough engineer stock. Has: ${currentEngineerQty}, Requested: ${numQty}`);
+    }
+
+    // 2️⃣ Deduct from engineer stock
+    const engineerUpdate = await client.query(
+      `UPDATE engineer_stock 
+       SET quantity = GREATEST(quantity - $1, 0)
+       WHERE engineer_id::text = $2 AND stock_item_id::text = $3
+       RETURNING quantity`,
+      [numQty, String(engineerId), String(stockItemId)]
+    );
+
+    // 3️⃣ Deduct from central stock
+    const centralUpdate = await client.query(
+      `UPDATE stock_items 
+       SET quantity = GREATEST(quantity - $1, 0)
+       WHERE id::text = $2
+       RETURNING id, quantity, name`,
+      [numQty, String(stockItemId)]
+    );
+
+    if (centralUpdate.rowCount === 0) {
+      throw new Error(`Stock item ${stockItemId} not found in central inventory`);
+    }
+
+    // 4️⃣ Record consumption
+    const consumption = await client.query(
+      `INSERT INTO stock_consumption
+      (engineer_id, stock_item_id, quantity, note)
+      VALUES ($1,$2,$3,$4)
+      RETURNING *`,
+      [String(engineerId), String(stockItemId), numQty, note || null]
+    );
+
+    await client.query('COMMIT');
+
+    const finalEngineerQty = engineerUpdate.rows[0].quantity;
+    const finalCentralQty = centralUpdate.rows[0].quantity;
+
+    console.log(`✅ Stock consumed: ${numQty} units`);
+    console.log(`   Engineer stock remaining: ${finalEngineerQty}`);
+    console.log(`   Central stock remaining: ${finalCentralQty}`);
+
+    res.json({
+      success: true,
+      consumed: consumption.rows[0],
+      item: centralUpdate.rows[0],
+      summary: {
+        quantity_used: numQty,
+        engineer_stock_remaining: finalEngineerQty,
+        central_stock_remaining: finalCentralQty,
+        total_inventory_remaining: (finalEngineerQty + finalCentralQty),
+        note: 'Both engineer and central stock were deducted'
+      }
+    });
+
   } catch (err) {
-    console.error('❌ Stock consume error:', err);
-    res.status(500).json({ error: 'Failed to consume stock: ' + err.message });
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('❌ Error consuming stock:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -357,6 +395,135 @@ router.get('/overview', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch overview' });
+  }
+});
+
+// Detailed stock deduction summary - Shows central stock vs engineer allocations with deductions
+router.get('/deduction-summary', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        si.id,
+        si.sku,
+        si.name,
+        si.quantity as central_quantity,
+        si.threshold,
+        si.created_at,
+        COALESCE(SUM(es.quantity), 0)::int as total_engineer_allocation,
+        COUNT(DISTINCT es.engineer_id)::int as engineer_count,
+        (si.quantity + COALESCE(SUM(es.quantity), 0))::int as total_created,
+        json_agg(json_build_object(
+          'engineer_id', es.engineer_id, 
+          'engineer_stock_id', es.id,
+          'quantity', es.quantity,
+          'assigned_at', es.assigned_at
+        )) FILTER (WHERE es.id IS NOT NULL) as engineer_allocations
+      FROM stock_items si
+      LEFT JOIN engineer_stock es ON si.id = es.stock_item_id
+      GROUP BY si.id, si.sku, si.name, si.quantity, si.threshold, si.created_at
+      ORDER BY si.name
+    `);
+    
+    // Format response to show deductions clearly
+    const summary = result.rows.map(item => ({
+      id: item.id,
+      sku: item.sku,
+      name: item.name,
+      threshold: item.threshold,
+      created_at: item.created_at,
+      stock_status: {
+        central_stock: item.central_quantity,
+        total_engineer_allocations: item.total_engineer_allocation,
+        total_created_initially: item.total_created,
+        engineers_count: item.engineer_count
+      },
+      deduction_breakdown: {
+        assigned_to_engineers: item.total_engineer_allocation,
+        remaining_in_central: item.central_quantity,
+        total_verified: item.total_created
+      },
+      engineer_allocations: item.engineer_allocations || []
+    }));
+    
+    res.json(summary);
+  } catch (err) {
+    console.error('Stock deduction summary error:', err);
+    res.status(500).json({ error: 'Failed to fetch deduction summary' });
+  }
+});
+
+// Detailed stock status for specific engineer - Shows what they have and what they used
+router.get('/engineer-status/:engineerId', async (req, res) => {
+  try {
+    const { engineerId } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        es.id as engineer_stock_id,
+        es.engineer_id,
+        es.quantity as current_allocated,
+        es.assigned_at,
+        si.id as stock_item_id,
+        si.name,
+        si.sku,
+        si.quantity as central_quantity,
+        si.threshold,
+        COALESCE(SUM(sc.quantity), 0)::int as total_consumed,
+        (es.quantity + COALESCE(SUM(sc.quantity), 0))::int as originally_assigned
+      FROM engineer_stock es
+      JOIN stock_items si ON si.id = es.stock_item_id
+      LEFT JOIN stock_consumption sc ON sc.engineer_id::text = es.engineer_id::text 
+        AND sc.stock_item_id = si.id
+      WHERE es.engineer_id::text = $1
+      GROUP BY es.id, es.engineer_id, es.quantity, es.assigned_at, 
+               si.id, si.name, si.sku, si.quantity, si.threshold
+      ORDER BY si.name
+    `, [String(engineerId)]);
+    
+    // Get engineer name
+    const engineerInfo = await pool.query(
+      'SELECT id, name, mobile_number FROM users WHERE id::text = $1 LIMIT 1',
+      [String(engineerId)]
+    );
+    
+    const engineer = engineerInfo.rows[0];
+    
+    const statusSummary = result.rows.map(item => ({
+      stock_item_id: item.stock_item_id,
+      stock_name: item.name,
+      sku: item.sku,
+      allocation_status: {
+        originally_assigned: item.originally_assigned,
+        currently_allocated: item.current_allocated,
+        total_consumed: item.total_consumed,
+        assigned_date: item.assigned_at
+      },
+      deduction_details: {
+        assigned_to_engineer: item.originally_assigned,
+        engineer_used: item.total_consumed,
+        engineer_remaining: item.current_allocated,
+        central_stock_remaining: item.central_quantity
+      },
+      threshold: item.threshold,
+      status: item.current_allocated <= item.threshold ? 'Low Stock' : 'In Stock'
+    }));
+    
+    res.json({
+      engineer: {
+        id: engineer?.id,
+        name: engineer?.name,
+        mobile_number: engineer?.mobile_number
+      },
+      stock_status: statusSummary,
+      summary: {
+        total_items_allocated: statusSummary.length,
+        total_consumed: statusSummary.reduce((sum, item) => sum + item.allocation_status.total_consumed, 0),
+        total_remaining: statusSummary.reduce((sum, item) => sum + item.allocation_status.currently_allocated, 0)
+      }
+    });
+  } catch (err) {
+    console.error('Engineer status error:', err);
+    res.status(500).json({ error: 'Failed to fetch engineer status' });
   }
 });
 
