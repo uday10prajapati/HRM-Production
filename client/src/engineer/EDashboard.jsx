@@ -40,7 +40,7 @@ const EDashboard = () => {
 
                 // Sort by creation date
                 const sorted = [...engineerCalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-                
+
                 // Map with formatted call ID
                 const callsWithId = sorted.map(c => ({
                     ...c,
@@ -80,22 +80,40 @@ const EDashboard = () => {
         const to = new Date(toDate);
         to.setHours(23, 59, 59, 999);
         return callDate >= from && callDate <= to;
-    }).map(call => ({
-        id: call.call_id,
-        rawCall: call,
-        sequenceId: call.sequence_id,
-        date: new Date(call.created_at).toLocaleDateString('en-GB'),
-        dairyName: call.dairy_name || 'Unknown',
-        problem: call.problem || 'N/A',
-        complaint: call.description || 'N/A',
-        solution: call.solutions || 'N/A',
-        phone: call.mobile_number || 'N/A',
-        notes: call.part_used ? `Used ${call.quantity_used || 0}x ${call.part_used}` : 'No parts used',
-        assignedTo: call.engineer_name || user.name || 'Unknown',
-        status: (call.status || 'new').toLowerCase(),
-        priority: call.priority || 'Medium',
-        prioritySortOrder: priorityOrder[call.priority || 'Medium']
-    })).sort((a, b) => a.prioritySortOrder - b.prioritySortOrder);
+    }).map(call => {
+        let partsDisplay = 'No parts used';
+        try {
+            if (call.stock_items) {
+                const parsedItems = typeof call.stock_items === 'string' ? JSON.parse(call.stock_items) : call.stock_items;
+                if (Array.isArray(parsedItems) && parsedItems.length > 0) {
+                    partsDisplay = parsedItems.map(item => `${item.quantity_used || 1}x ${item.part_used}`).join(', ');
+                } else if (call.part_used) {
+                    partsDisplay = `Used ${call.quantity_used || 0}x ${call.part_used}`;
+                }
+            } else if (call.part_used) {
+                partsDisplay = `Used ${call.quantity_used || 0}x ${call.part_used}`;
+            }
+        } catch (e) {
+            console.error('Error parsing stock items', e);
+        }
+
+        return {
+            id: call.call_id,
+            rawCall: call,
+            sequenceId: call.sequence_id,
+            date: new Date(call.created_at).toLocaleDateString('en-GB'),
+            dairyName: call.dairy_name || 'Unknown',
+            problem: call.problem || 'N/A',
+            complaint: call.description || 'N/A',
+            solution: call.solutions || 'N/A',
+            phone: call.mobile_number || 'N/A',
+            notes: partsDisplay,
+            assignedTo: call.engineer_name || user.name || 'Unknown',
+            status: (call.status || 'new').toLowerCase(),
+            priority: call.priority || 'Medium',
+            prioritySortOrder: priorityOrder[call.priority || 'Medium']
+        };
+    }).sort((a, b) => a.prioritySortOrder - b.prioritySortOrder);
 
     const newCalls = formattedCalls.filter(c => c.status === 'new');
     const pendingCalls = formattedCalls.filter(c => c.status === 'pending');

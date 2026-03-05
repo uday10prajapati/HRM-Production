@@ -284,9 +284,9 @@ const AssignCalls = () => {
         setEditProblem1(call.problem1 || '');
         setEditProblem2(call.problem2 || '');
         setEditSolutions(call.solutions || '');
-        setEditVisitStartDate(call.visit_start_date ? new Date(call.visit_start_date).toISOString().slice(0,10) : '');
+        setEditVisitStartDate(call.visit_start_date ? new Date(call.visit_start_date).toISOString().slice(0, 10) : '');
         setEditVisitStartTime(call.visit_start_time || '');
-        setEditVisitEndDate(call.visit_end_date ? new Date(call.visit_end_date).toISOString().slice(0,10) : '');
+        setEditVisitEndDate(call.visit_end_date ? new Date(call.visit_end_date).toISOString().slice(0, 10) : '');
         setEditVisitEndTime(call.visit_end_time || '');
         setEditPlacesVisited(call.places_visited || '');
         setEditKmsTraveled(call.kms_traveled || '');
@@ -818,27 +818,51 @@ const AssignCalls = () => {
                                                                         {call.problem2 && <p className="text-[11px] font-medium text-fuchsia-800 mt-1 break-words"><span className="font-bold">Prob 2:</span> {call.problem2}</p>}
                                                                         {call.solutions && <p className="text-[11px] font-medium text-fuchsia-900 mt-1.5 break-words"><span className="font-bold">Sol:</span> {call.solutions}</p>}
                                                                     </div>
-                                                                    {call.part_used && (
-                                                                        <div className="mt-auto">
-                                                                            <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-2 border-b border-fuchsia-100 pb-1">Stock Entry</p>
-                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
-                                                                                <div>
-                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Part Used</p>
-                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{call.part_used || 'None'}</p>
+                                                                    {(() => {
+                                                                        let items = [];
+                                                                        try {
+                                                                            if (call.stock_items) {
+                                                                                items = typeof call.stock_items === 'string' ? JSON.parse(call.stock_items) : call.stock_items;
+                                                                            } else if (call.part_used) {
+                                                                                items = [{ part_used: call.part_used, quantity_used: call.quantity_used, serial_number: call.serial_number, under_warranty: call.under_warranty, return_part_name: call.return_part_name, return_serial_number: call.return_serial_number }];
+                                                                            }
+                                                                        } catch (e) {
+                                                                            console.error("Error parsing stock items", e);
+                                                                        }
+
+                                                                        if (!items || items.length === 0) return null;
+
+                                                                        return (
+                                                                            <div className="mt-auto">
+                                                                                <p className="text-[10px] uppercase tracking-widest font-bold text-fuchsia-900/50 mb-2 border-b border-fuchsia-100 pb-1">Stock Entry</p>
+                                                                                <div className="flex flex-col gap-2 mt-1">
+                                                                                    {items.map((item, idx) => (
+                                                                                        <div key={idx} className="bg-fuchsia-100/30 p-2 rounded">
+                                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                                                                <div>
+                                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Part Used</p>
+                                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{item.part_used || 'None'}</p>
+                                                                                                </div>
+                                                                                                <div>
+                                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Quantity & S/N</p>
+                                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{item.quantity_used || 0}x - {item.serial_number || 'No S/N'}</p>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            {item.under_warranty === 'Yes' && (
+                                                                                                <div className="md:col-span-2 mt-1 bg-amber-100/50 p-2 rounded">
+                                                                                                    <p className="text-[10px] text-amber-600 font-bold leading-tight mb-1 flex gap-1 items-center">
+                                                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                                                                                                        Warranty Part Retrieved
+                                                                                                    </p>
+                                                                                                    <p className="text-[11px] text-amber-800 break-words">{item.return_part_name} <span className="text-amber-500 opacity-60">|</span> {item.return_serial_number}</p>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    ))}
                                                                                 </div>
-                                                                                <div>
-                                                                                    <p className="text-[10px] text-fuchsia-500 font-bold leading-tight">Quantity & S/N</p>
-                                                                                    <p className="text-[11px] font-semibold text-fuchsia-900 break-words">{call.quantity_used || 0}x - {call.serial_number || 'No S/N'}</p>
-                                                                                </div>
-                                                                                {call.under_warranty === 'Yes' && (
-                                                                                    <div className="md:col-span-2 mt-1 bg-amber-100/50 p-2 rounded">
-                                                                                        <p className="text-[10px] text-amber-600 font-bold leading-tight mb-1 flex gap-1 items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Warranty Part Retrieved</p>
-                                                                                        <p className="text-[11px] text-amber-800 break-words">{call.return_part_name} <span className="text-amber-500 opacity-60">|</span> {call.return_serial_number}</p>
-                                                                                    </div>
-                                                                                )}
                                                                             </div>
-                                                                        </div>
-                                                                    )}
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                         )}
@@ -1085,36 +1109,36 @@ const AssignCalls = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
                                         <p className="text-xs font-bold uppercase text-indigo-700 mb-2">Visit Start</p>
-                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitStartDate} onChange={(e)=>setEditVisitStartDate(e.target.value)} />
-                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitStartTime} onChange={(e)=>setEditVisitStartTime(e.target.value)} />
+                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitStartDate} onChange={(e) => setEditVisitStartDate(e.target.value)} />
+                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitStartTime} onChange={(e) => setEditVisitStartTime(e.target.value)} />
                                     </div>
                                     <div className="bg-indigo-50 p-3 rounded border border-indigo-100">
                                         <p className="text-xs font-bold uppercase text-indigo-700 mb-2">Visit End</p>
-                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitEndDate} onChange={(e)=>setEditVisitEndDate(e.target.value)} />
-                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitEndTime} onChange={(e)=>setEditVisitEndTime(e.target.value)} />
+                                        <input type="date" className="w-full px-3 py-2 rounded mb-2" value={editVisitEndDate} onChange={(e) => setEditVisitEndDate(e.target.value)} />
+                                        <input type="time" className="w-full px-3 py-2 rounded" value={editVisitEndTime} onChange={(e) => setEditVisitEndTime(e.target.value)} />
                                     </div>
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-indigo-500 mb-2 ml-1">Places Visited</label>
-                                    <textarea value={editPlacesVisited} onChange={(e)=>setEditPlacesVisited(e.target.value)} className="w-full px-4 py-2 rounded border border-indigo-100" rows="2" placeholder="e.g. Site A -> Site B" />
+                                    <textarea value={editPlacesVisited} onChange={(e) => setEditPlacesVisited(e.target.value)} className="w-full px-4 py-2 rounded border border-indigo-100" rows="2" placeholder="e.g. Site A -> Site B" />
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Distance (km)</label>
-                                        <input type="number" className="w-full px-3 py-2 rounded border" value={editKmsTraveled} onChange={(e)=>setEditKmsTraveled(e.target.value)} />
+                                        <input type="number" className="w-full px-3 py-2 rounded border" value={editKmsTraveled} onChange={(e) => setEditKmsTraveled(e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Returned Home</label>
-                                        <select className="w-full px-3 py-2 rounded border" value={editReturnToHome ? 'Yes' : 'No'} onChange={(e)=>setEditReturnToHome(e.target.value === 'Yes')}>
+                                        <select className="w-full px-3 py-2 rounded border" value={editReturnToHome ? 'Yes' : 'No'} onChange={(e) => setEditReturnToHome(e.target.value === 'Yes')}>
                                             <option value="No">No</option>
                                             <option value="Yes">Yes</option>
                                         </select>
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-indigo-500 mb-1">Status</label>
-                                        <select className="w-full px-3 py-2 rounded border" value={editResolvedStatus} onChange={(e)=>setEditResolvedStatus(e.target.value)}>
+                                        <select className="w-full px-3 py-2 rounded border" value={editResolvedStatus} onChange={(e) => setEditResolvedStatus(e.target.value)}>
                                             <option value="resolved">Resolved</option>
                                             <option value="completed">Completed</option>
                                         </select>
@@ -1126,30 +1150,30 @@ const AssignCalls = () => {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Part Used</label>
-                                            <input className="w-full px-3 py-2 rounded border" value={editPartUsed} onChange={(e)=>setEditPartUsed(e.target.value)} />
+                                            <input className="w-full px-3 py-2 rounded border" value={editPartUsed} onChange={(e) => setEditPartUsed(e.target.value)} />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Quantity</label>
-                                            <input type="number" className="w-full px-3 py-2 rounded border" value={editQuantityUsed} onChange={(e)=>setEditQuantityUsed(e.target.value)} />
+                                            <input type="number" className="w-full px-3 py-2 rounded border" value={editQuantityUsed} onChange={(e) => setEditQuantityUsed(e.target.value)} />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Serial Number</label>
-                                            <input className="w-full px-3 py-2 rounded border" value={editSerialNumber} onChange={(e)=>setEditSerialNumber(e.target.value)} />
+                                            <input className="w-full px-3 py-2 rounded border" value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Under Warranty</label>
-                                            <select className="w-full px-3 py-2 rounded border" value={editUnderWarranty} onChange={(e)=>setEditUnderWarranty(e.target.value)}>
+                                            <select className="w-full px-3 py-2 rounded border" value={editUnderWarranty} onChange={(e) => setEditUnderWarranty(e.target.value)}>
                                                 <option value="No">No</option>
                                                 <option value="Yes">Yes</option>
                                             </select>
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Return Part Name</label>
-                                            <input className="w-full px-3 py-2 rounded border" value={editReturnPartName} onChange={(e)=>setEditReturnPartName(e.target.value)} />
+                                            <input className="w-full px-3 py-2 rounded border" value={editReturnPartName} onChange={(e) => setEditReturnPartName(e.target.value)} />
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold uppercase text-fuchsia-700 mb-1">Return Serial Number</label>
-                                            <input className="w-full px-3 py-2 rounded border" value={editReturnSerialNumber} onChange={(e)=>setEditReturnSerialNumber(e.target.value)} />
+                                            <input className="w-full px-3 py-2 rounded border" value={editReturnSerialNumber} onChange={(e) => setEditReturnSerialNumber(e.target.value)} />
                                         </div>
                                     </div>
                                 </div>

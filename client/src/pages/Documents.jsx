@@ -385,23 +385,44 @@ export default function ViewAssignedCalls() {
                 </div>
 
                 {/* Hardware Used - Conditional */}
-                {(selectedCall.part_used || selectedCall.quantity_used) && (
-                  <div>
-                    <h3 className="text-xs uppercase tracking-widest font-bold text-slate-400 mb-3 ml-1">Hardware Consumed</h3>
-                    <div className="bg-white border text-sm text-slate-600 border-slate-200 rounded-2xl p-4 flex gap-4">
-                      <div className="p-2.5 bg-indigo-50 rounded-xl text-indigo-600 shrink-0 h-fit">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      </div>
-                      <div>
-                        {selectedCall.part_used && <p><span className="font-semibold text-slate-800">Part:</span> <span className="text-slate-600">{selectedCall.part_used}</span></p>}
-                        {selectedCall.quantity_used && <p className="mt-0.5"><span className="font-semibold text-slate-800">Quantity:</span> <span className="text-slate-600">{selectedCall.quantity_used}</span></p>}
+                {(() => {
+                  let items = [];
+                  try {
+                    if (selectedCall.stock_items) {
+                      items = typeof selectedCall.stock_items === 'string' ? JSON.parse(selectedCall.stock_items) : selectedCall.stock_items;
+                    } else if (selectedCall.part_used) {
+                      items = [{ part_used: selectedCall.part_used, quantity_used: selectedCall.quantity_used || 1 }];
+                    }
+                  } catch (e) {
+                    console.error("Error parsing stock items in Documents", e);
+                  }
+
+                  if (!items || items.length === 0) return null;
+
+                  return (
+                    <div>
+                      <h3 className="text-xs uppercase tracking-widest font-bold text-slate-400 mb-3 ml-1">Hardware Consumed</h3>
+                      <div className="bg-white border text-sm text-slate-600 border-slate-200 rounded-2xl p-4 flex gap-4">
+                        <div className="p-2.5 bg-indigo-50 rounded-xl text-indigo-600 shrink-0 h-fit">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex flex-col gap-3 w-full">
+                          {items.map((item, idx) => (
+                            <div key={idx} className={`${idx > 0 ? 'pt-3 border-t border-slate-100 flex gap-2 w-full justify-between' : 'flex gap-2 w-full justify-between'}`}>
+                              <div>
+                                <p><span className="font-semibold text-slate-800">Part:</span> <span className="text-slate-600">{item.part_used}</span></p>
+                                <p className="mt-0.5"><span className="font-semibold text-slate-800">Quantity:</span> <span className="text-slate-600">{item.quantity_used || 1}</span></p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Resolution Details */}
                 {selectedCall.status === 'resolved' && (
