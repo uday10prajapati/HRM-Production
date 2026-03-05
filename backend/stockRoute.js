@@ -318,10 +318,10 @@ router.post('/consume', async (req, res) => {
     // 3️⃣ Deduct from central stock
     const centralUpdate = await client.query(
       `UPDATE stock_items 
-       SET quantity = GREATEST(quantity - $1, 0)
-       WHERE id::text = $2
+       SET quantity = GREATEST(quantity - $1::int, 0)
+       WHERE id = $2::int
        RETURNING id, quantity, name`,
-      [numQty, String(stockItemId)]
+      [parseInt(numQty, 10), parseInt(stockItemId, 10)]
     );
 
     if (centralUpdate.rowCount === 0) {
