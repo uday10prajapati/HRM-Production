@@ -125,7 +125,7 @@ router.post('/items', async (req, res) => {
 // Create stock item and optionally assign to engineer in one operation
 router.post('/items-with-assign', async (req, res) => {
   const { name, description, quantity, threshold, dairy_name, notes, use_item, engineerId, assignQuantity } = req.body;
-  
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -165,12 +165,12 @@ router.post('/items-with-assign', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    
-    res.json({ 
+
+    res.json({
       item: finalItem,
       assigned: assignedToEngineer,
-      message: assignedToEngineer 
-        ? `Stock item created with ${quantity} units. Assigned ${assignQuantity} to engineer.` 
+      message: assignedToEngineer
+        ? `Stock item created with ${quantity} units. Assigned ${assignQuantity} to engineer.`
         : `Stock item created with ${quantity} units.`,
       summary: assignedToEngineer ? {
         central_stock: finalItem.quantity,
@@ -192,11 +192,11 @@ router.post('/items-with-assign', async (req, res) => {
 router.post('/assign', async (req, res) => {
   const { engineerId, stockItemId, quantity = 0 } = req.body;
   if (!engineerId || !stockItemId) return res.status(400).json({ error: 'engineerId and stockItemId required' });
-  
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
+
     // Only assign to engineer_stock using UPSERT
     // DO NOT modify central stock (stock_items.quantity)
     const assignResult = await client.query(
@@ -221,10 +221,10 @@ router.post('/assign', async (req, res) => {
     const engineerQty = assignResult.rows[0].quantity;
 
     await client.query('COMMIT');
-    
+
     console.log(`✅ Assigned ${quantity} units to engineer ${engineerId}. Central stock: ${centralQty}, Engineer stock: ${engineerQty}`);
-    
-    res.json({ 
+
+    res.json({
       engineer_stock: assignResult.rows[0],
       central_stock_quantity: centralQty,
       message: `${quantity} units assigned to engineer ${engineerId}`,
@@ -368,6 +368,85 @@ router.post('/consume', async (req, res) => {
   }
 });
 
+// Revert stock consumption (engineer deletes used part from a call). This will add back back to engineer_stock and central stock.
+router.post('/revert-consume', async (req, res) => {
+  const { engineerId, stockItemId, quantity = 1, note } = req.body;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const numQty = Number(quantity);
+    if (isNaN(numQty) || numQty <= 0) {
+      throw new Error("Quantity must be a positive number");
+    }
+
+    // 1️⃣ Add back to engineer stock
+    const engineerUpdate = await client.query(
+      `UPDATE engineer_stock 
+       SET quantity = quantity + $1::int
+       WHERE engineer_id::text = $2 AND stock_item_id::text = $3
+       RETURNING quantity`,
+      [parseInt(numQty, 10), String(engineerId), String(stockItemId)]
+    );
+
+    if (engineerUpdate.rowCount === 0) {
+      throw new Error(`Engineer does not have this item to revert`);
+    }
+
+    // 2️⃣ Add back to central stock
+    const centralUpdate = await client.query(
+      `UPDATE stock_items 
+       SET quantity = quantity + $1::int
+       WHERE id = $2::int
+       RETURNING id, quantity, name`,
+      [parseInt(numQty, 10), parseInt(stockItemId, 10)]
+    );
+
+    if (centralUpdate.rowCount === 0) {
+      throw new Error(`Stock item ${stockItemId} not found in central inventory`);
+    }
+
+    // 3️⃣ Optionally record the revert or just ignore (since consumption log is just for tracking, reverting might mean we insert negative consumption or leave it. Since we just want simple stock balance, adding back is sufficient).
+    // Let's insert a negative consumption or specific note.
+    const consumption = await client.query(
+      `INSERT INTO stock_consumption
+      (engineer_id, stock_item_id, quantity, note)
+      VALUES ($1,$2,$3,$4)
+      RETURNING *`,
+      [String(engineerId), String(stockItemId), -numQty, note || "Reverted consumption"]
+    );
+
+    await client.query('COMMIT');
+
+    const finalEngineerQty = engineerUpdate.rows[0].quantity;
+    const finalCentralQty = centralUpdate.rows[0].quantity;
+
+    console.log(`✅ Stock reverted: ${numQty} units`);
+    console.log(`   Engineer stock restore: ${finalEngineerQty}`);
+    console.log(`   Central stock restore: ${finalCentralQty}`);
+
+    res.json({
+      success: true,
+      reverted: consumption.rows[0],
+      item: centralUpdate.rows[0],
+      summary: {
+        quantity_reverted: numQty,
+        engineer_stock_remaining: finalEngineerQty,
+        central_stock_remaining: finalCentralQty
+      }
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('❌ Error reverting stock consumption:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Low stock alerts for central and optional engineer
 router.get('/alerts', async (req, res) => {
   const { engineerId } = req.query;
@@ -423,7 +502,7 @@ router.get('/deduction-summary', async (req, res) => {
       GROUP BY si.id, si.sku, si.name, si.quantity, si.threshold, si.created_at
       ORDER BY si.name
     `);
-    
+
     // Format response to show deductions clearly
     const summary = result.rows.map(item => ({
       id: item.id,
@@ -444,7 +523,7 @@ router.get('/deduction-summary', async (req, res) => {
       },
       engineer_allocations: item.engineer_allocations || []
     }));
-    
+
     res.json(summary);
   } catch (err) {
     console.error('Stock deduction summary error:', err);
@@ -456,7 +535,7 @@ router.get('/deduction-summary', async (req, res) => {
 router.get('/engineer-status/:engineerId', async (req, res) => {
   try {
     const { engineerId } = req.params;
-    
+
     const result = await pool.query(`
       SELECT 
         es.id as engineer_stock_id,
@@ -479,15 +558,15 @@ router.get('/engineer-status/:engineerId', async (req, res) => {
                si.id, si.name, si.sku, si.quantity, si.threshold
       ORDER BY si.name
     `, [String(engineerId)]);
-    
+
     // Get engineer name
     const engineerInfo = await pool.query(
       'SELECT id, name, mobile_number FROM users WHERE id::text = $1 LIMIT 1',
       [String(engineerId)]
     );
-    
+
     const engineer = engineerInfo.rows[0];
-    
+
     const statusSummary = result.rows.map(item => ({
       stock_item_id: item.stock_item_id,
       stock_name: item.name,
@@ -507,7 +586,7 @@ router.get('/engineer-status/:engineerId', async (req, res) => {
       threshold: item.threshold,
       status: item.current_allocated <= item.threshold ? 'Low Stock' : 'In Stock'
     }));
-    
+
     res.json({
       engineer: {
         id: engineer?.id,
@@ -769,7 +848,7 @@ router.delete('/product-items/:name', async (req, res) => {
 router.post('/bulk-assign', async (req, res) => {
   try {
     const { itemIds, engineerId, quantity } = req.body;
-    
+
     if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
       return res.status(400).json({ error: 'Invalid itemIds array' });
     }
@@ -836,7 +915,7 @@ router.post('/bulk-assign', async (req, res) => {
 router.post('/bulk-delete', async (req, res) => {
   try {
     const { itemIds } = req.body;
-    
+
     if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
       return res.status(400).json({ error: 'Invalid itemIds array' });
     }
@@ -848,10 +927,10 @@ router.post('/bulk-delete', async (req, res) => {
       try {
         // Delete associated engineer_stock records first
         await pool.query('DELETE FROM engineer_stock WHERE stock_item_id = $1', [itemId]);
-        
+
         // Delete the stock item
         const deleteResult = await pool.query('DELETE FROM stock_items WHERE id = $1', [itemId]);
-        
+
         if (deleteResult.rowCount > 0) {
           deletedCount++;
         } else {

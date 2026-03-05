@@ -80,8 +80,8 @@ const EAssignCall = () => {
     useEffect(() => {
         if (callData?.stock_items) {
             try {
-                const items = typeof callData.stock_items === 'string' 
-                    ? JSON.parse(callData.stock_items) 
+                const items = typeof callData.stock_items === 'string'
+                    ? JSON.parse(callData.stock_items)
                     : callData.stock_items;
                 setStockItems(Array.isArray(items) ? items : []);
             } catch (e) {
@@ -269,10 +269,10 @@ const EAssignCall = () => {
             try {
                 console.log('🔍 Looking for stock item:', currentItemName);
                 console.log('📦 Available stocks:', stocks);
-                
+
                 const usedStock = stocks.find(s => s.name === currentItemName);
                 console.log('✅ Found stock:', usedStock);
-                
+
                 if (usedStock && usedStock.id) {
                     const userObj = JSON.parse(localStorage.getItem('user'));
                     console.log('👤 User:', userObj);
@@ -281,19 +281,19 @@ const EAssignCall = () => {
                         stockItemId: usedStock.id,
                         quantity: parseInt(currentQuantity) || 1
                     });
-                    
+
                     const deductRes = await axios.post('/api/stock/consume', {
                         engineerId: userObj.id || userObj._id,
                         stockItemId: usedStock.id,  // Use the stock_item ID (stock_items.id), not engineer_stock_id
                         quantity: parseInt(currentQuantity) || 1,
                         note: `Used in Assign Call - ${callData?.formatted_call_id || callData?.call_id}`
                     });
-                    
+
                     console.log('✔️ Consume response:', deductRes.data);
-                    
+
                     // Refresh the stock list to show updated quantities
                     await fetchEngineerStocks(userObj.id || userObj._id);
-                    
+
                     toast.success(`Stock deducted: ${currentItemName} (Qty: ${currentQuantity})`);
                 } else {
                     console.warn('⚠️ Stock item not found or missing ID:', usedStock);
@@ -320,8 +320,32 @@ const EAssignCall = () => {
     };
 
     // Remove a stock item from the list
-    const handleRemoveStockItem = (itemId) => {
+    const handleRemoveStockItem = async (itemId) => {
         if (isResolved) return;
+
+        const itemToRemove = stockItems.find(item => item.id === itemId);
+        if (itemToRemove && itemToRemove.part_used) {
+            try {
+                const usedStock = stocks.find(s => s.name === itemToRemove.part_used);
+                if (usedStock && usedStock.id) {
+                    const userObj = JSON.parse(localStorage.getItem('user'));
+                    await axios.post('/api/stock/revert-consume', {
+                        engineerId: userObj.id || userObj._id,
+                        stockItemId: usedStock.id,
+                        quantity: itemToRemove.quantity_used,
+                        note: `Reverted from Assign Call - ${callData?.formatted_call_id || callData?.call_id}`
+                    });
+
+                    // Refresh stock list to show updated quantities
+                    await fetchEngineerStocks(userObj.id || userObj._id);
+                    toast.success(`Stock reverted: ${itemToRemove.part_used}`);
+                }
+            } catch (err) {
+                console.error('Failed to revert stock:', err);
+                toast.error('Failed to revert stock deduction: ' + (err.response?.data?.error || err.message));
+            }
+        }
+
         setStockItems(stockItems.filter(item => item.id !== itemId));
         toast.info('Stock item removed');
     };
@@ -768,8 +792,8 @@ const EAssignCall = () => {
                     )}
                 </div>
 
-               
-                
+
+
 
             </div>
 
