@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { requireAuth } from './middleware/auth.js';
 
+
 const router = express.Router();
 
 // Financial constants
@@ -15,7 +16,7 @@ const TDS_RATE = Number(process.env.TDS_RATE || 0.05);
 const PROFESSIONAL_TAX = Number(process.env.PROFESSIONAL_TAX || 200);
 const HOURLY_RATE = Number(process.env.HOURLY_RATE || 72.12);
 const DEFAULT_HOURS_PER_DAY = Number(process.env.HOURS_PER_WORKING_DAY || 8);
-
+const logoPath = path.resolve(process.cwd(), '../client/src/assets/aplogo.jpeg');
 
 // Helper: resolve identifier (id or email) to DB id
 async function resolveDbUserId(identifier) {
@@ -75,7 +76,10 @@ function handlePgError(err, res, ctx = '') {
 async function computePayrollFromConfig(cfg, ctx = {}) {
     const basic = Number(cfg.basic || 0);
     const hra = Number(cfg.hra || 0);
-    const allowances = cfg.allowances || {};
+    let allowances = cfg.allowances || {};
+    if (typeof allowances === 'string') {
+        try { allowances = JSON.parse(allowances); } catch (e) { allowances = {}; }
+    }
     const allowancesSum = Object.values(allowances).reduce((s, v) => s + Number(v || 0), 0);
 
     const year = Number(ctx.year || new Date().getFullYear());
@@ -179,12 +183,24 @@ async function computePayrollFromConfig(cfg, ctx = {}) {
     ).toFixed(2);
 
     // Deductions
-    const pf = Number((basic * PF_RATE).toFixed(2));
-    const esi_employee = Number((monthlyGross * ESI_EMP_RATE).toFixed(2));
-    const esi_employer = Number((monthlyGross * ESI_EMPLOYER_RATE).toFixed(2));
-    const professional_tax = Number(PROFESSIONAL_TAX);
-    const tds = Number((monthlyGross * TDS_RATE).toFixed(2));
-    const otherDeductions = cfg.deductions || {};
+    let pf = Number((basic * PF_RATE).toFixed(2));
+    let esi_employee = Number((monthlyGross * ESI_EMP_RATE).toFixed(2));
+    let esi_employer = Number((monthlyGross * ESI_EMPLOYER_RATE).toFixed(2));
+    let professional_tax = Number(PROFESSIONAL_TAX);
+    let tds = Number((monthlyGross * TDS_RATE).toFixed(2));
+
+    if (monthlyGross <= 10000) {
+        pf = 0;
+        esi_employee = 0;
+        esi_employer = 0;
+        professional_tax = 0;
+        tds = 0;
+    }
+
+    let otherDeductions = cfg.deductions || {};
+    if (typeof otherDeductions === 'string') {
+        try { otherDeductions = JSON.parse(otherDeductions); } catch (e) { otherDeductions = {}; }
+    }
     const otherSum = Object.values(otherDeductions).reduce((s, v) => s + Number(v || 0), 0);
 
     // Rule 7: Net Pay Calculation
@@ -394,6 +410,189 @@ router.get('/records/:userId', async (req, res) => {
     }
 });
 
+function buildZylkerPayslip(doc, slip, employeeDetails, year, month) {
+    const { userId, userName, role } = employeeDetails;
+
+    function numberToWords(num) {
+        if (num === 0) return 'Zero';
+        const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+        const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+        const numStr = String(Math.floor(num));
+        let n = ('000000000' + numStr).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+        if (!n) return '';
+        let str = '';
+        str += (n[1] != 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'Crore ' : '';
+        str += (n[2] != 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'Lakh ' : '';
+        str += (n[3] != 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'Thousand ' : '';
+        str += (n[4] != 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'Hundred ' : '';
+        str += (n[5] != 0) ? ((str != '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+        return str.trim();
+    }
+
+    const startX = 40;
+    const startY = 40;
+    const width = 595.28 - 80;
+
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#000000').text('S and J Globaltech', startX, startY);
+    doc.fontSize(10).font('Helvetica').fillColor('#000000').text('Gujarat India', startX, startY + 20);
+
+    if (fs.existsSync(logoPath)) {
+        doc.image(logoPath, startX + width - 100, startY - 10, {
+            fit: [100, 45],
+            align: 'right'
+        });
+    }
+    doc.lineWidth(0.5).strokeColor('#000000');
+    doc.moveTo(startX, 80).lineTo(startX + width, 80).stroke();
+
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const monthStr = monthNames[month - 1] || month;
+
+    doc.rect(startX, 80, width, 25).fillAndStroke('#f9fafb', '#000000');
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold');
+    doc.text(`Payslip for the month of ${monthStr} ${year}`, startX, 88, { width, align: 'center' });
+
+    doc.moveTo(startX, 105).lineTo(startX + width, 105).stroke();
+
+    doc.fontSize(9).font('Helvetica-Bold').text('EMPLOYEE PAY SUMMARY', startX + 10, 115);
+    doc.font('Helvetica').fontSize(9);
+    doc.text('Employee Name', startX + 10, 135); doc.text(`: ${userName}`, startX + 100, 135);
+    doc.text('Designation', startX + 10, 150); doc.text(`: ${role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Employee'}`, startX + 100, 150);
+    const joiningDateStr = employeeDetails.joiningDate ? new Date(employeeDetails.joiningDate).toLocaleDateString('en-GB') : '-';
+    let payDateStr = employeeDetails.payDate ? new Date(employeeDetails.payDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
+
+    doc.text('Date of Joining', startX + 10, 165); doc.text(`: ${joiningDateStr}`, startX + 100, 165);
+    doc.text('Pay Period', startX + 10, 180); doc.text(`: ${monthStr} ${year}`, startX + 100, 180);
+    doc.text('Pay Date', startX + 10, 195); doc.text(`: ${payDateStr}`, startX + 100, 195);
+
+    doc.moveTo(startX + width / 2 + 30, 105).lineTo(startX + width / 2 + 30, 215).strokeColor('#e5e7eb').stroke();
+
+    const netX = startX + width / 2 + 30;
+    const netW = width / 2 - 30;
+    doc.font('Helvetica-Bold').fillColor('#4b5563').fontSize(10).text('Employee Net Pay', netX, 130, { width: netW, align: 'center' });
+    doc.fillColor('#000000').fontSize(24).text(`₹${Number(slip.net_pay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, netX, 145, { width: netW, align: 'center' });
+    doc.font('Helvetica').fillColor('#4b5563').fontSize(9).text(`Paid Days : ${slip.worked_days || slip.total_working_days} | LOP Days : ${slip.chargeable_full_days + slip.chargeable_half_days}`, netX, 175, { width: netW, align: 'center' });
+
+    doc.fillColor('#000000').strokeColor('#000000');
+    doc.moveTo(startX, 215).lineTo(startX + width, 215).stroke();
+
+    const halfW = width / 2;
+    const eC1 = startX; const eqW1 = halfW * 0.50;
+    const eC2 = eC1 + eqW1; const eqW2 = halfW * 0.25;
+    const eC3 = eC2 + eqW2; const eqW3 = halfW * 0.25;
+
+    const dC1 = startX + halfW; const dqW1 = halfW * 0.50;
+    const dC2 = dC1 + dqW1; const dqW2 = halfW * 0.25;
+    const dC3 = dC2 + dqW2; const dqW3 = halfW * 0.25;
+
+    doc.font('Helvetica-Bold').fontSize(8);
+    let tableY = 225;
+    doc.text('EARNINGS', eC1 + 5, tableY);
+    doc.text('AMOUNT', eC2, tableY, { width: eqW2 - 5, align: 'right' });
+    doc.text('YTD', eC3, tableY, { width: eqW3 - 5, align: 'right' });
+    doc.text('DEDUCTIONS', dC1 + 5, tableY);
+    doc.text('AMOUNT', dC2, tableY, { width: dqW2 - 5, align: 'right' });
+    doc.text('YTD', dC3, tableY, { width: dqW3 - 5, align: 'right' });
+
+    doc.moveTo(startX, 240).lineTo(startX + width, 240).stroke();
+
+    const earnings = [
+        ['Basic', slip.basic],
+        ['House Rent Allowance', slip.hra]
+    ];
+    if (slip.allowancesSum > 0) {
+        Object.entries(slip.allowances).forEach(([key, val]) => {
+            earnings.push([key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()), val]);
+        });
+    }
+
+    const deductions = [
+        ['Professional Tax', slip.professional_tax],
+        ['PF (12%)', slip.pf],
+        ['ESI', slip.esi_employee],
+        ['TDS', slip.tds],
+    ];
+    if (slip.leave_deduction > 0) deductions.push(['Leave Deduction', slip.leave_deduction]);
+    if (slip.otherSum > 0) Object.entries(slip.other_deductions).forEach(([k, v]) => deductions.push([k, v]));
+
+    const maxRows = Math.max(earnings.length, deductions.length);
+    let rowY = 240;
+
+    doc.font('Helvetica').fontSize(8);
+    for (let i = 0; i < maxRows; i++) {
+        const ey = rowY + 6;
+        if (i < earnings.length && Number(earnings[i][1]) > 0) {
+            doc.text(earnings[i][0], eC1 + 5, ey);
+            doc.text(`₹${Number(earnings[i][1]).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, eC2, ey, { width: eqW2 - 5, align: 'right' });
+            doc.text(`₹${Number(earnings[i][1]).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, eC3, ey, { width: eqW3 - 5, align: 'right' });
+        }
+        if (i < deductions.length && Number(deductions[i][1]) > 0) {
+            doc.text(deductions[i][0], dC1 + 5, ey);
+            doc.text(`₹${Number(deductions[i][1]).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, dC2, ey, { width: dqW2 - 5, align: 'right' });
+            doc.text(`₹${Number(deductions[i][1]).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, dC3, ey, { width: dqW3 - 5, align: 'right' });
+        }
+        rowY += 20;
+        doc.moveTo(startX, rowY).lineTo(startX + width, rowY).strokeColor('#e5e7eb').stroke();
+    }
+
+    doc.strokeColor('#000000');
+    doc.font('Helvetica-Bold').fontSize(8);
+    const gy = rowY + 6;
+    doc.text('Gross Earnings', eC1 + 5, gy);
+    doc.text(`₹${Number(slip.gross_pay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, eC1, gy, { width: halfW - 5, align: 'right' });
+
+    const totalStatutoryDeductions = slip.pf + slip.esi_employee + slip.professional_tax + slip.tds + slip.otherSum;
+    const totalDeductions = totalStatutoryDeductions + Number(slip.leave_deduction);
+
+    doc.text('Total Deductions', dC1 + 5, gy);
+    doc.text(`₹${Number(totalDeductions).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, dC1, gy, { width: halfW - 5, align: 'right' });
+
+    rowY += 20;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).stroke();
+
+    let ny = rowY + 6;
+    doc.text('NET PAY', startX + 5, ny);
+    doc.text('AMOUNT', startX, ny, { width: width - 5, align: 'right' });
+    rowY += 20;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).strokeColor('#e5e7eb').stroke();
+
+    ny = rowY + 6;
+    doc.font('Helvetica').text('Gross Earnings', startX + 5, ny);
+    doc.text(`₹${Number(slip.gross_pay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, startX, ny, { width: width - 5, align: 'right' });
+    rowY += 20;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).stroke();
+
+    ny = rowY + 6;
+    doc.text('Total Deductions', startX + 5, ny);
+    doc.text(`(-) ₹${Number(totalDeductions).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, startX, ny, { width: width - 5, align: 'right' });
+    rowY += 20;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).strokeColor('#000000').stroke();
+
+    ny = rowY + 6;
+    doc.font('Helvetica-Bold');
+    doc.text('Total Net Payable', startX + width / 2, ny, { width: halfW - 100, align: 'right' });
+    doc.text(`₹${Number(slip.net_pay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, startX, ny, { width: width - 5, align: 'right' });
+    rowY += 20;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).stroke();
+
+    doc.font('Helvetica').fontSize(9);
+    doc.text(`Total Net Payable ₹${Number(slip.net_pay).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Indian Rupee ${numberToWords(slip.net_pay)} Only)`, startX, rowY + 10, { width, align: 'center' });
+    doc.fillColor('#6b7280').fontSize(7).text(`**Total Net Payable = Gross Earnings - Total Deductions`, startX, rowY + 25, { width, align: 'center' });
+
+    rowY += 40;
+    doc.moveTo(startX, rowY).lineTo(startX + width, rowY).strokeColor('#000000').stroke();
+
+    doc.moveTo(startX, 80).lineTo(startX, rowY).stroke();
+    doc.moveTo(startX + width, 80).lineTo(startX + width, rowY).stroke();
+    doc.moveTo(eC2, 215).lineTo(eC2, rowY - 100).strokeColor('#e5e7eb').stroke();
+    doc.moveTo(eC3, 215).lineTo(eC3, rowY - 100).strokeColor('#e5e7eb').stroke();
+    doc.moveTo(dC1, 215).lineTo(dC1, rowY - 100).strokeColor('#000000').stroke();
+    doc.moveTo(dC2, 215).lineTo(dC2, rowY - 100).strokeColor('#e5e7eb').stroke();
+    doc.moveTo(dC3, 215).lineTo(dC3, rowY - 100).strokeColor('#e5e7eb').stroke();
+
+    doc.fillColor('#9ca3af').fontSize(8).text('— This document has been automatically generated by S and J Globaltech Payroll; therefore, a signature is not required. —', startX, rowY + 15, { width, align: 'center' });
+}
+
 // GET /pdf/:userId/:year/:month - compute and stream PDF (no save)
 router.get('/pdf/:userId/:year/:month', async (req, res) => {
     try {
@@ -417,7 +616,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
             const ures = await pool.query('SELECT role FROM users WHERE id=$1 LIMIT 1', [dbUserId]);
             const role = (ures.rows[0]?.role || '').toString().toLowerCase();
             let monthlyGross = Number(process.env.DEFAULT_SALARY_OTHER || 25000);
-            if (role === 'engineer') monthlyGross = 40000;
+            if (role === 'engineer') monthlyGross = 10000;
             else if (role === 'hr') monthlyGross = 50000;
             else if (role === 'admin') monthlyGross = 60000;
 
@@ -431,8 +630,11 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
 
         // Get user details
-        const userQuery = await pool.query('SELECT name, email FROM users WHERE id=$1', [dbUserId]);
+        const userQuery = await pool.query('SELECT name, email, role, created_at FROM users WHERE id=$1', [dbUserId]);
         const userName = userQuery.rows[0]?.name || 'Employee';
+        const role = userQuery.rows[0]?.role || '';
+        const joiningDate = userQuery.rows[0]?.created_at || null;
+        const payDate = new Date();
 
         // Create PDF document
         const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -444,86 +646,7 @@ router.get('/pdf/:userId/:year/:month', async (req, res) => {
         // Pipe the PDF document directly to the response
         doc.pipe(res);
 
-        // PDF Header
-        doc.fontSize(16).text('SALARY SLIP', { align: 'center' });
-        doc.moveDown();
-        doc.fontSize(10);
-        doc.text(`Month: ${month}/${year}`, { align: 'left' });
-        doc.text(`Employee ID: ${dbUserId}`);
-        doc.text(`Employee Name: ${userName}`);
-        doc.moveDown(0.5);
-
-        // Attendance & Leave Section
-        doc.fontSize(12).text('ATTENDANCE & LEAVE', { underline: true });
-        doc.fontSize(10);
-        doc.text(`Total Working Days (Calendar): ${slip.total_working_days} days`);
-        doc.text(`Worked Days: ${slip.worked_days} days`);
-        doc.text(`Leave - Full Days: ${slip.leave_full_days} days`);
-        doc.text(`Leave - Half Days: ${slip.leave_half_days} days`);
-        doc.text(`Free Full Day: 1 day`);
-        doc.text(`Free Half Day: 1 day`);
-        doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} days`);
-        doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} days`);
-        doc.moveDown();
-
-        // Earnings Section
-        doc.fontSize(12).text('EARNINGS', { underline: true });
-        doc.fontSize(10);
-        doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
-        doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
-
-        if (slip.allowancesSum > 0) {
-            Object.entries(slip.allowances).forEach(([key, value]) => {
-                doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
-            });
-        }
-        doc.moveDown(0.5);
-
-        // Leave Deduction Section
-        if (slip.leave_deduction > 0) {
-            doc.fontSize(12).text('LEAVE DEDUCTION', { underline: true });
-            doc.fontSize(10);
-            doc.text(`Per Day Salary: ₹${slip.per_day_salary.toFixed(2)}`);
-            doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} × ₹${slip.per_day_salary.toFixed(2)} = ₹${(slip.chargeable_full_days * slip.per_day_salary).toFixed(2)}`);
-            doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} × ₹${(slip.per_day_salary / 2).toFixed(2)} = ₹${(slip.chargeable_half_days * (slip.per_day_salary / 2)).toFixed(2)}`);
-            doc.text(`Total Leave Deduction: ₹${slip.leave_deduction.toFixed(2)}`);
-            doc.moveDown(0.5);
-        }
-
-        // Deductions Section
-        doc.fontSize(12).text('STATUTORY DEDUCTIONS', { underline: true });
-        doc.fontSize(10);
-        doc.text(`PF (12%): ₹${slip.pf.toFixed(2)}`);
-        doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
-        doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
-        doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
-
-        if (slip.otherSum > 0) {
-            Object.entries(slip.other_deductions).forEach(([key, value]) => {
-                doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
-            });
-        }
-        doc.moveDown(0.5);
-
-        // Summary Section
-        const totalStatutoryDeductions = slip.pf + slip.esi_employee + slip.professional_tax + slip.tds + slip.otherSum;
-        const totalDeductions = totalStatutoryDeductions + Number(slip.leave_deduction);
-
-        doc.fontSize(12).text('SUMMARY', { underline: true });
-        doc.fontSize(10);
-        doc.text(`Gross Salary: ₹${slip.gross_pay.toFixed(2)}`);
-        doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions.toFixed(2)}`);
-        doc.text(`Leave Deductions: ₹${slip.leave_deduction.toFixed(2)}`);
-        doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-        doc.moveDown(0.3);
-        doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
-
-        doc.moveDown();
-        doc.fontSize(8);
-        doc.text('This is a computer-generated payslip and does not require signature.', {
-            align: 'center',
-            italics: true
-        });
+        buildZylkerPayslip(doc, slip, { userId: dbUserId, userName, role, joiningDate, payDate }, year, month);
 
         // End the document
         doc.end();
@@ -963,8 +1086,11 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
     const slip = await computePayrollFromConfig(cfg, { year: Number(year), month: Number(month) });
 
     // Get user details
-    const userQuery = await pool.query('SELECT name, email FROM users WHERE id=$1', [dbUserId]);
+    const userQuery = await pool.query('SELECT name, email, role, created_at FROM users WHERE id=$1', [dbUserId]);
     const userName = userQuery.rows[0]?.name || 'Employee';
+    const role = userQuery.rows[0]?.role || '';
+    const joiningDate = userQuery.rows[0]?.created_at || null;
+    const payDate = new Date();
 
     // Generate PDF if requested
     let savedPath = null;
@@ -991,86 +1117,7 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
 
             doc.pipe(writeStream);
 
-            // PDF Header
-            doc.fontSize(16).text('SALARY SLIP', { align: 'center' });
-            doc.moveDown();
-            doc.fontSize(10);
-            doc.text(`Month: ${month}/${year}`, { align: 'left' });
-            doc.text(`Employee ID: ${dbUserId}`);
-            doc.text(`Employee Name: ${userName}`);
-            doc.moveDown(0.5);
-
-            // Attendance & Leave Section
-            doc.fontSize(12).text('ATTENDANCE & LEAVE', { underline: true });
-            doc.fontSize(10);
-            doc.text(`Total Working Days (Calendar): ${slip.total_working_days} days`);
-            doc.text(`Worked Days: ${slip.worked_days} days`);
-            doc.text(`Leave - Full Days: ${slip.leave_full_days} days`);
-            doc.text(`Leave - Half Days: ${slip.leave_half_days} days`);
-            doc.text(`Free Full Day: 1 day`);
-            doc.text(`Free Half Day: 1 day`);
-            doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} days`);
-            doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} days`);
-            doc.moveDown();
-
-            // Earnings Section
-            doc.fontSize(12).text('EARNINGS', { underline: true });
-            doc.fontSize(10);
-            doc.text(`Basic Salary: ₹${slip.basic.toFixed(2)}`);
-            doc.text(`HRA: ₹${slip.hra.toFixed(2)}`);
-
-            if (slip.allowancesSum > 0) {
-                Object.entries(slip.allowances).forEach(([key, value]) => {
-                    doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
-                });
-            }
-            doc.moveDown(0.5);
-
-            // Leave Deduction Section
-            if (slip.leave_deduction > 0) {
-                doc.fontSize(12).text('LEAVE DEDUCTION', { underline: true });
-                doc.fontSize(10);
-                doc.text(`Per Day Salary: ₹${slip.per_day_salary.toFixed(2)}`);
-                doc.text(`Chargeable Full Days: ${slip.chargeable_full_days} × ₹${slip.per_day_salary.toFixed(2)} = ₹${(slip.chargeable_full_days * slip.per_day_salary).toFixed(2)}`);
-                doc.text(`Chargeable Half Days: ${slip.chargeable_half_days} × ₹${(slip.per_day_salary / 2).toFixed(2)} = ₹${(slip.chargeable_half_days * (slip.per_day_salary / 2)).toFixed(2)}`);
-                doc.text(`Total Leave Deduction: ₹${slip.leave_deduction.toFixed(2)}`);
-                doc.moveDown(0.5);
-            }
-
-            // Statutory Deductions Section
-            doc.fontSize(12).text('STATUTORY DEDUCTIONS', { underline: true });
-            doc.fontSize(10);
-            doc.text(`PF (12%): ₹${slip.pf.toFixed(2)}`);
-            doc.text(`ESI (Employee): ₹${slip.esi_employee.toFixed(2)}`);
-            doc.text(`Professional Tax: ₹${slip.professional_tax.toFixed(2)}`);
-            doc.text(`TDS: ₹${slip.tds.toFixed(2)}`);
-
-            if (slip.otherSum > 0) {
-                Object.entries(slip.other_deductions).forEach(([key, value]) => {
-                    doc.text(`${key}: ₹${Number(value).toFixed(2)}`);
-                });
-            }
-            doc.moveDown(0.5);
-
-            // Summary Section
-            const totalStatutoryDeductions = slip.pf + slip.esi_employee + slip.professional_tax + slip.tds + slip.otherSum;
-            const totalDeductions = totalStatutoryDeductions + Number(slip.leave_deduction);
-
-            doc.fontSize(12).text('SUMMARY', { underline: true });
-            doc.fontSize(10);
-            doc.text(`Gross Salary: ₹${slip.gross_pay.toFixed(2)}`);
-            doc.text(`Statutory Deductions: ₹${totalStatutoryDeductions.toFixed(2)}`);
-            doc.text(`Leave Deductions: ₹${slip.leave_deduction.toFixed(2)}`);
-            doc.text(`Total Deductions: ₹${totalDeductions.toFixed(2)}`);
-            doc.moveDown(0.3);
-            doc.fontSize(12).text(`NET PAY: ₹${slip.net_pay.toFixed(2)}`, { align: 'center' });
-
-            doc.moveDown();
-            doc.fontSize(8);
-            doc.text('This is a computer-generated payslip and does not require signature.', {
-                align: 'center',
-                italics: true
-            });
+            buildZylkerPayslip(doc, slip, { userId: dbUserId, userName, role, joiningDate, payDate }, year, month);
 
             doc.end();
             await streamFinished;
