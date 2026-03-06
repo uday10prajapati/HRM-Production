@@ -30,6 +30,10 @@ import java.util.Timer;
 import java.util.TimerTask;
 import android.content.SharedPreferences;
 
+import android.os.PowerManager;
+import android.os.HandlerThread;
+import android.os.Looper;
+
 /**
  * Background Location Tracking Service
  * Runs continuously and tracks location even when app is closed
@@ -49,10 +53,24 @@ public class LocationTrackingService extends Service {
     private float lastAccuracy = Float.MAX_VALUE;
     private SharedPreferences prefs;
 
+    private PowerManager.WakeLock wakeLock;
+    private HandlerThread handlerThread;
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "🟢 LocationTrackingService started");
         
+        if (wakeLock == null) {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HRM::LocationTrackingWakeLock");
+            wakeLock.acquire();
+        }
+        
+        if (handlerThread == null) {
+            handlerThread = new HandlerThread("LocationTrackerThread");
+            handlerThread.start();
+        }
+
         // Get user ID and API URL from shared preferences or intent extras
         prefs = getSharedPreferences("HRM_PREFS", Context.MODE_PRIVATE);
         userId = prefs.getString("tracking_user_id", null);
@@ -62,7 +80,6 @@ public class LocationTrackingService extends Service {
         prefs.edit().putBoolean("tracking_active", true).apply();
         
         // Ensure storage is enabled if tracking is active
-        // (This handles app resume/restart scenarios)
         if (!prefs.contains("location_storage_enabled")) {
             prefs.edit().putBoolean("location_storage_enabled", true).apply();
             Log.d(TAG, "📍 Storage enabled by default for active tracking");
@@ -102,9 +119,17 @@ public class LocationTrackingService extends Service {
         // As a fallback for aggressive OEM battery managers, attempt an explicit restart
         Intent restartService = new Intent(getApplicationContext(), this.getClass());
         restartService.setPackage(getPackageName());
-        PendingIntent restartServicePI = PendingIntent.getService(
-                getApplicationContext(), 1, restartService,
-                PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent restartServicePI;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            restartServicePI = PendingIntent.getForegroundService(
+                    getApplicationContext(), 1, restartService,
+                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        } else {
+            restartServicePI = PendingIntent.getService(
+                    getApplicationContext(), 1, restartService,
+                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        }
+        
         android.app.AlarmManager alarmService = (android.app.AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
         if (alarmService != null) {
             alarmService.set(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 2000, restartServicePI);
@@ -256,6 +281,16 @@ public class LocationTrackingService extends Service {
             } catch (SecurityException e) {
                 Log.e(TAG, "Failed to remove location updates", e);
             }
+        }
+        
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+            wakeLock = null;
+        }
+        
+        if (handlerThread != null) {
+            handlerThread.quitSafely();
+            handlerThread = null;
         }
         
         if (httpClient != null) {
