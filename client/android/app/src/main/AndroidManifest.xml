@@ -33,7 +33,8 @@
             android:name=".LocationTrackingService"
             android:foregroundServiceType="location"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:stopWithTask="false" />
 
         <!-- Boot Receiver to restart service on device restart -->
         <receiver

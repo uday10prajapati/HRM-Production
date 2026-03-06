@@ -79,6 +79,11 @@ public class LocationTrackingService extends Service {
         // Start foreground service with notification
         startForegroundService();
         
+        if (locationListener != null) {
+            Log.d(TAG, "Location listener already active");
+            return START_STICKY;
+        }
+
         // Initialize location manager
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         httpClient = new OkHttpClient();
@@ -87,6 +92,23 @@ public class LocationTrackingService extends Service {
         startLocationUpdates();
         
         return START_STICKY; // Restart if killed by system
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        Log.d(TAG, "⚠️ App removed from recents - service continues to run due to START_STICKY and stopWithTask=false");
+        super.onTaskRemoved(rootIntent);
+        
+        // As a fallback for aggressive OEM battery managers, attempt an explicit restart
+        Intent restartService = new Intent(getApplicationContext(), this.getClass());
+        restartService.setPackage(getPackageName());
+        PendingIntent restartServicePI = PendingIntent.getService(
+                getApplicationContext(), 1, restartService,
+                PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+        android.app.AlarmManager alarmService = (android.app.AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+        if (alarmService != null) {
+            alarmService.set(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 2000, restartServicePI);
+        }
     }
 
     private void startForegroundService() {
@@ -124,59 +146,49 @@ public class LocationTrackingService extends Service {
         Log.d(TAG, "✅ Foreground service started with notification");
     }
 
-    private void startLocationUpdates() {
-        // Timer to fetch location every 10 seconds
-        locationTimer = new Timer();
-        locationTimer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                updateLocation();
-            }
-        }, 0, 10000); // 10 second interval
-        
-        Log.d(TAG, "📍 Location updates scheduled every 10 seconds");
-    }
+    private LocationListener locationListener;
 
-    private void updateLocation() {
+    private void startLocationUpdates() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "Location permission not granted. Cannot start active updates.");
+            return;
+        }
+
+        locationListener = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                if (location != null) {
+                    double lat = location.getLatitude();
+                    double lng = location.getLongitude();
+                    float accuracy = location.getAccuracy();
+                    
+                    Log.d(TAG, "📍 Active Location update: " + lat + ", " + lng + " (acc: " + accuracy + "m)");
+                    if (shouldStoreLocation(lat, lng, accuracy)) {
+                        new Thread(() -> {
+                            storeLocation(lat, lng);
+                        }).start();
+                        lastLat = lat;
+                        lastLng = lng;
+                        lastAccuracy = accuracy;
+                    }
+                }
+            }
+            @Override public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
+            @Override public void onProviderEnabled(String provider) {}
+            @Override public void onProviderDisabled(String provider) {}
+        };
+
         try {
-            // Check permissions
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                    != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "Location permission not granted");
-                return;
+            // Request updates every 10 seconds or 5 meters
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 5, locationListener, android.os.Looper.getMainLooper());
             }
-            
-            // Get last known location
-            Location location = null;
-            try {
-                location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                if (location == null) {
-                    location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                }
-            } catch (SecurityException e) {
-                Log.e(TAG, "Security exception getting location: " + e.getMessage());
-                return;
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10000, 5, locationListener, android.os.Looper.getMainLooper());
             }
-            
-            if (location != null) {
-                double lat = location.getLatitude();
-                double lng = location.getLongitude();
-                float accuracy = location.getAccuracy();
-                
-                Log.d(TAG, "📍 Location: " + lat + ", " + lng + " (accuracy: " + accuracy + "m)");
-                
-                // Store location if moved significantly or at good accuracy
-                if (shouldStoreLocation(lat, lng, accuracy)) {
-                    storeLocation(lat, lng);
-                    lastLat = lat;
-                    lastLng = lng;
-                    lastAccuracy = accuracy;
-                }
-            } else {
-                Log.d(TAG, "⚠️ No location available");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error updating location: " + e.getMessage());
+            Log.d(TAG, "📍 Active location updates registered (interval: 10s, distance: 5m)");
+        } catch (SecurityException e) {
+            Log.e(TAG, "Security exception requesting location updates: " + e.getMessage());
         }
     }
 
@@ -237,8 +249,13 @@ public class LocationTrackingService extends Service {
     public void onDestroy() {
         Log.d(TAG, "🔴 LocationTrackingService destroyed");
         
-        if (locationTimer != null) {
-            locationTimer.cancel();
+        if (locationManager != null && locationListener != null) {
+            try {
+                locationManager.removeUpdates(locationListener);
+                Log.d(TAG, "📍 Location updates removed");
+            } catch (SecurityException e) {
+                Log.e(TAG, "Failed to remove location updates", e);
+            }
         }
         
         if (httpClient != null) {
