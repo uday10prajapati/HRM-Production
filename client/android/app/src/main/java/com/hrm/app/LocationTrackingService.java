@@ -17,6 +17,19 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import android.Manifest;
 import android.content.pm.PackageManager;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
+import okhttp3.Call;
+import okhttp3.Callback;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -43,7 +56,8 @@ public class LocationTrackingService extends Service {
     private static final int NOTIFICATION_ID = 12345;
     private static final String CHANNEL_ID = "hrm_location_tracking";
     
-    private LocationManager locationManager;
+    private FusedLocationProviderClient fusedLocationClient;
+    private LocationCallback locationCallback;
     private Timer locationTimer;
     private OkHttpClient httpClient;
     private String userId;
@@ -96,13 +110,13 @@ public class LocationTrackingService extends Service {
         // Start foreground service with notification
         startForegroundService();
         
-        if (locationListener != null) {
-            Log.d(TAG, "Location listener already active");
+        if (locationCallback != null) {
+            Log.d(TAG, "Location callback already active");
             return START_STICKY;
         }
 
         // Initialize location manager
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         httpClient = new OkHttpClient();
         
         // Start requesting location updates
@@ -116,23 +130,27 @@ public class LocationTrackingService extends Service {
         Log.d(TAG, "⚠️ App removed from recents - service continues to run due to START_STICKY and stopWithTask=false");
         super.onTaskRemoved(rootIntent);
         
-        // As a fallback for aggressive OEM battery managers, attempt an explicit restart
-        Intent restartService = new Intent(getApplicationContext(), this.getClass());
-        restartService.setPackage(getPackageName());
-        PendingIntent restartServicePI;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            restartServicePI = PendingIntent.getForegroundService(
-                    getApplicationContext(), 1, restartService,
-                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
-        } else {
-            restartServicePI = PendingIntent.getService(
-                    getApplicationContext(), 1, restartService,
-                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
-        }
-        
-        android.app.AlarmManager alarmService = (android.app.AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
-        if (alarmService != null) {
-            alarmService.set(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 2000, restartServicePI);
+        try {
+            // As a fallback for aggressive OEM battery managers, attempt an explicit restart
+            Intent restartService = new Intent(getApplicationContext(), this.getClass());
+            restartService.setPackage(getPackageName());
+            PendingIntent restartServicePI;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                restartServicePI = PendingIntent.getForegroundService(
+                        getApplicationContext(), 1, restartService,
+                        PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+            } else {
+                restartServicePI = PendingIntent.getService(
+                        getApplicationContext(), 1, restartService,
+                        PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
+            }
+            
+            android.app.AlarmManager alarmService = (android.app.AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+            if (alarmService != null) {
+                alarmService.set(android.app.AlarmManager.ELAPSED_REALTIME, android.os.SystemClock.elapsedRealtime() + 2000, restartServicePI);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule restart alarm on task removed: " + e.getMessage());
         }
     }
 
@@ -160,18 +178,27 @@ public class LocationTrackingService extends Service {
         
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HRM Location Tracking")
-            .setContentText("Recording your work location")
+            .setContentText("Recording your work location (Do not close)")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build();
         
-        startForeground(NOTIFICATION_ID, notification);
-        Log.d(TAG, "✅ Foreground service started with notification");
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+            Log.d(TAG, "✅ Foreground service started with notification");
+        } catch (Exception e) {
+            Log.e(TAG, "🚨 Failed to start foreground service: " + e.getMessage());
+            // Android 12+ throws ForegroundServiceStartNotAllowedException if started from background.
+            // We log the error but allow the service to continue existing in a background state (if possible).
+        }
     }
-
-    private LocationListener locationListener;
 
     private void startLocationUpdates() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -179,9 +206,11 @@ public class LocationTrackingService extends Service {
             return;
         }
 
-        locationListener = new LocationListener() {
+        locationCallback = new LocationCallback() {
             @Override
-            public void onLocationChanged(Location location) {
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult == null) return;
+                Location location = locationResult.getLastLocation();
                 if (location != null) {
                     double lat = location.getLatitude();
                     double lng = location.getLongitude();
@@ -189,31 +218,26 @@ public class LocationTrackingService extends Service {
                     
                     Log.d(TAG, "📍 Active Location update: " + lat + ", " + lng + " (acc: " + accuracy + "m)");
                     if (shouldStoreLocation(lat, lng, accuracy)) {
-                        new Thread(() -> {
-                            storeLocation(lat, lng);
-                        }).start();
+                        storeLocation(lat, lng);
                         lastLat = lat;
                         lastLng = lng;
                         lastAccuracy = accuracy;
                     }
                 }
             }
-            @Override public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
-            @Override public void onProviderEnabled(String provider) {}
-            @Override public void onProviderDisabled(String provider) {}
         };
 
         try {
-            // Request updates every 10 seconds or 5 meters
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 5, locationListener, android.os.Looper.getMainLooper());
-            }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10000, 5, locationListener, android.os.Looper.getMainLooper());
-            }
-            Log.d(TAG, "📍 Active location updates registered (interval: 10s, distance: 5m)");
+            LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+                    .setMinUpdateIntervalMillis(5000)
+                    .build();
+
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, handlerThread.getLooper());
+            Log.d(TAG, "📍 Active location updates registered using FusedLocationProviderClient");
         } catch (SecurityException e) {
             Log.e(TAG, "Security exception requesting location updates: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Exception requesting location updates: " + e.getMessage());
         }
     }
 
@@ -234,7 +258,6 @@ public class LocationTrackingService extends Service {
 
     private void storeLocation(double latitude, double longitude) {
         try {
-            // Check if storage is enabled (based on punch state)
             boolean storageEnabled = prefs.getBoolean("location_storage_enabled", true);
             if (!storageEnabled) {
                 Log.d(TAG, "⏭️ Storage disabled by user - skipping location store");
@@ -242,11 +265,24 @@ public class LocationTrackingService extends Service {
             }
             
             JSONObject body = new JSONObject();
+            
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX", Locale.US);
+            sdf.setTimeZone(TimeZone.getTimeZone("Asia/Kolkata"));
+            String isoTime = sdf.format(new Date());
+
             body.put("userId", userId);
             body.put("latitude", latitude);
             body.put("longitude", longitude);
+            body.put("updated_at", isoTime);
             
-            String url = apiUrl + "/api/live_locations/upsert";
+            String safeApiUrl = apiUrl;
+            if (safeApiUrl == null || safeApiUrl.isEmpty() || safeApiUrl.equals("null")) {
+                safeApiUrl = prefs.getString("api_base_url", "https://hrms.sandjglobaltech.com");
+            }
+            if (safeApiUrl == null || safeApiUrl.isEmpty()) {
+                safeApiUrl = "https://hrms.sandjglobaltech.com";
+            }
+            String url = safeApiUrl + "/api/live_locations/upsert";
             
             Request request = new Request.Builder()
                 .url(url)
@@ -257,14 +293,22 @@ public class LocationTrackingService extends Service {
                 .addHeader("Content-Type", "application/json")
                 .build();
             
-            Response response = httpClient.newCall(request).execute();
-            
-            if (response.isSuccessful()) {
-                Log.d(TAG, "✅ Location stored successfully");
-            } else {
-                Log.w(TAG, "⚠️ Failed to store location: " + response.code());
-            }
-            response.close();
+            httpClient.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    Log.e(TAG, "🚨 Failed to post location point to Supabase: " + e.getMessage());
+                }
+
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    if (response.isSuccessful()) {
+                        Log.d(TAG, "✅ Location stored successfully");
+                    } else {
+                        Log.w(TAG, "⚠️ Failed to store location: " + response.code());
+                    }
+                    response.close();
+                }
+            });
         } catch (Exception e) {
             Log.e(TAG, "Error storing location: " + e.getMessage());
         }
@@ -274,11 +318,11 @@ public class LocationTrackingService extends Service {
     public void onDestroy() {
         Log.d(TAG, "🔴 LocationTrackingService destroyed");
         
-        if (locationManager != null && locationListener != null) {
+        if (fusedLocationClient != null && locationCallback != null) {
             try {
-                locationManager.removeUpdates(locationListener);
+                fusedLocationClient.removeLocationUpdates(locationCallback);
                 Log.d(TAG, "📍 Location updates removed");
-            } catch (SecurityException e) {
+            } catch (Exception e) {
                 Log.e(TAG, "Failed to remove location updates", e);
             }
         }

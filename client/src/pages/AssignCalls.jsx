@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import * as XLSX from 'xlsx'; // ADDED
 
 // Use relative API paths; endpoints are under /api/
 
@@ -21,6 +22,12 @@ const AssignCalls = () => {
     const [assignedCalls, setAssignedCalls] = useState([]);
     const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
     const [userRole, setUserRole] = useState(''); // Add this line
+
+    // Excel Report States
+    const [reportFromDate, setReportFromDate] = useState('');
+    const [reportToDate, setReportToDate] = useState('');
+    const [reportStatus, setReportStatus] = useState('both'); // pending, resolved, both
+
     const [societySuggestions, setSocietySuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [dairySuggestions, setDairySuggestions] = useState([]);
@@ -390,6 +397,101 @@ const AssignCalls = () => {
         }
     };
 
+    const handleGenerateReport = () => {
+        if (!reportFromDate || !reportToDate) {
+            alert('Please select both From and To dates to generate a report.');
+            return;
+        }
+
+        const fromDate = new Date(reportFromDate);
+        fromDate.setHours(0, 0, 0, 0);
+        const toDate = new Date(reportToDate);
+        toDate.setHours(23, 59, 59, 999);
+
+        const filteredCalls = assignedCalls.filter(call => {
+            const callDate = new Date(call.created_at || call.call_date);
+            const matchesDate = callDate >= fromDate && callDate <= toDate;
+
+            let matchesStatus = true;
+            if (reportStatus === 'resolved') {
+                matchesStatus = call.status === 'resolved';
+            } else if (reportStatus === 'pending') {
+                matchesStatus = call.status !== 'resolved';
+            }
+
+            return matchesDate && matchesStatus;
+        });
+
+        if (filteredCalls.length === 0) {
+            alert('No calls found for the selected date range and status.');
+            return;
+        }
+
+        const dataToExport = filteredCalls.map(call => ({
+            'Call ID': call.formatted_call_id || getFormattedCallId(call.call_id, call.call_type),
+            'Call Type': call.call_type || 'Service Call',
+            'Priority': call.priority || 'Medium',
+            'Date Assigned': call.created_at ? new Date(call.created_at).toLocaleDateString() : '',
+            'Time Assigned': call.created_at ? new Date(call.created_at).toLocaleTimeString() : '',
+            'Status': call.status || 'new',
+            'Engineer Name': call.name || 'Unassigned',
+            'Mobile Number': call.mobile_number || '',
+            'Dairy / Society Name': call.dairy_name || '',
+            'Client Problem': call.problem || '',
+            'Description': call.description || '',
+
+            // Resolution & Visit Details
+            'Visit Start Date': call.visit_start_date ? new Date(call.visit_start_date).toLocaleDateString() : '',
+            'Visit Start Time': call.visit_start_time || '',
+            'Visit End Date': call.visit_end_date ? new Date(call.visit_end_date).toLocaleDateString() : '',
+            'Visit End Time': call.visit_end_time || '',
+            'Call Closed Date': call.call_closed_date ? new Date(call.call_closed_date).toLocaleDateString() : '',
+            'Problem 1': call.problem1 || '',
+            'Problem 2': call.problem2 || '',
+            'Solutions': call.solutions || '',
+
+            // Stock & Parts
+            'Part Used': call.part_used || '',
+            'Quantity Used': call.quantity_used || '',
+            'Serial Number': call.serial_number || '',
+            'Under Warranty': call.under_warranty || '',
+            'Return Part Name': call.return_part_name || '',
+            'Return Serial Number': call.return_serial_number || '',
+            'Stock Items (Data)': call.stock_items ? JSON.stringify(call.stock_items) : '',
+
+            // Travel Details
+            'Return To Home': call.return_to_home ? 'Yes' : 'No',
+            'Kms Traveled': call.kms_traveled || '',
+            'Places Visited': call.places_visited || '',
+            'Return Place': call.return_place || '',
+            'Return Km': call.return_km || '',
+
+            // Document Tracking
+            'Letterhead Received': call.letterhead_received ? 'Yes' : 'No',
+            'Letterhead Submitted': call.letterhead_submitted ? 'Yes' : 'No',
+            'Letterhead URL': call.letterhead_url || '',
+            'Remarks': call.remarks || '',
+
+            // TA Details
+            'TA Voucher Number': call.ta_voucher_number || '',
+            'TA Voucher Date': call.ta_voucher_date ? new Date(call.ta_voucher_date).toLocaleDateString() : '',
+            'TA Call Type': call.ta_call_type || '',
+            'TA Travel Mode': call.ta_travel_mode || '',
+            'TA Status': call.ta_status || '',
+            'TA Revised KM': call.ta_revised_km || '',
+            'TA Revised Places': call.ta_revised_places || '',
+            'TA HR Approved': call.ta_hr_approved ? 'Yes' : 'No',
+            'TA Admin Approved': call.ta_admin_approved ? 'Yes' : 'No',
+            'TA Rejected By': call.ta_rejected_by || '',
+            'TA Approval Notes': call.ta_approval_notes || ''
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Service Calls');
+        XLSX.writeFile(workbook, `Assign_Calls_Report_${reportFromDate}_to_${reportToDate}.xlsx`);
+    };
+
     return (
         <div className="min-h-screen flex flex-col bg-slate-50/50">
             <div className="fixed top-0 w-full z-50"><Navbar /></div>
@@ -404,11 +506,54 @@ const AssignCalls = () => {
                     <div className="max-w-7xl mx-auto space-y-8">
 
                         {/* Header Section */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2 mb-8">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mt-2 mb-8">
                             <div>
                                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Assign Service Calls</h1>
                                 <p className="text-sm font-medium text-slate-500 mt-2">Search societies and dispatch engineers</p>
                             </div>
+
+                            {/* Report Generation UI for HR and Admin */}
+                            {isHrOrAdmin(userRole) && (
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-end gap-3 w-full sm:w-auto overflow-x-auto">
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">From Date</label>
+                                        <input
+                                            type="date"
+                                            value={reportFromDate}
+                                            onChange={(e) => setReportFromDate(e.target.value)}
+                                            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">To Date</label>
+                                        <input
+                                            type="date"
+                                            value={reportToDate}
+                                            onChange={(e) => setReportToDate(e.target.value)}
+                                            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status Filter</label>
+                                        <select
+                                            value={reportStatus}
+                                            onChange={(e) => setReportStatus(e.target.value)}
+                                            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-indigo-500"
+                                        >
+                                            <option value="both">All Calls</option>
+                                            <option value="pending">Pending</option>
+                                            <option value="resolved">Resolved</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={handleGenerateReport}
+                                        className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2 whitespace-nowrap"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        Generate Report
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Search Section */}

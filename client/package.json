@@ -30,7 +30,8 @@
     "react-router-dom": "^7.9.4",
     "react-toastify": "^11.0.5",
     "tailwindcss": "^4.1.14",
-    "twilio": "^5.10.3"
+    "twilio": "^5.10.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

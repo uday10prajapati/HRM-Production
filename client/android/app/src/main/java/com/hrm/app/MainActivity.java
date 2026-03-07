@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Ensure our custom capacitor plugin is registered AFTER the bridge initializes
+        registerPlugin(LocationTrackingPlugin.class);
         
         Log.d(TAG, "🟢 MainActivity started, checking for active location tracking");
         
