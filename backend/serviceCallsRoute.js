@@ -33,11 +33,11 @@ const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
   try {
     const prefix = callType === 'PM Call' ? 'P-' : 'S-';
     const pattern = `${prefix}${baseId}/%`;
-    
+
     // Count calls for THIS ENGINEER with same prefix and date
     // If engineerId provided, count only for this engineer
     let query, params;
-    
+
     if (engineerId) {
       query = `
         SELECT COUNT(*) as count FROM assign_call 
@@ -52,7 +52,7 @@ const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
       `;
       params = [pattern];
     }
-    
+
     const result = await pool.query(query, params);
     const count = parseInt(result.rows[0]?.count) || 0;
     const nextSequence = count + 1;
@@ -70,8 +70,9 @@ const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
 router.get('/assigned-calls', requireAuth, async (req, res) => {
   try {
     const query = `
-      SELECT ac.* 
+      SELECT ac.*, sdl."TALUKA NAME" as taluka_name 
       FROM assign_call ac
+      LEFT JOIN public.service_call_dairy_list sdl ON ac.dairy_name = sdl."SOCIETY"
       ORDER BY ac.created_at DESC
     `;
     const result = await pool.query(query);
@@ -240,7 +241,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       problem,
       description,
       priority,
-      call_type
+      call_type,
+      call_date
     } = req.body;
 
     // Validate required fields
@@ -284,30 +286,39 @@ router.post('/assign-call', requireAuth, async (req, res) => {
     console.log('📋 Ensuring columns exist...');
     try {
       await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS formatted_call_id VARCHAR(50)`);
-    } catch (e) {}
+    } catch (e) { }
     try {
       await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS call_type VARCHAR(50)`);
-    } catch (e) {}
+    } catch (e) { }
     try {
       await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS engineer_id UUID`);
-    } catch (e) {}
+    } catch (e) { }
     // Drop UNIQUE index on formatted_call_id if it exists (since it's now per-engineer, not global)
     try {
       await pool.query(`DROP INDEX IF EXISTS idx_formatted_call_id`);
-    } catch (e) {}
+    } catch (e) { }
     try {
       await pool.query(`ALTER TABLE assign_call DROP CONSTRAINT IF EXISTS assign_call_formatted_call_id_key`);
-    } catch (e) {}
+    } catch (e) { }
 
     // Generate a unique ID for this call (separate from engineer ID)
     const callId = crypto.randomUUID();
+
+    let finalCreatedAt = new Date();
+    if (call_date) {
+      const [yyyy, mm, dd] = call_date.split('-');
+      if (yyyy && mm && dd) {
+        finalCreatedAt.setFullYear(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+        // Keep the default time of "now" so it orders correctly, but set the date 
+      }
+    }
 
     // Insert with separate call ID and engineer_id
     const insertQuery = `
       INSERT INTO assign_call (
         id, engineer_id, name, role, mobile_number, dairy_name, problem, description, priority, status,
-        formatted_call_id, call_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        formatted_call_id, call_type, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `;
 
@@ -323,7 +334,8 @@ router.post('/assign-call', requireAuth, async (req, res) => {
       finalPriority,       // $9: priority
       'new',               // $10: status
       formattedCallId,     // $11: formatted_call_id
-      finalCallType        // $12: call_type
+      finalCallType,       // $12: call_type
+      finalCreatedAt       // $13: created_at
     ];
 
     console.log('📝 Inserting call with formatted_call_id:', formattedCallId);
@@ -472,7 +484,7 @@ async function ensureTAColumns() {
     'ta_rejection_notes TEXT',
     'ta_rejected_by TEXT'
   ];
-  
+
   for (const col of columns) {
     try {
       await pool.query(`ALTER TABLE assign_call ADD COLUMN IF NOT EXISTS ${col}`);
@@ -564,9 +576,9 @@ router.get('/ta-approvals', requireAuth, async (req, res) => {
        ORDER BY created_at DESC 
        LIMIT 100`
     );
-    
+
     return res.status(200).json({ success: true, data: taResult.rows || [] });
-    
+
   } catch (err) {
     // Log error for debugging
     console.error('[TA-Approvals] Error:', err?.message || err);
@@ -594,9 +606,9 @@ router.get('/ta-approvals-test', async (req, res) => {
        ORDER BY created_at DESC 
        LIMIT 100`
     );
-    
+
     return res.status(200).json({ success: true, data: taResult.rows || [] });
-    
+
   } catch (err) {
     console.error('[TA-Approvals-Test] Error:', err?.message || err);
     return res.status(200).json({ success: true, data: [] });
@@ -609,14 +621,14 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
     const { call_id, id, action, notes } = req.body;
     console.log('[TA-Action] Request received:', { call_id, id, action });
     console.log('[TA-Action] User role:', req.user?.role);
-    
+
     // Ensure columns exist first
     await ensureTAColumns();
     console.log('[TA-Action] Columns ensured');
 
     const requesterRole = (req.user?.role ?? '').toLowerCase();
     const requesterId = req.user?.id || 'unknown';
-    
+
     // Only HR and Admin can approve/reject TA
     if (!isHrOrAdmin(requesterRole)) {
       console.log('[TA-Action] Access denied - not HR/Admin. Role:', requesterRole);
@@ -759,10 +771,10 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
     });
     console.log('[TA-Action] Success - Final status:', updatedRecord.final_status);
 
-    return res.json({ 
-      success: true, 
-      message: `TA ${action} recorded. Current status: ${updatedRecord.final_status}`, 
-      record: updatedRecord 
+    return res.json({
+      success: true,
+      message: `TA ${action} recorded. Current status: ${updatedRecord.final_status}`,
+      record: updatedRecord
     });
 
   } catch (err) {
@@ -771,10 +783,10 @@ router.post('/ta-approval-action', requireAuth, async (req, res) => {
       stack: err?.stack,
       name: err?.name
     });
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to process TA action', 
-      error: err?.message 
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process TA action',
+      error: err?.message
     });
   }
 });

@@ -22,6 +22,8 @@ const AssignCalls = () => {
     const [assignedCalls, setAssignedCalls] = useState([]);
     const [showAssignedCalls, setShowAssignedCalls] = useState(false);  // Add this line
     const [userRole, setUserRole] = useState(''); // Add this line
+    const [callDate, setCallDate] = useState(new Date().toISOString().split('T')[0]); // Add call date
+
 
     // Excel Report States
     const [reportFromDate, setReportFromDate] = useState('');
@@ -163,7 +165,8 @@ const AssignCalls = () => {
                 problem: problem,
                 description: problem,
                 priority: priority,
-                call_type: callType
+                call_type: callType,
+                call_date: callDate
             };
 
             const response = await axios.post(
@@ -182,6 +185,7 @@ const AssignCalls = () => {
                 setProblem('');
                 setPriority('Medium');
                 setCallType('Service Call');
+                setCallDate(new Date().toISOString().split('T')[0]);
 
                 // ✅ REFRESH ASSIGNED CALLS
                 fetchAssignedCalls();
@@ -437,6 +441,7 @@ const AssignCalls = () => {
             'Engineer Name': call.name || 'Unassigned',
             'Mobile Number': call.mobile_number || '',
             'Dairy / Society Name': call.dairy_name || '',
+            'Taluka Name': call.taluka_name || '',
             'Client Problem': call.problem || '',
             'Description': call.description || '',
 
@@ -1122,7 +1127,18 @@ const AssignCalls = () => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
+                                        Call Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer"
+                                        value={callDate}
+                                        onChange={(e) => setCallDate(e.target.value)}
+                                    />
+                                </div>
                                 <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 ml-1">
                                         Call Type
