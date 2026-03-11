@@ -17,9 +17,9 @@ router.get('/', async (req, res) => {
 
 // ADD a new society
 router.post('/', async (req, res) => {
-    const { SOCCD, SOCIETY, TALUKA_NAME } = req.body;
-    // Note: Frontend should send "TALUKA_NAME" or "TALUKA NAME". Let's handle both.
-    const taluka = TALUKA_NAME || req.body['TALUKA NAME'];
+    const { SOCCD, SOCIETY, TALUKA_NAME, TALUKANAME } = req.body;
+    // Note: Frontend should send "TALUKANAME" ideally. Let's handle variations.
+    const taluka = TALUKANAME || TALUKA_NAME || req.body['TALUKA NAME'];
 
     if (!SOCCD || !SOCIETY) {
         return res.status(400).json({ success: false, message: 'SOCCD and SOCIETY are required' });
@@ -27,7 +27,7 @@ router.post('/', async (req, res) => {
 
     try {
         const query = `
-      INSERT INTO public.service_call_dairy_list ("SOCCD", "SOCIETY", "TALUKA NAME")
+      INSERT INTO public.service_call_dairy_list ("SOCCD", "SOCIETY", "TALUKANAME")
       VALUES ($1, $2, $3)
       RETURNING *
     `;

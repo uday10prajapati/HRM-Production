@@ -70,7 +70,7 @@ const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
 router.get('/assigned-calls', requireAuth, async (req, res) => {
   try {
     const query = `
-      SELECT ac.*, sdl."TALUKA NAME" as taluka_name 
+      SELECT ac.*, sdl."TALUKANAME" as taluka_name 
       FROM assign_call ac
       LEFT JOIN public.service_call_dairy_list sdl ON ac.dairy_name = sdl."SOCIETY"
       ORDER BY ac.created_at DESC
@@ -965,7 +965,7 @@ router.post('/search', async (req, res) => {
                         'Dairy'::text AS source,
                         "SOCCD"::text AS code,
                         "SOCIETY"::text AS society,
-                        "TALUKA NAME"::text AS taluka
+                        "TALUKANAME"::text AS taluka
                       FROM service_call_dairy_list
                       WHERE ($1::text IS NULL OR "SOCCD"::text = $1::text)
                         AND ($2::text IS NULL OR UPPER("SOCIETY") LIKE UPPER($2 || '%'))

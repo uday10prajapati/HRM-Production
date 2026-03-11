@@ -247,11 +247,19 @@ async function createAll() {
         UNIQUE(user_id, year, month)
       );
 
-      -- Society Master table
       CREATE TABLE IF NOT EXISTS public.service_call_dairy_list (
+        "MACHINECD" text null,
+        "MACHINEDESCCD" text null,
+        "MACHINEDESC" text null,
         "SOCCD" numeric null,
         "SOCIETY" text null,
-        "TALUKA NAME" text null
+        "TALUKANAME" text null,
+        "COMPANY" text null,
+        "MACHINESRNO" text null,
+        "CTYPECD" text null,
+        "PARENTSOCCD" numeric null,
+        id uuid not null default gen_random_uuid (),
+        constraint service_call_dairy_list_pkey primary key (id)
       ) TABLESPACE pg_default;
 
       CREATE TABLE IF NOT EXISTS public.product_items (
