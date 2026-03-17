@@ -954,4 +954,58 @@ router.post('/bulk-delete', async (req, res) => {
   }
 });
 
+// Delete engineer stock (return stock to central pool)
+router.delete('/engineer/:engineerId/item/:stockItemId', async (req, res) => {
+  const { engineerId, stockItemId } = req.params;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Get engineer stock info before deletion
+    const esResult = await client.query(
+      `SELECT * FROM engineer_stock 
+       WHERE engineer_id::text = $1 AND stock_item_id::text = $2`,
+      [String(engineerId), String(stockItemId)]
+    );
+
+    if (esResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Engineer stock allocation not found' });
+    }
+
+    const engineerStock = esResult.rows[0];
+    const quantityToReturn = Number(engineerStock.quantity) || 0;
+
+    // 2. Delete the engineer_stock record
+    await client.query(
+      `DELETE FROM engineer_stock 
+       WHERE engineer_id::text = $1 AND stock_item_id::text = $2`,
+      [String(engineerId), String(stockItemId)]
+    );
+
+    // 3. Add quantity back to central stock
+    if (quantityToReturn > 0) {
+      await client.query(
+        `UPDATE stock_items SET quantity = quantity + $1 WHERE id = $2`,
+        [quantityToReturn, stockItemId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Removed stock allocation. ${quantityToReturn} units returned to central stock.`,
+      returned_quantity: quantityToReturn
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('Failed to delete engineer stock:', err);
+    res.status(500).json({ error: 'Failed to delete engineer stock: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

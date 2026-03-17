@@ -37,7 +37,9 @@ export default function CentralStock() {
   });
   const [bulkStockMode, setBulkStockMode] = useState(false);
   const [bulkStockEngineer, setBulkStockEngineer] = useState('');
-  const [bulkProductStocks, setBulkProductStocks] = useState({}); // {productName: {selected: bool, quantity: num, threshold: num}}
+  const [bulkProductStocks, setBulkProductStocks] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submittingBulk, setSubmittingBulk] = useState(false); // {productName: {selected: bool, quantity: num, threshold: num}}
 
   // Fetch product items from database
   useEffect(() => {
@@ -170,16 +172,23 @@ export default function CentralStock() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (submitting) return; // Prevent double submission
+    
     try {
+      setSubmitting(true);
+      
       // Validate required fields
       if (!form.name.trim()) {
+        setSubmitting(false);
         return alert('Please enter item name');
       }
       if (!form.engineerId) {
+        setSubmitting(false);
         return alert('Please select an engineer to assign stock to');
       }
       const assignQty = Number(form.assignQuantity ?? 0);
       if (Number.isNaN(assignQty) || assignQty < 0 || assignQty === 0) {
+        setSubmitting(false);
         return alert('Quantity must be a positive number');
       }
 
@@ -212,6 +221,8 @@ export default function CentralStock() {
     } catch (err) {
       console.error(err);
       setSubmitMessage(`✗ Error: ${err.response?.data?.error || 'Failed to save'}`);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -348,6 +359,8 @@ export default function CentralStock() {
   }
 
   async function submitBulkStock() {
+    if (submittingBulk) return; // Prevent double submission
+    
     if (!bulkStockEngineer) {
       return alert('Please select an engineer');
     }
@@ -372,6 +385,8 @@ export default function CentralStock() {
     }
 
     try {
+      setSubmittingBulk(true);
+      
       for (const product of selectedProducts) {
         await axios.post('/api/stock/items-with-assign', {
           name: product.productName,
@@ -399,7 +414,7 @@ export default function CentralStock() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-8 pt-24">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -520,12 +535,24 @@ export default function CentralStock() {
                 <div className="mt-8 flex gap-3">
                   <button 
                     type="submit"
-                    className="inline-flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+                    disabled={submitting}
+                    className="inline-flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Assign Stock
+                    {submitting ? (
+                      <>
+                        <svg className="w-5 h-5 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Assigning...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Assign Stock
+                      </>
+                    )}
                   </button>
                   {submitMessage && (
                     <div className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium ${
@@ -669,13 +696,24 @@ export default function CentralStock() {
                     <button
                       type="button"
                       onClick={submitBulkStock}
-                      disabled={Object.values(bulkProductStocks).filter(p => p?.selected).length === 0}
+                      disabled={Object.values(bulkProductStocks).filter(p => p?.selected).length === 0 || submittingBulk}
                       className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Assign Stock ({Object.values(bulkProductStocks).filter(p => p?.selected).length})
+                      {submittingBulk ? (
+                        <>
+                          <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Assigning...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Assign Stock ({Object.values(bulkProductStocks).filter(p => p?.selected).length})
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
