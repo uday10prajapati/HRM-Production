@@ -14,7 +14,6 @@ export default function CentralStock() {
     name: '', 
     description: '', 
     quantity: 0, 
-    threshold: 1,
     engineerId: '',
     assignQuantity: 0
   });
@@ -29,7 +28,6 @@ export default function CentralStock() {
     name: '',
     description: '',
     quantity: 0,
-    threshold: 1,
     stock_item_id: null
   });
   const [editingStockId, setEditingStockId] = useState(null);
@@ -251,17 +249,16 @@ export default function CentralStock() {
     }
 
     // Prepare data for CSV
-    let csvContent = 'Engineer Name,Product Name,Quantity,Threshold\n';
+    let csvContent = 'Engineer Name,Product Name,Quantity\n';
 
     engineersWithStock.forEach(engineer => {
       if (engineer.stocks.length === 0) {
-        csvContent += `${engineer.engineer_name},No stocks assigned,-,-\n`;
+        csvContent += `${engineer.engineer_name},No stocks assigned,-\n`;
       } else {
         engineer.stocks.forEach(stock => {
           const productName = stock.product_name || 'N/A';
           const quantity = stock.quantity || 0;
-          const threshold = stock.threshold || 0;
-          csvContent += `${engineer.engineer_name},${productName},${quantity},${threshold}\n`;
+          csvContent += `${engineer.engineer_name},${productName},${quantity}\n`;
         });
       }
     });
@@ -725,13 +722,12 @@ export default function CentralStock() {
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-700">Product Name</th>
                             <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Unit</th>
                             <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Quantity</th>
-                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-700">Threshold</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {productItems.length === 0 ? (
                             <tr>
-                              <td colSpan="5" className="px-4 py-6 text-center text-sm text-gray-500">
+                              <td colSpan="4" className="px-4 py-6 text-center text-sm text-gray-500">
                                 No products available
                               </td>
                             </tr>
@@ -740,7 +736,7 @@ export default function CentralStock() {
                               product['Product Name'].toLowerCase().includes(bulkProductSearch.toLowerCase())
                             ).map(product => {
                               const productName = product['Product Name'];
-                              const productData = bulkProductStocks[productName] || {selected: false, quantity: 0, threshold: 1};
+                              const productData = bulkProductStocks[productName] || {selected: false, quantity: 0};
                               return (
                                 <tr key={productName} className={productData.selected ? 'bg-blue-50' : 'hover:bg-gray-50'}>
                                   <td className="px-4 py-3">
@@ -767,17 +763,6 @@ export default function CentralStock() {
                                       value={productData.quantity || ''}
                                       onChange={e => updateBulkProductField(productName, 'quantity', e.target.value)}
                                       placeholder="0"
-                                      className="w-full text-center rounded border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-2 py-1 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      disabled={!productData.selected}
-                                      value={productData.threshold || ''}
-                                      onChange={e => updateBulkProductField(productName, 'threshold', e.target.value)}
-                                      placeholder="1"
                                       className="w-full text-center rounded border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-2 py-1 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -917,7 +902,6 @@ export default function CentralStock() {
                               <h4 className="text-sm font-semibold text-gray-900">{stock.product_name}</h4>
                               <p className="text-xs text-gray-500 mt-1">
                                 Quantity: <span className="font-medium text-gray-700">{stock.quantity}</span>
-                                {stock.threshold && <span className="ml-3">Threshold: <span className="font-medium text-gray-700">{stock.threshold}</span></span>}
                               </p>
                             </div>
                             <div className="flex gap-2 ml-4">
