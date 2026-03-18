@@ -3,6 +3,33 @@ import { pool } from './db.js';
 
 const router = express.Router();
 
+// Ensure notifications table exists
+(async function ensureNotificationsTable() {
+  try {
+    await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      CREATE TABLE IF NOT EXISTS notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        recipient_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        notification_type VARCHAR(50) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT,
+        related_id UUID,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        read_at TIMESTAMP
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient_unread ON notifications(recipient_id, is_read)`);
+    console.log('\u2705 Ensured notifications table exists');
+  } catch (err) {
+    console.warn('Could not ensure notifications table exists:', err?.message || err);
+  }
+})();
+
 // Ensure leaves table exists (safe startup helper)
 (async function ensureLeavesTable() {
   try {
@@ -60,11 +87,47 @@ router.post('/apply', async (req, res) => {
     // fetch with user info
     const leave = result.rows[0];
     try {
-      const u = await pool.query(`SELECT id, name, email FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
+      const u = await pool.query(`SELECT id, name, email, role FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
       leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
     } catch (e) {
       // ignore user fetch errors
     }
+
+    // Create notifications for HR/Admin users
+    try {
+      const hrAdminResult = await pool.query(
+        `SELECT id FROM users WHERE role IN ('hr', 'admin') AND id != $1`,
+        [userId]
+      );
+      const hrAdminUsers = hrAdminResult.rows || [];
+      
+      if (hrAdminUsers.length > 0) {
+        const engineerName = leave.user?.name || 'An engineer';
+        const startD = new Date(startDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+        const endD = new Date(endDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+        
+        // Insert notification for each HR/Admin user
+        for (const hrAdmin of hrAdminUsers) {
+          try {
+            await pool.query(
+              `INSERT INTO notifications (recipient_id, notification_type, title, message, related_id, is_read) VALUES ($1, $2, $3, $4, $5, FALSE)`,
+              [
+                hrAdmin.id,
+                'leave_applied',
+                `Leave Application from ${engineerName}`,
+                `${engineerName} has applied for leave from ${startD} to ${endD}. Reason: ${reason || 'Not specified'}`,
+                leave.id
+              ]
+            );
+          } catch (notifErr) {
+            console.warn('Failed to create notification for HR user:', notifErr?.message || notifErr);
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Error creating notifications for leave application:', notifErr?.message || notifErr);
+    }
+
     res.json({ success: true, leave });
   } catch (err) {
     console.error('Error applying leave:', err?.message || err);
@@ -223,7 +286,84 @@ router.put('/:id/reject', async (req, res) => {
   }
 });
 
+// Notification endpoints
+
+// GET /api/leave/notifications/unread - Get unread notifications for current user
+router.get('/notifications/unread', async (req, res) => {
+  try {
+    const userId = req.header('x-user-id') || null;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, notification_type, title, message, related_id, created_at
+       FROM notifications 
+       WHERE recipient_id::text = $1 AND is_read = FALSE
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [String(userId)]
+    );
+
+    res.json({ success: true, notifications: result.rows || [] });
+  } catch (err) {
+    console.error('Error fetching unread notifications:', err?.message || err);
+    res.status(500).json({ success: false, message: 'Error fetching notifications', error: err?.message || String(err) });
+  }
+});
+
+// GET /api/leave/notifications/count - Get count of unread notifications
+router.get('/notifications/count', async (req, res) => {
+  try {
+    const userId = req.header('x-user-id') || null;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
+    }
+
+    const result = await pool.query(
+      `SELECT COUNT(*) as count FROM notifications 
+       WHERE recipient_id::text = $1 AND is_read = FALSE`,
+      [String(userId)]
+    );
+
+    const count = result.rows[0]?.count || 0;
+    res.json({ success: true, count: parseInt(count, 10) });
+  } catch (err) {
+    console.error('Error counting unread notifications:', err?.message || err);
+    res.status(500).json({ success: false, message: 'Error counting notifications', error: err?.message || String(err) });
+  }
+});
+
+// PUT /api/leave/notifications/:id/read - Mark notification as read
+router.put('/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.header('x-user-id') || null;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
+    }
+
+    const result = await pool.query(
+      `UPDATE notifications 
+       SET is_read = TRUE, read_at = NOW()
+       WHERE id::text = $1 AND recipient_id::text = $2
+       RETURNING *`,
+      [String(id), String(userId)]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Notification not found' });
+    }
+
+    res.json({ success: true, notification: result.rows[0] });
+  } catch (err) {
+    console.error('Error marking notification as read:', err?.message || err);
+    res.status(500).json({ success: false, message: 'Error updating notification', error: err?.message || String(err) });
+  }
+});
+
 export default router;
+
 
 // Debug endpoint - quick DB check and leaves column types
 router.get('/_debug/db', async (req, res) => {

@@ -1,10 +1,106 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from 'axios';
 
 const Navbar = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Add blinking animation style
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes blink {
+        0%, 49% {
+          box-shadow: 0 0 0 2px white, 0 0 0 3px #ef4444;
+          opacity: 1;
+        }
+        50%, 100% {
+          box-shadow: 0 0 0 2px white, 0 0 0 3px #ef4444;
+          opacity: 0.5;
+        }
+      }
+      .notification-dot-blink {
+        animation: blink 1.5s infinite;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+
+  // Fetch unread notifications
+  const fetchNotifications = async () => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) return;
+      
+      const response = await axios.get('/api/leave/notifications/count', {
+        headers: { 'x-user-id': userId }
+      });
+      
+      if (response.data.success) {
+        setUnreadCount(response.data.count);
+      }
+    } catch (err) {
+      console.warn('Error fetching notifications:', err?.message || err);
+    }
+  };
+
+  // Fetch detailed notifications when dropdown opens
+  const fetchDetailedNotifications = async () => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) return;
+      
+      const response = await axios.get('/api/leave/notifications/unread', {
+        headers: { 'x-user-id': userId }
+      });
+      
+      if (response.data.success) {
+        setNotifications(response.data.notifications || []);
+      }
+    } catch (err) {
+      console.warn('Error fetching detailed notifications:', err?.message || err);
+    }
+  };
+
+  // Mark notification as read
+  const markAsRead = async (notificationId) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) return;
+      
+      await axios.put(`/api/leave/notifications/${notificationId}/read`, {}, {
+        headers: { 'x-user-id': userId }
+      });
+      
+      // Refresh notifications
+      fetchNotifications();
+      fetchDetailedNotifications();
+    } catch (err) {
+      console.warn('Error marking notification as read:', err?.message || err);
+    }
+  };
+
+  // Fetch notifications on mount and set up polling
+  useEffect(() => {
+    fetchNotifications();
+    
+    // Poll for new notifications every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch detailed notifications when dropdown opens
+  useEffect(() => {
+    if (isNotificationOpen) {
+      fetchDetailedNotifications();
+    }
+  }, [isNotificationOpen]);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -100,12 +196,57 @@ const Navbar = () => {
               </button>
 
               {/* Notifications Button */}
-              <button className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors relative">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <span className="absolute top-1 right-1.5 block h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-white"></span>
-              </button>
+              <div className="relative">
+                <button 
+                  onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                  className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors relative"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  {unreadCount > 0 && (
+                    <span className={`absolute top-1 right-1.5 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white ${unreadCount > 0 ? 'notification-dot-blink' : ''}`}></span>
+                  )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                {isNotificationOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 max-h-96 overflow-y-auto">
+                    <div className="px-4 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-lg">
+                      <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{unreadCount} unread</p>
+                    </div>
+                    
+                    {notifications && notifications.length > 0 ? (
+                      <div className="divide-y divide-gray-100">
+                        {notifications.map((notif) => (
+                          <div 
+                            key={notif.id}
+                            className="px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
+                            onClick={() => markAsRead(notif.id)}
+                          >
+                            <p className="text-sm font-medium text-gray-800">{notif.title}</p>
+                            <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {new Date(notif.created_at).toLocaleString('en-IN', { 
+                                year: '2-digit', 
+                                month: 'short', 
+                                day: 'numeric', 
+                                hour: '2-digit', 
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-4 py-6 text-center">
+                        <p className="text-sm text-gray-500">No new notifications</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Email Button */}
               <button className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors hidden sm:block relative">
