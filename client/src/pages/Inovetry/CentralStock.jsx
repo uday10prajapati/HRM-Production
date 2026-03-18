@@ -4,8 +4,11 @@ import EngineerStock from './EngineerStock';
 
 export default function CentralStock() {
   const [items, setItems] = useState([]);
+  const [engineersWithStock, setEngineersWithStock] = useState([]);
+  const [expandedEngineer, setExpandedEngineer] = useState(null);
   const [productItems, setProductItems] = useState([]); // New state for product items
   const [loading, setLoading] = useState(false);
+  const [loadingEngineers, setLoadingEngineers] = useState(false);
   const [form, setForm] = useState({ 
     productName: '', // Changed from productId to productName
     name: '', 
@@ -26,8 +29,11 @@ export default function CentralStock() {
     name: '',
     description: '',
     quantity: 0,
-    threshold: 1
+    threshold: 1,
+    stock_item_id: null
   });
+  const [editingStockId, setEditingStockId] = useState(null);
+  const [editingEngineerId, setEditingEngineerId] = useState(null);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkAssignModal, setBulkAssignModal] = useState(false);
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
@@ -35,9 +41,10 @@ export default function CentralStock() {
     engineerId: '',
     quantity: 0
   });
-  const [bulkStockMode, setBulkStockMode] = useState(false);
+  const [bulkStockMode, setBulkStockMode] = useState(true);
   const [bulkStockEngineer, setBulkStockEngineer] = useState('');
   const [bulkProductStocks, setBulkProductStocks] = useState({});
+  const [bulkProductSearch, setBulkProductSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submittingBulk, setSubmittingBulk] = useState(false); // {productName: {selected: bool, quantity: num, threshold: num}}
 
@@ -168,6 +175,107 @@ export default function CentralStock() {
   function getProductUnit(productName) {
     const product = productItems.find(p => p['Product Name'] === productName);
     return product?.unit || 'NOS';
+  }
+
+  // Fetch engineers with their assigned stocks
+  async function fetchEngineersWithStock() {
+    setLoadingEngineers(true);
+    try {
+      const res = await axios.get('/api/stock/engineers-with-stock');
+      setEngineersWithStock(res.data || []);
+    } catch (err) {
+      console.error('Failed to load engineers with stock', err);
+      setEngineersWithStock([]);
+    } finally {
+      setLoadingEngineers(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchEngineersWithStock();
+  }, []);
+
+  // Edit engineer stock
+  async function handleEditEngineerStock(engineerId, stock) {
+    setEditingEngineerId(engineerId);
+    setEditingStockId(stock.id);
+    setEditForm({
+      quantity: stock.quantity,
+      description: stock.product_name,
+      stock_item_id: stock.stock_item_id
+    });
+  }
+
+  // Save engineer stock edit
+  async function handleSaveEngineerStockEdit() {
+    try {
+      const qty = Number(editForm.quantity ?? 0);
+      if (Number.isNaN(qty) || qty < 0) {
+        return alert('Quantity must be a non-negative number');
+      }
+
+      await axios.put(`/api/stock/engineer-stock/${editingStockId}`, {
+        quantity: qty
+      });
+
+      setSubmitMessage('✓ Stock updated successfully');
+      setTimeout(() => setSubmitMessage(''), 3000);
+      setEditingStockId(null);
+      setEditingEngineerId(null);
+      await fetchEngineersWithStock();
+    } catch (err) {
+      console.error(err);
+      alert(`Failed to update: ${err.response?.data?.error || 'Unknown error'}`);
+    }
+  }
+
+  // Delete engineer stock
+  async function handleDeleteEngineerStock(engineerId, stockId) {
+    if (window.confirm('Are you sure you want to delete this stock assignment? This action cannot be undone.')) {
+      try {
+        await axios.delete(`/api/stock/engineer-stock/${stockId}`);
+        setSubmitMessage('✓ Stock assignment deleted successfully');
+        setTimeout(() => setSubmitMessage(''), 3000);
+        await fetchEngineersWithStock();
+      } catch (err) {
+        console.error(err);
+        alert(`Failed to delete: ${err.response?.data?.error || 'Unknown error'}`);
+      }
+    }
+  }
+
+  // Export to Excel
+  function exportToExcel() {
+    if (engineersWithStock.length === 0) {
+      return alert('No data to export');
+    }
+
+    // Prepare data for CSV
+    let csvContent = 'Engineer Name,Product Name,Quantity,Threshold\n';
+
+    engineersWithStock.forEach(engineer => {
+      if (engineer.stocks.length === 0) {
+        csvContent += `${engineer.engineer_name},No stocks assigned,-,-\n`;
+      } else {
+        engineer.stocks.forEach(stock => {
+          const productName = stock.product_name || 'N/A';
+          const quantity = stock.quantity || 0;
+          const threshold = stock.threshold || 0;
+          csvContent += `${engineer.engineer_name},${productName},${quantity},${threshold}\n`;
+        });
+      }
+    });
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `engineer_stock_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   async function handleSubmit(e) {
@@ -426,8 +534,7 @@ export default function CentralStock() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">Add New Stock Item</h2>
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer" style={{width: '100%', justifyContent: 'flex-end'}}>
                 <input
                   type="checkbox"
                   checked={bulkStockMode}
@@ -449,48 +556,47 @@ export default function CentralStock() {
             // NORMAL MODE - Single Item
             <form onSubmit={handleSubmit} className="p-6">
               <div className="space-y-6">
-                {/* Step 1: Select Product */}
+                {/* Step 1: Select Engineer */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Step 1: Select Product <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Step 1: Select Engineer <span className="text-red-500">*</span></label>
                   <select 
-                    value={form.productName}
+                    value={form.engineerId}
                     onChange={e => {
-                      setForm(f => ({
-                        ...f,
-                        productName: e.target.value,
-                        name: e.target.value,
-                        engineerId: '', // Reset engineer when product changes
-                        assignQuantity: 0
-                      }));
-                      setCurrentEngineerStock(0);
+                      setForm(f => ({...f, engineerId: e.target.value, assignQuantity: 0}));
                     }}
                     className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
                     required
                   >
-                    <option value="">Select Product</option>
-                    {productItems.map(product => (
-                      <option key={product['Product Name']} value={product['Product Name']}>
-                        {product['Product Name']}
-                      </option>
+                    <option value="">Choose engineer</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
                 </div>
 
-                {/* Step 2: Select Engineer */}
-                {form.productName && (
+                {/* Step 2: Select Product */}
+                {form.engineerId && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Step 2: Select Engineer <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Step 2: Select Product <span className="text-red-500">*</span></label>
                     <select 
-                      value={form.engineerId}
+                      value={form.productName}
                       onChange={e => {
-                        setForm(f => ({...f, engineerId: e.target.value, assignQuantity: 0}));
+                        setForm(f => ({
+                          ...f,
+                          productName: e.target.value,
+                          name: e.target.value,
+                          assignQuantity: 0
+                        }));
+                        setCurrentEngineerStock(0);
                       }}
                       className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
                       required
                     >
-                      <option value="">Choose engineer</option>
-                      {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
+                      <option value="">Select Product</option>
+                      {productItems.map(product => (
+                        <option key={product['Product Name']} value={product['Product Name']}>
+                          {product['Product Name']}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -589,6 +695,15 @@ export default function CentralStock() {
                 {bulkStockEngineer && (
                   <div className="border-t pt-6">
                     <h3 className="text-sm font-semibold text-gray-800 mb-4">Step 2: Select Products & Enter Quantities</h3>
+                    <div className="mb-4">
+                      <input
+                        type="text"
+                        placeholder="Search products..."
+                        value={bulkProductSearch}
+                        onChange={(e) => setBulkProductSearch(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                      />
+                    </div>
                     <div className="border border-gray-200 rounded-lg overflow-hidden">
                       <table className="w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -621,7 +736,9 @@ export default function CentralStock() {
                               </td>
                             </tr>
                           ) : (
-                            productItems.map(product => {
+                            productItems.filter(product => 
+                              product['Product Name'].toLowerCase().includes(bulkProductSearch.toLowerCase())
+                            ).map(product => {
                               const productName = product['Product Name'];
                               const productData = bulkProductStocks[productName] || {selected: false, quantity: 0, threshold: 1};
                               return (
@@ -734,124 +851,163 @@ export default function CentralStock() {
 
 
 
-        {/* Stock Items Table */}
+        {/* Engineer Stock View */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">Current Stock Items</h2>
-              {selectedItems.size > 0 && (
-                <div className="flex gap-2">
-                  <span className="text-sm text-gray-600 font-medium">{selectedItems.size} selected</span>
-                  <button
-                    onClick={() => setBulkAssignModal(true)}
-                    className="inline-flex items-center px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors"
-                  >
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                    </svg>
-                    Bulk Assign
-                  </button>
-                  <button
-                    onClick={() => setBulkDeleteModal(true)}
-                    className="inline-flex items-center px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors"
-                  >
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Bulk Delete
-                  </button>
-                </div>
-              )}
+              <h2 className="text-lg font-semibold text-gray-800">Engineer Stock Allocations</h2>
+              <button
+                onClick={exportToExcel}
+                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors font-medium"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download Report
+              </button>
             </div>
           </div>
-          
-          {loading ? (
+
+          {loadingEngineers ? (
             <div className="p-8 text-center">
               <div className="inline-flex items-center">
                 <svg className="animate-spin h-5 w-5 text-blue-500 mr-3" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                 </svg>
-                <span className="text-gray-600">Loading stock items...</span>
+                <span className="text-gray-600">Loading engineers...</span>
               </div>
             </div>
+          ) : engineersWithStock.length === 0 ? (
+            <div className="p-8 text-center">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No engineers found</h3>
+              <p className="mt-1 text-sm text-gray-500">No engineers have been assigned any stock yet.</p>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      <input
-                        type="checkbox"
-                        checked={selectedItems.size === items.length && items.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Details</th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock</th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {items.map(it => (
-                    <tr key={it.id} className={`hover:bg-gray-50 ${selectedItems.has(it.id) ? 'bg-blue-50' : ''}`}>
-                      <td className="px-6 py-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.has(it.id)}
-                          onChange={() => toggleSelectItem(it.id)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">{it.name}</div>
-                        <div className="text-sm text-gray-500">{it.description}</div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-sm font-medium text-gray-900">{it.quantity}</span>
-                        <div className="text-xs text-gray-500">Threshold: {it.threshold}</div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                          ${it.quantity <= it.threshold 
-                            ? 'bg-red-100 text-red-800' 
-                            : 'bg-green-100 text-green-800'}`}>
-                          {it.quantity <= it.threshold ? 'Low Stock' : 'In Stock'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex gap-2 justify-center">
-                          <button
-                            onClick={() => handleEdit(it)}
-                            className="inline-flex items-center px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
-                          >
-                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(it.id)}
-                            className="inline-flex items-center px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded transition-colors"
-                          >
-                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="divide-y divide-gray-200">
+              {engineersWithStock.map((engineer) => (
+                <div key={engineer.engineer_id} className="bg-white hover:bg-gray-50">
+                  <button
+                    onClick={() => setExpandedEngineer(expandedEngineer === engineer.engineer_id ? null : engineer.engineer_id)}
+                    className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className={`w-5 h-5 text-gray-400 transition-transform ${expandedEngineer === engineer.engineer_id ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900">{engineer.engineer_name}</h3>
+                        <p className="text-sm text-gray-600">{engineer.stocks.length} product{engineer.stocks.length !== 1 ? 's' : ''}  assigned</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {engineer.stocks.length}
+                    </span>
+                  </button>
+
+                  {expandedEngineer === engineer.engineer_id && engineer.stocks.length > 0 && (
+                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                      <div className="space-y-3">
+                        {engineer.stocks.map((stock) => (
+                          <div key={stock.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-gray-300">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-semibold text-gray-900">{stock.product_name}</h4>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Quantity: <span className="font-medium text-gray-700">{stock.quantity}</span>
+                                {stock.threshold && <span className="ml-3">Threshold: <span className="font-medium text-gray-700">{stock.threshold}</span></span>}
+                              </p>
+                            </div>
+                            <div className="flex gap-2 ml-4">
+                              <button
+                                onClick={() => handleEditEngineerStock(engineer.engineer_id, stock)}
+                                className="inline-flex items-center px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                              >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEngineerStock(engineer.engineer_id, stock.id)}
+                                className="inline-flex items-center px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-xs rounded transition-colors"
+                              >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {expandedEngineer === engineer.engineer_id && engineer.stocks.length === 0 && (
+                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 text-center">
+                      <p className="text-sm text-gray-500">No stocks assigned to this engineer</p>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Edit Modal */}
+        {/* Edit Engineer Stock Modal */}
+        {editingStockId && editingEngineerId && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Edit Stock Assignment</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                  <input 
+                    type="text"
+                    value={editForm.description}
+                    disabled
+                    className="w-full rounded-lg border border-gray-300 shadow-sm bg-gray-100 px-3 py-2 text-gray-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+                  <input 
+                    type="number"
+                    min="0"
+                    value={editForm.quantity}
+                    onChange={e => setEditForm(f => ({...f, quantity: Number(e.target.value)}))}
+                    className="w-full rounded-lg border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                    placeholder="Quantity"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setEditingStockId(null);
+                    setEditingEngineerId(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEngineerStockEdit}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {editingId && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">

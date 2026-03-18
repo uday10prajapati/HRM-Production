@@ -1008,4 +1008,87 @@ router.delete('/engineer/:engineerId/item/:stockItemId', async (req, res) => {
   }
 });
 
+// Get all engineers with their allocated stocks grouped
+router.get('/engineers-with-stock', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT DISTINCT u.id, u.name
+      FROM users u
+      WHERE u.role = 'engineer'
+      ORDER BY u.name
+    `);
+    
+    const engineers = result.rows;
+    const engineersWithStock = [];
+
+    for (const engineer of engineers) {
+      const stockResult = await pool.query(`
+        SELECT es.id, es.quantity, si.id as stock_item_id, si.name as product_name, si.description, si.threshold
+        FROM engineer_stock es
+        LEFT JOIN stock_items si ON si.id = es.stock_item_id
+        WHERE es.engineer_id = $1
+        ORDER BY si.name
+      `, [engineer.id]);
+
+      engineersWithStock.push({
+        engineer_id: engineer.id,
+        engineer_name: engineer.name,
+        stocks: stockResult.rows || []
+      });
+    }
+
+    res.json(engineersWithStock);
+  } catch (err) {
+    console.error('Error fetching engineers with stock:', err);
+    res.status(500).json({ error: 'Failed to fetch engineers with stock' });
+  }
+});
+
+// Update engineer stock quantity
+router.put('/engineer-stock/:stockId', async (req, res) => {
+  try {
+    const { stockId } = req.params;
+    const { quantity } = req.body;
+
+    if (quantity === undefined || quantity === null) {
+      return res.status(400).json({ error: 'Quantity is required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE engineer_stock SET quantity = $1 WHERE id = $2 RETURNING *`,
+      [quantity, stockId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Engineer stock not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating engineer stock:', err);
+    res.status(500).json({ error: 'Failed to update engineer stock' });
+  }
+});
+
+// Delete engineer stock
+router.delete('/engineer-stock/:stockId', async (req, res) => {
+  try {
+    const { stockId } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM engineer_stock WHERE id = $1 RETURNING *`,
+      [stockId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Engineer stock not found' });
+    }
+
+    res.json({ success: true, message: 'Engineer stock deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting engineer stock:', err);
+    res.status(500).json({ error: 'Failed to delete engineer stock' });
+  }
+});
+
 export default router;

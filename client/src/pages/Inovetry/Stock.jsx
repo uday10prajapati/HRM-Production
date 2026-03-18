@@ -139,18 +139,11 @@ export default function Stock() {
             </div>
 
             {/* Main Grid Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <div className="bg-white rounded-3xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden h-full">
-                  <div className="p-6">
-                    <CentralStock />
-                  </div>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 gap-6">
               <div>
                 <div className="bg-white rounded-3xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden h-full">
                   <div className="p-6">
-                    <LowStockAlerts engineerId={engineerId} />
+                    <CentralStock />
                   </div>
                 </div>
               </div>
