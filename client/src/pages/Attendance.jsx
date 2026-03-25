@@ -4,11 +4,11 @@ import Sidebar from '../components/Sidebar';
 import { useNavigate } from "react-router-dom";
 
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 
 // Note: the project already has Navbar and Sidebar components at client/src/components
 
 function AttendancePage() {
-  const [group, setGroup] = useState('day');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [report, setReport] = useState({});
@@ -249,7 +249,7 @@ function AttendancePage() {
   async function handlePunch(type) {
     const userId = getStoredUserId();
     if (!userId) { alert("User not found. Please login."); return; }
-    
+
     // Validation: Check if already punched in/out today
     if (latestPunch) {
       if (type === 'in' && latestPunch.punch_in) {
@@ -265,7 +265,7 @@ function AttendancePage() {
         return;
       }
     }
-    
+
     setPunchLoading(true);
 
     // optimistic UI update using client timestamp for immediate feedback
@@ -371,7 +371,53 @@ function AttendancePage() {
   useEffect(() => {
     if (start && end) fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start, end, group]);
+  }, [start, end]);
+
+  const formatYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const exportDataToExcel = (dataToExport, startDate, endDate) => {
+    if (!dataToExport || dataToExport.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+    const exportData = dataToExport.map((r, i) => ({
+      "S.No": i + 1,
+      "Name": r.name,
+      "Designation": r.role || 'Personnel',
+      "Work Days": r.worked_days ?? 0,
+      "Leave Days": r.leave_days ?? 0
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Report");
+
+    XLSX.writeFile(workbook, `Attendance_Report_${startDate}_to_${endDate}.xlsx`);
+  };
+
+  const handleMonthChange = (e) => {
+    const monthStr = e.target.value;
+    if (!monthStr) return;
+
+    const [year, month] = monthStr.split('-');
+    const startDate = new Date(year, parseInt(month, 10) - 1, 1, 12, 0, 0);
+    const endDate = new Date(year, parseInt(month, 10), 0, 12, 0, 0);
+
+    const startStr = formatYMD(startDate);
+    const endStr = formatYMD(endDate);
+
+    setStart(startStr);
+    setEnd(endStr);
+  };
+
+  const handleExportExcel = () => {
+    exportDataToExcel(report, start, end);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
@@ -425,60 +471,31 @@ function AttendancePage() {
             </div>
 
             {/* Controls Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Date Range Card */}
-              <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col justify-center">
-                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                  Date Range
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Start Date</label>
-                    <input
-                      type="date"
-                      value={start}
-                      onChange={(e) => setStart(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer shadow-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">End Date</label>
-                    <input
-                      type="date"
-                      value={end}
-                      onChange={(e) => setEnd(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer shadow-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Generation Options Card */}
+            <div className="grid grid-cols-1 gap-6">
+              {/* Report Generation Card */}
               <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col justify-center">
                 <h2 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
                   <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-                  View Options
+                  Export Options
                 </h2>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Group By</label>
-                    <select
-                      value={group}
-                      onChange={(e) => setGroup(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer shadow-sm"
-                    >
-                      <option value="day">Daily</option>
-                      <option value="week">Weekly</option>
-                      <option value="month">Monthly</option>
-                    </select>
+                <div className="flex flex-col sm:flex-row items-end gap-4">
+                  <div className="flex-1 w-full">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Select Month</label>
+                    <input
+                      type="month"
+                      value={start ? start.substring(0, 7) : ""}
+                      onChange={handleMonthChange}
+                      title="Select a month to download its Excel report"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer shadow-sm"
+                    />
                   </div>
-                  <div className="flex items-end">
+                  <div>
                     <button
-                      onClick={fetchReport}
-                      className="w-full sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5"
+                      onClick={handleExportExcel}
+                      disabled={!report || report.length === 0 || loading}
+                      className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/40 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                     >
-                      Generate Report
+                      {loading ? 'Processing...' : 'Generate & Download Excel'}
                     </button>
                   </div>
                 </div>
