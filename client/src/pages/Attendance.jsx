@@ -357,12 +357,24 @@ function AttendancePage() {
   }
 
   useEffect(() => {
-    // default to last 7 days
+    // default to current month
     const d = new Date();
-    const dd = new Date(d.getTime() - 6 * 24 * 60 * 60 * 1000);
-    const toISO = (dt) => dt.toISOString().slice(0, 10);
-    setStart(toISO(dd));
-    setEnd(toISO(d));
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+
+    const startDate = new Date(year, month - 1, 1, 12, 0, 0);
+    const endDate = new Date(year, month, 0, 12, 0, 0);
+
+    const formatYMDLocal = (dt) => {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    setStart(formatYMDLocal(startDate));
+    setEnd(formatYMDLocal(endDate));
+
     // fetch today's latest punch after dates set
     // small timeout so start/end update first
     setTimeout(() => fetchLatestPunch(), 200);
