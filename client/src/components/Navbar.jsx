@@ -9,6 +9,18 @@ const Navbar = () => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const navigate = useNavigate();
 
+  // Get current user ID from localStorage
+  const getCurrentUserId = () => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.id || parsed?.userId || null;
+    } catch {
+      return null;
+    }
+  };
+
   // Add blinking animation style
   useEffect(() => {
     const style = document.createElement('style');
@@ -34,8 +46,11 @@ const Navbar = () => {
   // Fetch unread notifications
   const fetchNotifications = async () => {
     try {
-      const userId = localStorage.getItem('userId');
-      if (!userId) return;
+      const userId = getCurrentUserId();
+      if (!userId) {
+        console.warn('No user ID available for notifications');
+        return;
+      }
       
       const response = await axios.get('/api/leave/notifications/count', {
         headers: { 'x-user-id': userId }
@@ -52,8 +67,11 @@ const Navbar = () => {
   // Fetch detailed notifications when dropdown opens
   const fetchDetailedNotifications = async () => {
     try {
-      const userId = localStorage.getItem('userId');
-      if (!userId) return;
+      const userId = getCurrentUserId();
+      if (!userId) {
+        console.warn('No user ID available for notifications');
+        return;
+      }
       
       const response = await axios.get('/api/leave/notifications/unread', {
         headers: { 'x-user-id': userId }
@@ -70,7 +88,7 @@ const Navbar = () => {
   // Mark notification as read
   const markAsRead = async (notificationId) => {
     try {
-      const userId = localStorage.getItem('userId');
+      const userId = getCurrentUserId();
       if (!userId) return;
       
       await axios.put(`/api/leave/notifications/${notificationId}/read`, {}, {

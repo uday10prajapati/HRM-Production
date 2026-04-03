@@ -7,6 +7,13 @@ export default function LeaveManagement() {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    action: null,
+    leaveId: null,
+    userId: null,
+    userName: null,
+  });
   // Use relative API paths so frontend and backend share same origin
   // All requests should target `/api/...`
 
@@ -71,6 +78,7 @@ export default function LeaveManagement() {
       const res = await axios.put(`/api/leave/${id}/${action}`, null, { headers });
       const data = res.data;
       if (data && data.success) {
+        setConfirmDialog({ isOpen: false, action: null, leaveId: null, userId: null, userName: null });
         await fetchLeaves();
       } else {
         alert('Action failed: ' + (data?.message || JSON.stringify(data)));
@@ -79,6 +87,89 @@ export default function LeaveManagement() {
       console.error('takeAction error', err?.response ?? err);
       const msg = err?.response?.data?.message || err.message || String(err);
       alert('Action failed: ' + msg);
+    }
+  };
+
+  const handleApproveClick = (leaveId, userName) => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'approve',
+      leaveId: leaveId,
+      userId: leaveId,
+      userName: userName,
+    });
+  };
+
+  const handleRejectClick = (leaveId, userName) => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'reject',
+      leaveId: leaveId,
+      userId: leaveId,
+      userName: userName,
+    });
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmDialog.leaveId && confirmDialog.action) {
+      takeAction(confirmDialog.leaveId, confirmDialog.action);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setConfirmDialog({
+      isOpen: false,
+      action: null,
+      leaveId: null,
+      userId: null,
+      userName: null,
+    });
+  };
+
+  const debugCheckNotifications = async () => {
+    try {
+      const user = getCurrentUser();
+      if (!user || !user.id) {
+        alert('No user logged in');
+        return;
+      }
+      
+      //Try the debug endpoint first
+      try {
+        const res = await fetch('/api/leave/_debug/notifications', {
+          headers: { 'x-user-id': user.id }
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          alert(`✅ Notifications Debug:\nTotal: ${data.totalNotifications}\nUnread: ${data.unreadCount}\n\nCheck browser console for full details`);
+          console.log('Notifications:', data);
+          return;
+        }
+      } catch (e) {
+        console.log('Debug endpoint not available, trying fallback...');
+      }
+
+      // Fallback: Check leaves data directly
+      const res = await fetch('/api/leave', {
+        headers: { 'x-user-id': user.id }
+      });
+      
+      if (!res.ok) {
+        alert(`⚠️ Error: HTTP ${res.status}`);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.success && data.leaves) {
+        const leaves = data.leaves;
+        alert(`📊 System Status:\n✓ API Connected\n✓ ${leaves.length} pending leaves found\n✓ Backend is running correctly`);
+      } else {
+        alert('Server responded but leaves data unavailable');
+      }
+    } catch (err) {
+      const msg = err?.message || String(err);
+      alert('❌ Debug failed: ' + msg);
     }
   };
 
@@ -128,15 +219,27 @@ export default function LeaveManagement() {
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Leave Requests</h1>
                 <p className="text-sm font-medium text-slate-500 mt-2">Manage and monitor employee absence Leaves.</p>
               </div>
-              <button
-                onClick={fetchLeaves}
-                className="inline-flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5"
-              >
-                <svg className="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Sync Data
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={fetchLeaves}
+                  className="inline-flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5"
+                >
+                  <svg className="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync Data
+                </button>
+                <button
+                  onClick={debugCheckNotifications}
+                  className="inline-flex items-center px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-xl transition-all shadow-md shadow-slate-500/20 hover:shadow-lg hover:shadow-slate-500/40 hover:-translate-y-0.5 text-xs"
+                  title="Check notification status in database"
+                >
+                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Debug
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -241,13 +344,13 @@ export default function LeaveManagement() {
                                 {(l.status || '').toLowerCase() === 'pending' ? (
                                   <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
-                                      onClick={() => takeAction(l.id, 'approve')}
+                                      onClick={() => handleApproveClick(l.id, l.user_name)}
                                       className="inline-flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-500 hover:text-white text-xs font-bold rounded-lg transition-all shadow-sm"
                                     >
                                       Approve
                                     </button>
                                     <button
-                                      onClick={() => takeAction(l.id, 'reject')}
+                                      onClick={() => handleRejectClick(l.id, l.user_name)}
                                       className="inline-flex items-center px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-500 hover:text-white text-xs font-bold rounded-lg transition-all shadow-sm"
                                     >
                                       Deny
@@ -267,6 +370,63 @@ export default function LeaveManagement() {
               )}
             </div>
           </div>
+
+          {/* Confirmation Modal */}
+          {confirmDialog.isOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full animate-[slideIn_0.3s_ease-out] overflow-hidden">
+                <div className={`p-6 sm:p-8 border-b-2 ${confirmDialog.action === 'approve' ? 'border-emerald-200 bg-emerald-50/50' : 'border-rose-200 bg-rose-50/50'}`}>
+                  <div className="flex items-center gap-3 mb-2">
+                    {confirmDialog.action === 'approve' ? (
+                      <div className="w-12 h-12 rounded-full bg-emerald-200 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-rose-200 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 14l-2-2m0 0l-2-2m2 2l2-2m-2 2l-2 2m2-2l2 2" />
+                        </svg>
+                      </div>
+                    )}
+                    <h3 className={`text-lg font-bold ${confirmDialog.action === 'approve' ? 'text-emerald-900' : 'text-rose-900'}`}>
+                      {confirmDialog.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+                    </h3>
+                  </div>
+                  <p className={`text-sm font-medium ${confirmDialog.action === 'approve' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {confirmDialog.action === 'approve' ? 'Approve Leave Request' : 'Reject Leave Request'}
+                  </p>
+                </div>
+
+                <div className="p-6 sm:p-8">
+                  <p className="text-slate-700 font-medium mb-4">
+                    Are you sure you want to <span className={`font-bold ${confirmDialog.action === 'approve' ? 'text-emerald-600' : 'text-rose-600'}`}>{confirmDialog.action === 'approve' ? 'approve' : 'reject'}</span> the leave request for <span className="font-bold text-slate-900">{confirmDialog.userName}</span>?
+                  </p>
+                  <p className="text-xs text-slate-500 font-medium bg-slate-50 p-3 rounded-lg">
+                    {confirmDialog.action === 'approve' 
+                      ? 'Approving this request will deduct the leave days from the employee\'s leave balance.'
+                      : 'Rejecting this request cannot be undone.'}
+                  </p>
+                </div>
+
+                <div className="flex gap-3 p-6 sm:p-8 border-t border-slate-200 bg-slate-50/50">
+                  <button
+                    onClick={handleCloseDialog}
+                    className="flex-1 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-all text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmAction}
+                    className={`flex-1 px-4 py-2.5 text-white font-bold rounded-lg transition-all text-sm ${confirmDialog.action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                  >
+                    {confirmDialog.action === 'approve' ? 'Yes, Approve' : 'Yes, Reject'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

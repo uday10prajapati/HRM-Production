@@ -6,20 +6,20 @@ const router = express.Router();
 // Ensure notifications table exists
 (async function ensureNotificationsTable() {
   try {
-    await pool.query(`
-      CREATE EXTENSION IF NOT EXISTS pgcrypto;
-      CREATE TABLE IF NOT EXISTS notifications (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        recipient_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-        notification_type VARCHAR(50) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        message TEXT,
-        related_id UUID,
-        is_read BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        read_at TIMESTAMP
-      );
-    `);
+      await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto').catch(() => {});
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          recipient_id TEXT NOT NULL,
+          notification_type VARCHAR(50) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          message TEXT,
+          related_id TEXT,
+          is_read BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          read_at TIMESTAMP
+        );
+      `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)`);
@@ -95,11 +95,17 @@ router.post('/apply', async (req, res) => {
 
     // Create notifications for HR/Admin users
     try {
+      const fs = await import('fs');
+      fs.appendFileSync('debug.txt', `\n--- NEW APPLY ---\nUser: ${userId}\n`);
       const hrAdminResult = await pool.query(
-        `SELECT id FROM users WHERE role IN ('hr', 'admin') AND id != $1`,
+        `SELECT id, role FROM users WHERE LOWER(TRIM(role)) IN ('hr', 'admin') AND id::text != $1`,
         [userId]
       );
       const hrAdminUsers = hrAdminResult.rows || [];
+      fs.appendFileSync('debug.txt', `HR/Admins found: ${hrAdminUsers.length}\n`);
+      console.log(`[DEBUG] /apply called by userId: ${userId}`);
+      console.log(`[DEBUG] Found ${hrAdminUsers.length} HR/Admin users matching query:`, hrAdminUsers);
+      console.log(`✉️ Creating notifications for ${hrAdminUsers.length} HR/Admin users`);
       
       if (hrAdminUsers.length > 0) {
         const engineerName = leave.user?.name || 'An engineer';
@@ -109,22 +115,30 @@ router.post('/apply', async (req, res) => {
         // Insert notification for each HR/Admin user
         for (const hrAdmin of hrAdminUsers) {
           try {
-            await pool.query(
-              `INSERT INTO notifications (recipient_id, notification_type, title, message, related_id, is_read) VALUES ($1, $2, $3, $4, $5, FALSE)`,
+            const notifResult = await pool.query(
+              `INSERT INTO notifications (recipient_id, notification_type, title, message, related_id, is_read) VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
               [
-                hrAdmin.id,
+                String(hrAdmin.id),
                 'leave_applied',
                 `Leave Application from ${engineerName}`,
                 `${engineerName} has applied for leave from ${startD} to ${endD}. Reason: ${reason || 'Not specified'}`,
-                leave.id
+                String(leave.id)
               ]
             );
+            fs.appendFileSync('debug.txt', `SUCCESS NS: ${notifResult.rows?.[0]?.id}\n`);
+            console.log(`✅ Notification created for HR user ${hrAdmin.id}: ${notifResult.rows?.[0]?.id || 'unknown'}`);
           } catch (notifErr) {
-            console.warn('Failed to create notification for HR user:', notifErr?.message || notifErr);
+            fs.appendFileSync('debug.txt', `FAIL NS: ${notifErr}\n`);
+            console.warn(`❌ Failed to create notification for HR user ${hrAdmin.id}:`, notifErr?.message || notifErr);
           }
         }
+      } else {
+        fs.appendFileSync('debug.txt', `SKIPPED NS: No HR Admins\n`);
+        console.log('⚠️ No HR/Admin users found to notify');
       }
     } catch (notifErr) {
+      const fs = await import('fs');
+      fs.appendFileSync('debug.txt', `FAIL MAIN: ${notifErr}\n`);
       console.warn('Error creating notifications for leave application:', notifErr?.message || notifErr);
     }
 
@@ -327,6 +341,7 @@ router.get('/notifications/count', async (req, res) => {
     );
 
     const count = result.rows[0]?.count || 0;
+    console.log(`[DEBUG] /notifications/count for user ${userId} => count: ${count}`);
     res.json({ success: true, count: parseInt(count, 10) });
   } catch (err) {
     console.error('Error counting unread notifications:', err?.message || err);
@@ -362,87 +377,94 @@ router.put('/notifications/:id/read', async (req, res) => {
   }
 });
 
-export default router;
-
-
-// Debug endpoint - quick DB check and leaves column types
-router.get('/_debug/db', async (req, res) => {
+// DEBUG: Check notifications for a user
+router.get('/_debug/notifications', async (req, res) => {
   try {
-    // simple connectivity
-    await pool.query('SELECT 1');
-    // inspect leaves columns
-    const cols = await pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name='leaves'");
-    res.json({ ok: true, columns: cols.rows });
-  } catch (err) {
-    console.error('Leave debug endpoint failed:', err?.message || err, err?.stack || 'no stack');
-    res.status(500).json({ ok: false, error: err?.message || String(err) });
-  }
-});
+    const userId = req.header('x-user-id');
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
+    }
 
-// Admin-only: fetch all leaves (raw) - useful for debugging and admin panel
-router.get('/all', async (req, res) => {
-  try {
-    const requester = req.header('x-user-id') || null;
-    if (!requester) return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
-    const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
-    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
-    if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
-
-    const q = `SELECT l.id,
-      to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
-      l.type,
-      l.day_type,
-      l.reason,
-      l.status,
-      l.user_id,
-      to_char(l.start_date, 'YYYY-MM-DD') AS start_date,
-      to_char(l.end_date, 'YYYY-MM-DD') AS end_date,
-      to_char(l.applied_at, 'YYYY-MM-DD HH24:MI:SS') AS applied_at,
-      l.approved_by,
-      to_char(l.approved_at, 'YYYY-MM-DD HH24:MI:SS') AS approved_at,
-      u.name as user_name, u.email as user_email
-    FROM leaves l
-    LEFT JOIN users u ON u.id::text = l.user_id::text
-    ORDER BY COALESCE(l.created_at, now()) DESC LIMIT 2000`;
-    const r = await pool.query(q);
-    return res.json({ success: true, leaves: r.rows });
-  } catch (err) {
-    console.error('Error in /api/leave/all:', err?.message || err, err?.stack || 'no stack');
-    return res.status(500).json({ success: false, message: 'Failed to fetch all leaves', error: err?.message || String(err) });
-  }
-});
-
-// Admin-only: insert sample leave rows for testing (idempotent)
-router.post('/_debug/seed', async (req, res) => {
-  try {
-    const requester = req.header('x-user-id') || null;
-    if (!requester) return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
-    const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
-    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
-    if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
-
-    // check if sample rows already exist
-    const chk = await pool.query("SELECT id FROM leaves WHERE reason LIKE '%[SAMPLE]%' LIMIT 1");
-    if (chk.rowCount > 0) return res.json({ success: true, message: 'Sample rows already present' });
-
-    // pick up to two users to attach sample leaves to
-    const users = await pool.query('SELECT id FROM users LIMIT 2');
-    const urows = users.rows || [];
-    if (urows.length === 0) return res.status(400).json({ success: false, message: 'No users found to attach sample leaves' });
-
-    const now = new Date();
-    const user1 = urows[0].id;
-    const user2 = urows[1] ? urows[1].id : urows[0].id;
-
-    await pool.query(`INSERT INTO leaves (user_id, start_date, end_date, reason, type, day_type, status, applied_at) VALUES
-      ($1, $2, $3, $4, $5, $6, 'pending', NOW()),
-      ($7, $8, $9, $10, $11, $12, 'pending', NOW())`,
-      [user1, now.toISOString().slice(0, 10), now.toISOString().slice(0, 10), '[SAMPLE] Short leave', 'Casual', 'full', user2, now.toISOString().slice(0, 10), now.toISOString().slice(0, 10), '[SAMPLE] Short leave 2', 'Casual', 'half']
+    // Check all notifications for user
+    const result = await pool.query(
+      `SELECT id, recipient_id, notification_type, title, message, is_read, created_at, read_at 
+       FROM notifications 
+       WHERE recipient_id::text = $1 
+       ORDER BY created_at DESC 
+       LIMIT 50`,
+      [String(userId)]
     );
 
-    return res.json({ success: true, message: 'Inserted sample leaves' });
+    // Also count unread
+    const countResult = await pool.query(
+      `SELECT COUNT(*) as unread_count FROM notifications WHERE recipient_id::text = $1 AND is_read = FALSE`,
+      [String(userId)]
+    );
+
+    console.log(`📊 DEBUG: Notifications for user ${userId}: ${result.rows.length} total, ${countResult.rows[0]?.unread_count || 0} unread`);
+
+    res.json({
+      success: true,
+      userId,
+      totalNotifications: result.rows.length,
+      unreadCount: parseInt(countResult.rows[0]?.unread_count || 0),
+      notifications: result.rows
+    });
   } catch (err) {
-    console.error('Error seeding sample leaves:', err?.message || err, err?.stack || 'no stack');
-    return res.status(500).json({ success: false, message: 'Failed to insert sample leaves', error: String(err?.message || err) });
+    console.error('Error in notifications debug endpoint:', err?.message || err);
+    res.status(500).json({ success: false, error: err?.message || String(err) });
   }
 });
+
+// DEBUG ENDPOINT TO VERIFY STATE
+router.get('/_debug_verify', async (req, res) => {
+  try {
+    const diagnostics = { status: 'ok', logs: [] };
+    
+    // 1. Check if notifications table exists
+    try {
+      const tb = await pool.query("SELECT to_regclass('public.notifications') as exists");
+      diagnostics.logs.push(`Notif table exists: ${tb.rows[0].exists}`);
+    } catch(e) { diagnostics.logs.push(`Notif table err: ${e.message}`); }
+
+    // 2. Check roles available
+    try {
+      const roles = await pool.query("SELECT id, role FROM users WHERE LOWER(TRIM(role)) IN ('hr', 'admin')");
+      diagnostics.logs.push(`Found admins: ${JSON.stringify(roles.rows)}`);
+    } catch(e) { diagnostics.logs.push(`Roles err: ${e.message}`); }
+
+    // 3. Check notifications inserted
+    try {
+      const notifs = await pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 5");
+      diagnostics.logs.push(`Recent notifs: ${notifs.rows.length}`);
+    } catch(e) { diagnostics.logs.push(`Notifs read err: ${e.message}`); }
+
+    // 4. Test forceful insert to see exact PG error
+    try {
+      const hrAdmins = await pool.query("SELECT id FROM users WHERE LOWER(TRIM(role)) IN ('hr', 'admin') LIMIT 1");
+      if (hrAdmins.rows.length > 0) {
+        const testId = String(hrAdmins.rows[0].id);
+        const relatedId = '00000000-0000-0000-0000-000000000000'; // dummy uuid
+        
+        await pool.query('BEGIN');
+        const notifResult = await pool.query(
+          `INSERT INTO notifications (recipient_id, notification_type, title, message, related_id, is_read) VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING id`,
+          [testId, 'test', 'Test', 'Test Notif', relatedId]
+        );
+        diagnostics.logs.push(`Insert SUCCESS! id: ${notifResult.rows[0].id}`);
+        await pool.query('ROLLBACK');
+      } else {
+        diagnostics.logs.push(`Insert SKIPPED: no hr params`);
+      }
+    } catch (insertErr) {
+      diagnostics.logs.push(`INSERT ERROR: ${insertErr.message} (Detail: ${insertErr.detail})`);
+      await pool.query('ROLLBACK').catch(()=>{});
+    }
+
+    res.json(diagnostics);
+  } catch (err) {
+    res.json({ error: String(err) });
+  }
+});
+
+export default router;

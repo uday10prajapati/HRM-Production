@@ -15,6 +15,9 @@ export default function ViewAssignedCalls() {
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [stockUsage, setStockUsage] = useState('');
 
   useEffect(() => {
     fetchAssignedCalls();
@@ -70,7 +73,7 @@ export default function ViewAssignedCalls() {
     const rawSelectStatus = String(selectedStatus || '').trim().toLowerCase();
     const matchesStatus = rawSelectStatus ? (rawCallStatus === rawSelectStatus) : true;
 
-    // Date
+    // Date (single date filter)
     let matchesDate = true;
     if (selectedDate) {
       if (call.created_at) {
@@ -88,11 +91,53 @@ export default function ViewAssignedCalls() {
           matchesDate = false;
         }
       } else {
-        matchesDate = false; // Filter explicitly checks this date
+        matchesDate = false;
       }
     }
 
-    return matchesSearch && matchesEngineer && matchesStatus && matchesDate;
+    // Date Range (from-to dates)
+    let matchesDateRange = true;
+    if (fromDate || toDate) {
+      if (call.created_at) {
+        try {
+          const d = new Date(call.created_at);
+          if (!isNaN(d.getTime())) {
+            const tzOffset = d.getTimezoneOffset() * 60000;
+            const localISOTime = new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+            
+            if (fromDate && localISOTime < fromDate) {
+              matchesDateRange = false;
+            }
+            if (toDate && localISOTime > toDate) {
+              matchesDateRange = false;
+            }
+          } else {
+            matchesDateRange = false;
+          }
+        } catch (e) {
+          matchesDateRange = false;
+        }
+      } else {
+        matchesDateRange = false;
+      }
+    }
+
+    // Stock Usage Filter
+    let matchesStockUsage = true;
+    if (stockUsage) {
+      const hasStock = call.stock_items && (
+        (typeof call.stock_items === 'string' && call.stock_items.trim().length > 0) ||
+        (Array.isArray(call.stock_items) && call.stock_items.length > 0)
+      );
+      
+      if (stockUsage === 'used') {
+        matchesStockUsage = hasStock;
+      } else if (stockUsage === 'not-used') {
+        matchesStockUsage = !hasStock;
+      }
+    }
+
+    return matchesSearch && matchesEngineer && matchesStatus && matchesDate && matchesDateRange && matchesStockUsage;
   });
 
   return (
@@ -173,7 +218,29 @@ export default function ViewAssignedCalls() {
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     className="pl-4 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                    title="Filter by a single specific date"
                   />
+                  <span className="text-xs font-semibold text-slate-400 uppercase">OR Date Range:</span>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="pl-4 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                      title="Start date for range filter"
+                      placeholder="From"
+                    />
+                    <span className="text-slate-400 text-sm font-medium whitespace-nowrap">to</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="pl-4 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                      title="End date for range filter"
+                      placeholder="To"
+                    />
+                  </div>
 
                   <div className="relative">
                     <select
@@ -185,6 +252,24 @@ export default function ViewAssignedCalls() {
                       <option value="new">New</option>
                       <option value="pending">Pending</option>
                       <option value="resolved">Resolved</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <select
+                      value={stockUsage}
+                      onChange={(e) => setStockUsage(e.target.value)}
+                      className="appearance-none pl-4 pr-10 py-2.5 bg-slate-50/50 border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                      title="Filter by stock usage"
+                    >
+                      <option value="">Stock Usage (All)</option>
+                      <option value="used">Stock Used</option>
+                      <option value="not-used">Stock Not Used</option>
                     </select>
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
