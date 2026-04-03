@@ -1,0 +1,12 @@
+
+--- NEW APPLY ---
+User: 2ddfdfc9-43bb-41ef-aa5c-0215c54c0ecd
+HR/Admins found: 2
+FAIL NS: error: invalid input syntax for type uuid: "49"
+FAIL NS: error: invalid input syntax for type uuid: "49"
+
+--- NEW APPLY ---
+User: 2ddfdfc9-43bb-41ef-aa5c-0215c54c0ecd
+HR/Admins found: 2
+SUCCESS NS: e5106f78-c882-4f6a-b536-ce8076d549e1
+SUCCESS NS: 7e0a233f-63de-4216-b782-00a3e1013270

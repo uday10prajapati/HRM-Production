@@ -20,7 +20,11 @@ const router = express.Router();
           read_at TIMESTAMP
         );
       `);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id)`);
+      // Force columns to text if they were previously created as UUID
+      await pool.query('ALTER TABLE notifications ALTER COLUMN recipient_id TYPE TEXT USING recipient_id::text').catch(() => {});
+      await pool.query('ALTER TABLE notifications ALTER COLUMN related_id TYPE TEXT USING related_id::text').catch(() => {});
+      
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_notifications_recipient_unread ON notifications(recipient_id, is_read)`);
@@ -95,14 +99,11 @@ router.post('/apply', async (req, res) => {
 
     // Create notifications for HR/Admin users
     try {
-      const fs = await import('fs');
-      fs.appendFileSync('debug.txt', `\n--- NEW APPLY ---\nUser: ${userId}\n`);
       const hrAdminResult = await pool.query(
         `SELECT id, role FROM users WHERE LOWER(TRIM(role)) IN ('hr', 'admin') AND id::text != $1`,
         [userId]
       );
       const hrAdminUsers = hrAdminResult.rows || [];
-      fs.appendFileSync('debug.txt', `HR/Admins found: ${hrAdminUsers.length}\n`);
       console.log(`[DEBUG] /apply called by userId: ${userId}`);
       console.log(`[DEBUG] Found ${hrAdminUsers.length} HR/Admin users matching query:`, hrAdminUsers);
       console.log(`✉️ Creating notifications for ${hrAdminUsers.length} HR/Admin users`);
@@ -125,20 +126,15 @@ router.post('/apply', async (req, res) => {
                 String(leave.id)
               ]
             );
-            fs.appendFileSync('debug.txt', `SUCCESS NS: ${notifResult.rows?.[0]?.id}\n`);
             console.log(`✅ Notification created for HR user ${hrAdmin.id}: ${notifResult.rows?.[0]?.id || 'unknown'}`);
           } catch (notifErr) {
-            fs.appendFileSync('debug.txt', `FAIL NS: ${notifErr}\n`);
             console.warn(`❌ Failed to create notification for HR user ${hrAdmin.id}:`, notifErr?.message || notifErr);
           }
         }
       } else {
-        fs.appendFileSync('debug.txt', `SKIPPED NS: No HR Admins\n`);
         console.log('⚠️ No HR/Admin users found to notify');
       }
     } catch (notifErr) {
-      const fs = await import('fs');
-      fs.appendFileSync('debug.txt', `FAIL MAIN: ${notifErr}\n`);
       console.warn('Error creating notifications for leave application:', notifErr?.message || notifErr);
     }
 
