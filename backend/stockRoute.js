@@ -76,11 +76,11 @@ router.get('/engineer-stock/:engineerId/:productName', async (req, res) => {
 
     // Query to find the stock quantity for the engineer for the specific product
     const result = await pool.query(
-      `SELECT COALESCE(es.quantity, 0) as quantity
+      `SELECT COALESCE(SUM(es.quantity), 0) as quantity
        FROM stock_items si
        LEFT JOIN engineer_stock es ON si.id = es.stock_item_id AND es.engineer_id = $1
        WHERE si.name = $2
-       LIMIT 1`,
+       GROUP BY si.name`,
       [engineerId, decodeURIComponent(productName)]
     );
 
@@ -132,24 +132,40 @@ router.post('/items-with-assign', async (req, res) => {
 
     const { name, description, quantity, threshold, dairy_name, notes, use_item, engineerId, assignQuantity } = req.body;
 
-    // 1. Create stock item
-    const itemResult = await client.query(
-      `
-      INSERT INTO stock_items (
-        name,
-        description,
-        quantity,
-        threshold,
-        dairy_name,
-        notes,
-        use_item
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
-    `,
-      [name, description, Number(quantity || 0), threshold || 1, dairy_name || null, notes || null, use_item || null]
+    // 1. Find or create stock item by name to avoid duplicates
+    let finalItem;
+    const existingItem = await client.query(
+      'SELECT * FROM stock_items WHERE name = $1 LIMIT 1',
+      [name]
     );
 
-    let finalItem = itemResult.rows[0];
+    if (existingItem.rows.length > 0) {
+      finalItem = existingItem.rows[0];
+      // Update its quantity in central stock
+      await client.query(
+        'UPDATE stock_items SET quantity = quantity + $1 WHERE id = $2',
+        [Number(quantity || 0), finalItem.id]
+      );
+      finalItem.quantity = Number(finalItem.quantity || 0) + Number(quantity || 0);
+    } else {
+      // Create new stock item
+      const itemResult = await client.query(
+        `
+        INSERT INTO stock_items (
+          name,
+          description,
+          quantity,
+          threshold,
+          dairy_name,
+          notes,
+          use_item
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+      `,
+        [name, description, Number(quantity || 0), threshold || 1, dairy_name || null, notes || null, use_item || null]
+      );
+      finalItem = itemResult.rows[0];
+    }
     let assignedToEngineer = null;
 
     // 2. Optionally assign to engineer
@@ -203,7 +219,7 @@ router.post('/assign', async (req, res) => {
       `INSERT INTO engineer_stock (engineer_id, stock_item_id, quantity) 
        VALUES ($1, $2, $3)
        ON CONFLICT (engineer_id, stock_item_id) 
-       DO UPDATE SET quantity = EXCLUDED.quantity, assigned_at = now()
+       DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
        RETURNING *`,
       [String(engineerId), String(stockItemId), Number(quantity || 0)]
     );
@@ -251,20 +267,21 @@ router.get('/engineer/:id', async (req, res) => {
     // Accept both UUID and legacy integer-like engineer IDs by comparing as text.
     const q = await pool.query(
       `SELECT 
-        es.id as engineer_stock_id, 
+        MIN(es.id::text) as engineer_stock_id, 
         es.engineer_id, 
-        es.quantity as engineer_quantity,
-        es.stock_item_id,
-        si.id,
+        SUM(es.quantity) as engineer_quantity,
+        MIN(si.id) as stock_item_id,
+        MIN(si.id) as id,
         si.name,
-        si.sku,
-        si.description,
-        si.quantity,
-        si.threshold,
-        si.created_at
+        MAX(si.sku) as sku,
+        MAX(si.description) as description,
+        MAX(si.quantity) as quantity,
+        MAX(si.threshold) as threshold,
+        MIN(si.created_at) as created_at
        FROM engineer_stock es
        JOIN stock_items si ON si.id = es.stock_item_id
        WHERE es.engineer_id::text = $1
+       GROUP BY si.name, es.engineer_id
        ORDER BY si.name`,
       [String(id)]
     );
@@ -482,15 +499,15 @@ router.get('/deduction-summary', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        si.id,
-        si.sku,
+        MIN(si.id) as id,
+        MAX(si.sku) as sku,
         si.name,
-        si.quantity as central_quantity,
-        si.threshold,
-        si.created_at,
+        SUM(si.quantity) as central_quantity,
+        MAX(si.threshold) as threshold,
+        MIN(si.created_at) as created_at,
         COALESCE(SUM(es.quantity), 0)::int as total_engineer_allocation,
         COUNT(DISTINCT es.engineer_id)::int as engineer_count,
-        (si.quantity + COALESCE(SUM(es.quantity), 0))::int as total_created,
+        (SUM(si.quantity) + COALESCE(SUM(es.quantity), 0))::int as total_created,
         json_agg(json_build_object(
           'engineer_id', es.engineer_id, 
           'engineer_stock_id', es.id,
@@ -499,7 +516,7 @@ router.get('/deduction-summary', async (req, res) => {
         )) FILTER (WHERE es.id IS NOT NULL) as engineer_allocations
       FROM stock_items si
       LEFT JOIN engineer_stock es ON si.id = es.stock_item_id
-      GROUP BY si.id, si.sku, si.name, si.quantity, si.threshold, si.created_at
+      GROUP BY si.name
       ORDER BY si.name
     `);
 
@@ -538,24 +555,23 @@ router.get('/engineer-status/:engineerId', async (req, res) => {
 
     const result = await pool.query(`
       SELECT 
-        es.id as engineer_stock_id,
+        MIN(es.id::text) as engineer_stock_id,
         es.engineer_id,
-        es.quantity as current_allocated,
-        es.assigned_at,
-        si.id as stock_item_id,
+        SUM(es.quantity) as current_allocated,
+        MIN(es.assigned_at) as assigned_at,
+        MIN(si.id) as stock_item_id,
         si.name,
-        si.sku,
-        si.quantity as central_quantity,
-        si.threshold,
+        MAX(si.sku) as sku,
+        MAX(si.quantity) as central_quantity,
+        MAX(si.threshold) as threshold,
         COALESCE(SUM(sc.quantity), 0)::int as total_consumed,
-        (es.quantity + COALESCE(SUM(sc.quantity), 0))::int as originally_assigned
+        (SUM(es.quantity) + COALESCE(SUM(sc.quantity), 0))::int as originally_assigned
       FROM engineer_stock es
       JOIN stock_items si ON si.id = es.stock_item_id
       LEFT JOIN stock_consumption sc ON sc.engineer_id::text = es.engineer_id::text 
         AND sc.stock_item_id = si.id
       WHERE es.engineer_id::text = $1
-      GROUP BY es.id, es.engineer_id, es.quantity, es.assigned_at, 
-               si.id, si.name, si.sku, si.quantity, si.threshold
+      GROUP BY si.name, es.engineer_id
       ORDER BY si.name
     `, [String(engineerId)]);
 
@@ -667,10 +683,20 @@ router.get('/overview/full', async (req, res) => {
   try {
     const items = await pool.query('SELECT * FROM stock_items ORDER BY name');
     const allocations = await pool.query(`
-      SELECT es.*, u.name as engineer_name, si.name as item_name, si.threshold as item_threshold
+      SELECT 
+        MIN(es.id::text) as id,
+        es.engineer_id,
+        SUM(es.quantity) as quantity,
+        MIN(es.assigned_at) as assigned_at,
+        MAX(es.last_reported_at) as last_reported_at,
+        MAX(es.last_reported_by) as last_reported_by,
+        u.name as engineer_name, 
+        si.name as item_name, 
+        MAX(si.threshold) as item_threshold
       FROM engineer_stock es
-  LEFT JOIN users u ON u.id::text = es.engineer_id::text
-  LEFT JOIN stock_items si ON si.id::text = es.stock_item_id::text
+      LEFT JOIN users u ON u.id::text = es.engineer_id::text
+      LEFT JOIN stock_items si ON si.id = es.stock_item_id
+      GROUP BY si.name, u.name, es.engineer_id
       ORDER BY u.name, si.name
     `);
     res.json({ items: items.rows, allocations: allocations.rows });
@@ -1023,10 +1049,17 @@ router.get('/engineers-with-stock', async (req, res) => {
 
     for (const engineer of engineers) {
       const stockResult = await pool.query(`
-        SELECT es.id, es.quantity, si.id as stock_item_id, si.name as product_name, si.description, si.threshold
+        SELECT 
+          MIN(es.id) as id, 
+          SUM(es.quantity) as quantity, 
+          MIN(si.id) as stock_item_id, 
+          si.name as product_name, 
+          MAX(si.description) as description, 
+          MAX(si.threshold) as threshold
         FROM engineer_stock es
         LEFT JOIN stock_items si ON si.id = es.stock_item_id
         WHERE es.engineer_id = $1
+        GROUP BY si.name
         ORDER BY si.name
       `, [engineer.id]);
 
