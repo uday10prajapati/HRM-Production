@@ -25,6 +25,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import LeaveManagement from "./pages/LeaveManagement";
 import AllUsers from "./pages/AllUsers"
 import Stock from "./pages/Inovetry/Stock";
+import StockHistory from "./pages/Inovetry/StockHistory";
 import PayrollReports from "./pages/reports/PayrollReports";
 import MapView from "./pages/MapView";
 import AssignCalls from "./pages/AssignCalls";
@@ -127,6 +128,7 @@ function App() {
         {/* Employee Routes: restrict access to admin/hr only (portal no longer accessible to employee/engineer) */}
         <Route path="/attendance" element={<ProtectedRoute><AttendancePage /></ProtectedRoute>} />
         <Route path="/inventory" element={<ProtectedRoute><Stock /></ProtectedRoute>} />
+        <Route path="/stock-history" element={<ProtectedRoute><StockHistory /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/apply-leave" element={<ProtectedRoute><ApplyLeave /></ProtectedRoute>} />
         <Route path="/payslips" element={<ProtectedRoute><Payslips /></ProtectedRoute>} />

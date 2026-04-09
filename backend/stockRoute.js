@@ -40,6 +40,15 @@ async function ensureTables() {
       consumed_at TIMESTAMP DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS stock_assignments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      engineer_id UUID NOT NULL,
+      stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL,
+      assigned_by UUID,
+      assigned_at TIMESTAMP DEFAULT now()
+    );
+
     CREATE TABLE IF NOT EXISTS wastage_stock (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       engineer_id UUID NOT NULL,
@@ -177,6 +186,13 @@ router.post('/items-with-assign', async (req, res) => {
         [String(engineerId), String(finalItem.id), Number(assignQuantity || 0)]
       );
       assignedToEngineer = assignResult.rows[0];
+      
+      // 3. Log history
+      const assignedBy = req.header('x-user-id') || null;
+      await client.query(
+        `INSERT INTO stock_assignments (engineer_id, stock_item_id, quantity, assigned_by) VALUES ($1, $2, $3, $4)`,
+        [String(engineerId), String(finalItem.id), Number(assignQuantity || 0), assignedBy]
+      );
       console.log(`✅ Assigned ${assignQuantity} units to engineer ${engineerId}. Central stock remains: ${finalItem.quantity}`);
     }
 
@@ -222,6 +238,14 @@ router.post('/assign', async (req, res) => {
        DO UPDATE SET quantity = engineer_stock.quantity + EXCLUDED.quantity, assigned_at = now()
        RETURNING *`,
       [String(engineerId), String(stockItemId), Number(quantity || 0)]
+    );
+
+    // Record assignment history
+    const assignedBy = req.header('x-user-id') || req.body.assignedBy || null;
+    await client.query(
+      `INSERT INTO stock_assignments (engineer_id, stock_item_id, quantity, assigned_by) 
+       VALUES ($1, $2, $3, $4)`,
+      [String(engineerId), String(stockItemId), Number(quantity || 0), assignedBy]
     );
 
     const getItem = await client.query(
@@ -619,6 +643,103 @@ router.get('/engineer-status/:engineerId', async (req, res) => {
   } catch (err) {
     console.error('Engineer status error:', err);
     res.status(500).json({ error: 'Failed to fetch engineer status' });
+  }
+});
+
+// GET Stock history report (consolidated assignments and consumptions)
+router.get('/history-report', async (req, res) => {
+  try {
+    const { engineerId, month, year, date } = req.query;
+    let params = [];
+    let whereClauses = [];
+    let idx = 1;
+
+    if (engineerId) {
+      whereClauses.push(`engineer_id::text = $${idx++}`);
+      params.push(String(engineerId));
+    }
+
+    // Assignments Query
+    let assignWhere = [...whereClauses];
+    let assignParams = [...params];
+    let assignIdx = idx;
+
+    if (year) {
+      assignWhere.push(`EXTRACT(YEAR FROM assigned_at) = $${assignIdx++}`);
+      assignParams.push(parseInt(year));
+    }
+    if (month) {
+      assignWhere.push(`EXTRACT(MONTH FROM assigned_at) = $${assignIdx++}`);
+      assignParams.push(parseInt(month));
+    }
+    if (date) {
+      assignWhere.push(`assigned_at::date = $${assignIdx++}`);
+      assignParams.push(date);
+    }
+
+    const assignmentsQuery = `
+      SELECT 
+        sa.id as entry_id,
+        'Assignment' as type,
+        sa.assigned_at as date,
+        u_e.name as engineer_name,
+        si.name as item_name,
+        sa.quantity as quantity,
+        u_a.name as processed_by,
+        NULL as note
+      FROM stock_assignments sa
+      JOIN users u_e ON u_e.id::text = sa.engineer_id::text
+      JOIN stock_items si ON si.id = sa.stock_item_id
+      LEFT JOIN users u_a ON u_a.id::text = sa.assigned_by::text
+      ${assignWhere.length > 0 ? 'WHERE ' + assignWhere.join(' AND ') : ''}
+    `;
+
+    // Consumptions Query
+    let consumeWhere = [...whereClauses];
+    let consumeParams = [...params];
+    let consumeIdx = idx;
+
+    if (year) {
+      consumeWhere.push(`EXTRACT(YEAR FROM consumed_at) = $${consumeIdx++}`);
+      consumeParams.push(parseInt(year));
+    }
+    if (month) {
+      consumeWhere.push(`EXTRACT(MONTH FROM consumed_at) = $${consumeIdx++}`);
+      consumeParams.push(parseInt(month));
+    }
+    if (date) {
+      consumeWhere.push(`consumed_at::date = $${consumeIdx++}`);
+      consumeParams.push(date);
+    }
+
+    const consumptionsQuery = `
+      SELECT 
+        sc.id as entry_id,
+        'Consumption' as type,
+        sc.consumed_at as date,
+        u_e.name as engineer_name,
+        si.name as item_name,
+        sc.quantity as quantity,
+        NULL as processed_by,
+        sc.note as note
+      FROM stock_consumption sc
+      JOIN users u_e ON u_e.id::text = sc.engineer_id::text
+      JOIN stock_items si ON si.id = sc.stock_item_id
+      ${consumeWhere.length > 0 ? 'WHERE ' + consumeWhere.join(' AND ') : ''}
+    `;
+
+    const assignments = await pool.query(assignmentsQuery, assignParams);
+    const consumptions = await pool.query(consumptionsQuery, consumeParams);
+
+    // Combine and sort by date descending
+    const report = [...assignments.rows, ...consumptions.rows].sort((a, b) => 
+      new Date(b.date) - new Date(a.date)
+    );
+
+    res.json(report);
+  } catch (err) {
+    console.error('History report error:', err);
+    res.status(500).json({ error: 'Failed to fetch history report' });
   }
 });
 
