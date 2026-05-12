@@ -13,7 +13,10 @@ export default function ApplyLeave() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [reason, setReason] = useState('');
+  const [leaveType, setLeaveType] = useState('Sick');
+  const [dayType, setDayType] = useState('full');
   const [submitting, setSubmitting] = useState(false);
+
   const [message, setMessage] = useState('');
 
   // Use centralized API config
@@ -92,7 +95,10 @@ export default function ApplyLeave() {
         startDate: from,
         endDate: to,
         reason,
+        type: leaveType,
+        day_type: dayType,
       };
+
 
       const res = await fetch(`${API_URL}/api/leave/apply`, {
         method: 'POST',
@@ -224,8 +230,37 @@ export default function ApplyLeave() {
                       onChange={(e) => setReason(e.target.value)}
                       rows={3}
                       className="mt-1 block w-full border rounded px-3 py-2"
+                      placeholder="Optional reason for leave"
                     />
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Leave Type</label>
+                      <select
+                        value={leaveType}
+                        onChange={(e) => setLeaveType(e.target.value)}
+                        className="mt-1 block w-full border rounded px-3 py-2"
+                      >
+                        <option value="Sick">Sick Leave</option>
+                        <option value="Casual">Casual Leave</option>
+                        <option value="Earned">Earned Leave</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Day Type</label>
+                      <select
+                        value={dayType}
+                        onChange={(e) => setDayType(e.target.value)}
+                        className="mt-1 block w-full border rounded px-3 py-2"
+                      >
+                        <option value="full">Full Day</option>
+                        <option value="half">Half Day</option>
+                      </select>
+                    </div>
+                  </div>
+
 
                   <div className="flex items-center justify-end gap-2">
                     <button type="button" onClick={() => setIsOpen(false)} className="px-4 py-2 rounded border hover:bg-gray-50">

@@ -83,13 +83,49 @@ router.post('/apply', async (req, res) => {
   if (e < s) {
     return res.status(400).json({ success: false, message: 'endDate must be on or after startDate' });
   }
+
+  const requester = req.header('x-user-id') || null;
+  let requestedStatus = 'pending';
+
   try {
+    if (requester) {
+      const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
+      const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
+      if (role === 'admin' || role === 'hr') {
+        if (req.body.status) requestedStatus = req.body.status;
+      }
+    }
+
     const result = await pool.query(
-      `INSERT INTO leaves (user_id, start_date, end_date, reason, type, day_type, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
-      [userId, startDate, endDate, reason || null, type || null, day_type || 'full']
+      `INSERT INTO leaves (user_id, start_date, end_date, reason, type, day_type, status, approved_by, approved_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [
+        userId, 
+        startDate, 
+        endDate, 
+        reason || null, 
+        type || null, 
+        day_type || 'full', 
+        requestedStatus,
+        requestedStatus === 'approved' ? String(requester) : null,
+        requestedStatus === 'approved' ? new Date() : null
+      ]
     );
-    // fetch with user info
+
     const leave = result.rows[0];
+
+    // If applied as approved, deduct balance immediately
+    if (requestedStatus === 'approved') {
+      const sDate = new Date(leave.start_date);
+      const eDate = new Date(leave.end_date);
+      const diffTime = Math.abs(eDate - sDate);
+      let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      if (diffDays === 1 && leave.day_type === 'half') {
+        diffDays = 0.5;
+      }
+      await pool.query(`UPDATE users SET leave_balance = COALESCE(leave_balance, 20) - $1 WHERE id=$2`, [diffDays, leave.user_id]);
+    }
+
     try {
       const u = await pool.query(`SELECT id, name, email, role FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
       leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
@@ -212,6 +248,44 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('Error fetching leaves:', err?.message || err, err?.stack || 'no stack');
     res.status(500).json({ success: false, message: 'Error fetching leaves', error: err?.message || String(err) });
+  }
+});
+
+// GET /api/leave/all - list ALL leaves (admin/hr only)
+router.get('/all', async (req, res) => {
+  const requester = req.header('x-user-id') || null;
+  try {
+    if (!requester) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    
+    const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
+    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
+    
+    if (role !== 'admin' && role !== 'hr') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const query = `SELECT l.id,
+      to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+      l.type,
+      l.day_type,
+      l.reason,
+      l.status,
+      l.user_id,
+      to_char(l.start_date, 'YYYY-MM-DD') AS start_date,
+      to_char(l.end_date, 'YYYY-MM-DD') AS end_date,
+      to_char(l.applied_at, 'YYYY-MM-DD HH24:MI:SS') AS applied_at,
+      l.approved_by,
+      to_char(l.approved_at, 'YYYY-MM-DD HH24:MI:SS') AS approved_at,
+      u.name as user_name, u.email as user_email
+    FROM leaves l
+    LEFT JOIN users u ON u.id::text = l.user_id::text
+    ORDER BY COALESCE(l.created_at, now()) DESC`;
+
+    const result = await pool.query(query);
+    res.json({ success: true, leaves: result.rows });
+  } catch (err) {
+    console.error('Error fetching all leaves:', err);
+    res.status(500).json({ success: false, message: 'Error fetching all leaves' });
   }
 });
 

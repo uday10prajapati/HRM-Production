@@ -14,6 +14,18 @@ export default function LeaveManagement() {
     userId: null,
     userName: null,
   });
+  const [users, setUsers] = useState([]);
+  const [manualLeaveModal, setManualLeaveModal] = useState({
+    isOpen: false,
+    userId: '',
+    startDate: '',
+    endDate: '',
+    reason: '',
+    type: 'Sick',
+    dayType: 'full',
+    status: 'approved'
+  });
+
   // Use relative API paths so frontend and backend share same origin
   // All requests should target `/api/...`
 
@@ -67,7 +79,22 @@ export default function LeaveManagement() {
     }
   };
 
-  useEffect(() => { fetchLeaves(); }, []);
+  const fetchUsers = async () => {
+    try {
+      const res = await axios.get('/api/users');
+      if (res.data && res.data.success) {
+        setUsers(res.data.users || []);
+      }
+    } catch (err) {
+      console.error('fetchUsers error', err);
+    }
+  };
+
+  useEffect(() => { 
+    fetchLeaves();
+    fetchUsers();
+  }, []);
+
 
   const takeAction = async (id, action) => {
     try {
@@ -173,6 +200,46 @@ export default function LeaveManagement() {
     }
   };
 
+  const handleManualLeaveSubmit = async (e) => {
+    e.preventDefault();
+    if (!manualLeaveModal.userId || !manualLeaveModal.startDate || !manualLeaveModal.endDate) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const user = getCurrentUser();
+      const headers = {};
+      if (user && user.id) headers['x-user-id'] = user.id;
+
+      const payload = {
+        userId: manualLeaveModal.userId,
+        startDate: manualLeaveModal.startDate,
+        endDate: manualLeaveModal.endDate,
+        reason: manualLeaveModal.reason,
+        type: manualLeaveModal.type,
+        day_type: manualLeaveModal.dayType,
+        status: manualLeaveModal.status
+      };
+
+      const res = await axios.post('/api/leave/apply', payload, { headers });
+      if (res.data && res.data.success) {
+        setManualLeaveModal({ ...manualLeaveModal, isOpen: false });
+        alert('Leave application submitted successfully');
+        await fetchLeaves();
+      } else {
+        alert('Failed: ' + (res.data?.message || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Manual apply error', err);
+      alert('Error: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   // Note: seed button removed to avoid confusion. Use server debug endpoints directly if needed.
 
   const user = getCurrentUser();
@@ -221,6 +288,16 @@ export default function LeaveManagement() {
               </div>
               <div className="flex gap-2">
                 <button
+                  onClick={() => setManualLeaveModal({ ...manualLeaveModal, isOpen: true })}
+                  className="inline-flex items-center px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/40 hover:-translate-y-0.5"
+                >
+                  <svg className="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Record Leave
+                </button>
+
+                <button
                   onClick={fetchLeaves}
                   className="inline-flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5"
                 >
@@ -229,6 +306,7 @@ export default function LeaveManagement() {
                   </svg>
                   Sync Data
                 </button>
+
                 <button
                   onClick={debugCheckNotifications}
                   className="inline-flex items-center px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-xl transition-all shadow-md shadow-slate-500/20 hover:shadow-lg hover:shadow-slate-500/40 hover:-translate-y-0.5 text-xs"
@@ -427,6 +505,142 @@ export default function LeaveManagement() {
               </div>
             </div>
           )}
+
+          {/* Manual Leave Modal */}
+          {manualLeaveModal.isOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 overflow-hidden">
+              <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col animate-[slideIn_0.3s_ease-out] overflow-hidden border border-slate-100">
+                <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-extrabold text-slate-900">Record Leave</h3>
+                        <p className="text-sm font-medium text-slate-500">Directly put leave for engineer</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setManualLeaveModal({ ...manualLeaveModal, isOpen: false })}
+                      className="p-2 hover:bg-slate-200 rounded-xl transition-colors text-slate-400"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <form onSubmit={handleManualLeaveSubmit} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+                  <div className="p-6 sm:p-8 space-y-5 flex-1">
+                    <div className="grid grid-cols-1 gap-5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Select Employee</label>
+                        <select
+                          required
+                          value={manualLeaveModal.userId}
+                          onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, userId: e.target.value })}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                        >
+                          <option value="">Choose an employee...</option>
+                          {users.map(u => (
+                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Start Date</label>
+                          <input
+                            type="date"
+                            required
+                            value={manualLeaveModal.startDate}
+                            onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, startDate: e.target.value })}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">End Date</label>
+                          <input
+                            type="date"
+                            required
+                            value={manualLeaveModal.endDate}
+                            onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, endDate: e.target.value })}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Leave Type</label>
+                          <select
+                            value={manualLeaveModal.type}
+                            onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, type: e.target.value })}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                          >
+                            <option value="Sick">Sick Leave</option>
+                            <option value="Casual">Casual Leave</option>
+                            <option value="Earned">Earned Leave</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Day Type</label>
+                          <select
+                            value={manualLeaveModal.dayType}
+                            onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, dayType: e.target.value })}
+                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                          >
+                            <option value="full">Full Day</option>
+                            <option value="half">Half Day</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl">
+                        <p className="text-xs font-bold text-emerald-800 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          This leave will be recorded as DIRECTLY APPROVED
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Reason</label>
+                        <textarea
+                          value={manualLeaveModal.reason}
+                          onChange={(e) => setManualLeaveModal({ ...manualLeaveModal, reason: e.target.value })}
+                          placeholder="Why is this leave being added?"
+                          rows={2}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 p-6 sm:p-8 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setManualLeaveModal({ ...manualLeaveModal, isOpen: false })}
+                      className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 px-4 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 text-sm disabled:opacity-50"
+                    >
+                      {loading ? 'Processing...' : 'Record Leave'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
     </div>
