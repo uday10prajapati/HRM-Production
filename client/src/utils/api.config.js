@@ -7,6 +7,11 @@ import { Capacitor } from "@capacitor/core";
 const getApiUrl = () => {
   // 1. Native Mobile App (Capacitor)
   if (Capacitor.isNativePlatform()) {
+    // ⚠️ IMPORTANT FOR LOCAL TESTING: 
+    // If you are testing the native app on a physical Android device or emulator, 
+    // replace 'https://hrms.sandjglobaltech.com' with your computer's local IP address and port 5001
+    // (for example: 'http://192.168.1.15:5001' or 'http://10.0.2.2:5001' for emulator)
+    // so that the background service can successfully connect to your local backend database!
     return 'https://hrms.sandjglobaltech.com';
   }
 

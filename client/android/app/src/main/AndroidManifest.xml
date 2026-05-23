@@ -20,6 +20,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".GpsWarningDialogActivity"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

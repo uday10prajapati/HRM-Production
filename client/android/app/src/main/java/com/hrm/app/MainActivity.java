@@ -13,11 +13,22 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        // Ensure our custom capacitor plugin is registered AFTER the bridge initializes
+        // Register custom capacitor plugin BEFORE the bridge initializes
         registerPlugin(LocationTrackingPlugin.class);
         
+        super.onCreate(savedInstanceState);
+        
+        // Ensure log file is created immediately on launch
+        initializeLogFile();
+        
         Log.d(TAG, "🟢 MainActivity started, checking for active location tracking");
+        
+        // Request POST_NOTIFICATIONS runtime permission on Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
+            }
+        }
         
         // Check if tracking was active
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -46,5 +57,23 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         Log.d(TAG, "app destroyed");
         super.onDestroy();
+    }
+
+    private void initializeLogFile() {
+        try {
+            java.io.File logFile = new java.io.File(getExternalFilesDir(null), "tracking_logs.txt");
+            if (!logFile.exists()) {
+                logFile.createNewFile();
+            }
+            java.io.FileWriter writer = new java.io.FileWriter(logFile, true);
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault());
+            sdf.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Kolkata"));
+            String time = sdf.format(new java.util.Date());
+            writer.write("[" + time + "] 📱 App launched. Log file initialized!\n");
+            writer.close();
+            Log.d(TAG, "📝 tracking_logs.txt initialized at: " + logFile.getAbsolutePath());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to initialize log file", e);
+        }
     }
 }

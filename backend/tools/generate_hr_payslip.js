@@ -1,0 +1,47 @@
+const fs = require('fs');
+const path = require('path');
+const PDFDocument = require('pdfkit');
+
+const outPath = path.join(__dirname, '..', 'storage', 'uploads', 'payslips', '2026-05', 'payslip_hr_2026_5.pdf');
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
+
+const doc = new PDFDocument({ size: 'A4', margin: 40 });
+const stream = fs.createWriteStream(outPath);
+const fmt = (n) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+doc.pipe(stream);
+doc.font('Helvetica-Bold').fontSize(18).fillColor('#111827').text('S and J Globaltech', 40, 40);
+doc.font('Helvetica').fontSize(10).fillColor('#4b5563').text('Gujarat, India', 40, 62);
+doc.font('Helvetica-Bold').fontSize(14).fillColor('#111827').text('Payslip for the month of May 2026', 40, 95, { align: 'center', width: 515 });
+doc.moveTo(40, 120).lineTo(555, 120).strokeColor('#111827').stroke();
+doc.rect(40, 130, 515, 95).strokeColor('#d1d5db').stroke();
+doc.font('Helvetica-Bold').fontSize(9).fillColor('#111827').text('EMPLOYEE PAY SUMMARY', 50, 140);
+doc.font('Helvetica').fontSize(9).fillColor('#111827');
+doc.text('Employee Name', 50, 160); doc.text(': HR', 150, 160);
+doc.text('Designation', 50, 175); doc.text(': HR', 150, 175);
+doc.text('Pay Period', 50, 190); doc.text(': May 2026', 150, 190);
+doc.text('Pay Date', 50, 205); doc.text(': 15/05/2026', 150, 205);
+doc.font('Helvetica-Bold').fontSize(11).fillColor('#4b5563').text('Employee Net Pay', 330, 152, { width: 200, align: 'center' });
+doc.font('Helvetica-Bold').fontSize(24).fillColor('#111827').text(fmt(11000), 330, 170, { width: 200, align: 'center' });
+doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text('Paid Days : 31 | LOP Days : 0', 330, 205, { width: 200, align: 'center' });
+doc.moveTo(40, 240).lineTo(555, 240).strokeColor('#111827').stroke();
+doc.font('Helvetica-Bold').fontSize(8).fillColor('#111827');
+doc.text('EARNINGS', 50, 248); doc.text('AMOUNT', 220, 248, { width: 120, align: 'right' }); doc.text('YTD', 350, 248, { width: 80, align: 'right' });
+doc.text('DEDUCTIONS', 390, 248); doc.text('AMOUNT', 480, 248, { width: 65, align: 'right' });
+let y = 265;
+doc.moveTo(40, y).lineTo(555, y).strokeColor('#e5e7eb').stroke();
+doc.font('Helvetica').fontSize(8).fillColor('#111827');
+[['Basic', 9000], ['Others', 2000]].forEach(([label, amount]) => { y += 20; doc.text(label, 50, y - 8); doc.text(fmt(amount), 220, y - 8, { width: 120, align: 'right' }); doc.text(fmt(amount), 350, y - 8, { width: 80, align: 'right' }); });
+y += 20; doc.moveTo(40, y).lineTo(555, y).strokeColor('#111827').stroke();
+doc.font('Helvetica-Bold').fontSize(8); doc.text('Gross Earnings', 50, y - 12); doc.text(fmt(11000), 220, y - 12, { width: 120, align: 'right' }); doc.text('Total Deductions', 390, y - 12); doc.text(fmt(0), 480, y - 12, { width: 65, align: 'right' });
+y += 20; doc.moveTo(40, y).lineTo(555, y).strokeColor('#111827').stroke();
+doc.font('Helvetica-Bold').fontSize(9); doc.text('NET PAY', 50, y - 12); doc.text('AMOUNT', 460, y - 12);
+y += 20; doc.moveTo(40, y).lineTo(555, y).strokeColor('#e5e7eb').stroke();
+doc.font('Helvetica').fontSize(9); doc.text('Gross Earnings', 50, y - 12); doc.text(fmt(11000), 420, y - 12, { width: 115, align: 'right' });
+y += 20; doc.moveTo(40, y).lineTo(555, y).strokeColor('#e5e7eb').stroke(); doc.text('Total Deductions', 50, y - 12); doc.text('(-) ' + fmt(0), 420, y - 12, { width: 115, align: 'right' });
+y += 20; doc.moveTo(40, y).lineTo(555, y).strokeColor('#111827').stroke(); doc.font('Helvetica-Bold').fontSize(10); doc.text('Total Net Payable', 250, y - 12, { width: 170, align: 'right' }); doc.text(fmt(11000), 420, y - 12, { width: 115, align: 'right' });
+doc.font('Helvetica').fontSize(9).fillColor('#111827').text('Total Net Payable ₹11,000.00 (Indian Rupee Eleven Thousand Only)', 40, y + 18, { width: 515, align: 'center' });
+doc.fontSize(7).fillColor('#6b7280').text('This document has been automatically generated; therefore, a signature is not required.', 40, y + 34, { width: 515, align: 'center' });
+doc.end();
+stream.on('finish', () => console.log(outPath));
+stream.on('error', (err) => { console.error(err); process.exit(1); });

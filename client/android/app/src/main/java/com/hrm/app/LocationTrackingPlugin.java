@@ -3,6 +3,7 @@ package com.hrm.app;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -21,7 +22,7 @@ public class LocationTrackingPlugin extends Plugin {
     /**
      * Start background location tracking
      */
-    @org.jetbrains.annotations.NotNull
+    @PluginMethod
     public void startTracking(PluginCall call) {
         String userId = call.getString("userId");
         String apiBaseUrl = call.getString("apiBaseUrl", "https://hrms.sandjglobaltech.com");
@@ -70,7 +71,7 @@ public class LocationTrackingPlugin extends Plugin {
     /**
      * Stop background location tracking
      */
-    @org.jetbrains.annotations.NotNull
+    @PluginMethod
     public void stopTracking(PluginCall call) {
         try {
             // Update shared preferences
@@ -106,7 +107,7 @@ public class LocationTrackingPlugin extends Plugin {
      * Enable or disable location storage (without stopping the service)
      * Use this to control punch-in/out without restarting the service
      */
-    @org.jetbrains.annotations.NotNull
+    @PluginMethod
     public void setStorageEnabled(PluginCall call) {
         Boolean enabled = call.getBoolean("enabled", true);
         
@@ -136,5 +137,32 @@ public class LocationTrackingPlugin extends Plugin {
             error.put("message", e.getMessage());
             call.resolve(error);
         }
+    }
+
+    /**
+     * Force request background location permission to show "Allow all the time"
+     */
+    @PluginMethod
+    public void requestBackgroundPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                // We request the permission which opens the system dialog or settings
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    getActivity(),
+                    new String[]{android.Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                    1001
+                );
+                
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("message", "Requested background permission");
+                call.resolve(result);
+                return;
+            }
+        }
+        JSObject result = new JSObject();
+        result.put("success", true);
+        result.put("message", "Already granted or not needed");
+        call.resolve(result);
     }
 }

@@ -1,8 +1,7 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { API_CONFIG } from '../utils/api.config';
 
-/**
- * Simplified approach: Use localStorage to signal native app
+// Simplified approach: Use localStorage to signal native app
 // Initialize plugin globally, but populate it lazily
 let LocationTrackingPlugin = null;
 
@@ -28,12 +27,9 @@ export async function startNativeLocationTracking(userId) {
             return;
         }
 
-        console.log('[NATIVE] 🟢 Signaling native Android to start background location service for user:', userId);
-
         const apiBaseUrl = API_CONFIG.BASE_URL || 'https://hrms.sandjglobaltech.com';
 
         // Save tracking state to localStorage
-        // The MainActivity will read this and start the service
         localStorage.setItem('hrm_tracking_active', 'true');
         localStorage.setItem('hrm_tracking_user_id', userId);
         localStorage.setItem('hrm_tracking_api_url', apiBaseUrl);
@@ -41,24 +37,49 @@ export async function startNativeLocationTracking(userId) {
         // Try to use plugin if available, but don't fail if not
         try {
             const plugin = getPlugin();
-            if (plugin && plugin.startTracking) {
-                await plugin.startTracking({
-                    userId,
-                    apiBaseUrl: apiBaseUrl
-                });
-                console.log('[NATIVE] ✅ Plugin method called successfully');
-                return;
+            if (plugin) {
+                // Check if they already accepted the disclosure in the past
+                const hasAcceptedDisclosure = localStorage.getItem('hrm_disclosure_accepted') === 'true';
+                
+                let userAgreed = true;
+                if (!hasAcceptedDisclosure) {
+                    userAgreed = window.confirm(
+                        "Background Location Tracking Required\n\n" +
+                        "This app collects location data in the background to track your working hours and location during your shift, even when the app is closed or not in use.\n\n" +
+                        "To enable this, please select 'Allow all the time' in the permission settings that will open next."
+                    );
+                    if (userAgreed) {
+                        localStorage.setItem('hrm_disclosure_accepted', 'true');
+                    }
+                }
+
+                if (userAgreed) {
+                    if (plugin.requestBackgroundPermission) {
+                        await plugin.requestBackgroundPermission();
+                    }
+                }
+                
+                if (plugin.startTracking) {
+                    await plugin.startTracking({
+                        userId,
+                        apiBaseUrl: apiBaseUrl
+                    });
+                    console.log('[NATIVE] ✅ Native service launched successfully');
+                    return;
+                }
+            } else {
+                console.warn('[NATIVE] ⚠️ Native Plugin is missing!');
             }
         } catch (pluginError) {
-            console.log('[NATIVE] 📝 Plugin method failed, using localStorage method', pluginError);
+            console.error('[NATIVE] ❌ Plugin error:', pluginError.message);
         }
 
         // Fallback: service will start on app initialization
         console.log('[NATIVE] ⚠️ Native service will start on next app initialization');
 
     } catch (error) {
+        alert('❌ [TRACKER DIAGNOSTIC]: General error: ' + error?.message);
         console.error('[NATIVE] ❌ Error signaling native tracking:', error?.message);
-        // Don't throw - let JavaScript interval tracking handle it
     }
 }
 

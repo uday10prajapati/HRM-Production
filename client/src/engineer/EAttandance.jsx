@@ -65,14 +65,21 @@ const EAttandance = () => {
             // Set user auth header specifically for the backend's middleware
             axios.defaults.headers.common['x-user-id'] = parsed.id;
 
-            // Resume background location tracking if it was active
-            resumeLocationTrackingIfNeeded();
-
             // Only fetch for attendance tab, not TA
             if (activeMainTab === 'attendance') {
                 fetchTodayStatus(parsed.id);
                 fetchHistory(parsed.id, fromDate, toDate);
             }
+
+            // Real-time polling to instantly reflect background auto punch-outs
+            const interval = setInterval(() => {
+                if (activeMainTab === 'attendance') {
+                    fetchTodayStatus(parsed.id);
+                    fetchHistory(parsed.id, fromDate, toDate);
+                }
+            }, 15000);
+
+            return () => clearInterval(interval);
         } else {
             navigate('/');
         }
@@ -383,8 +390,22 @@ const EAttandance = () => {
                 const { punch_in, punch_out } = res.data.data;
                 if (punch_in && !punch_out) {
                     setPunchState('out'); // Need to punch out
+                    // Dynamically resume native background tracking if they are currently punched in
+                    try {
+                        console.log('🔄 EAttandance: Active punch-in verified. Resuming tracking...');
+                        await startLocationTracking(userId);
+                    } catch (err) {
+                        console.warn('Could not resume tracking on startup:', err);
+                    }
                 } else {
                     setPunchState('in'); // Default ready to punch in
+                    // Dynamically stop native background tracking if they are not currently punched in
+                    try {
+                        console.log('🔄 EAttandance: Punched out or no active punch today. Stopping tracking...');
+                        await stopLocationTracking();
+                    } catch (err) {
+                        console.warn('Could not stop tracking on startup:', err);
+                    }
                 }
             }
         } catch (error) {
@@ -444,12 +465,21 @@ const EAttandance = () => {
                 }
             }
 
-            toast.info("Acquiring GPS Location...", { autoClose: 2000 });
-            const coordinates = await Geolocation.getCurrentPosition({
-                enableHighAccuracy: true,
-                timeout: 30000,
-                maximumAge: 10000 // Allow a 10s old cached location to speed it up
-            });
+            let coordinates = null;
+            try {
+                toast.info("Acquiring GPS Location...", { autoClose: 2000 });
+                coordinates = await Geolocation.getCurrentPosition({
+                    enableHighAccuracy: true,
+                    timeout: 8000,
+                    maximumAge: 10000
+                });
+            } catch (gpsError) {
+                console.error("GPS Acquisition failed:", gpsError);
+                alert("📍 [GPS / LOCATION SERVICES REQUIRED]\n\nYour phone GPS or Location Services are turned OFF!\n\nPlease enable Location/GPS in your device settings to punch in/out.");
+                toast.error("Please turn on your phone GPS to continue!");
+                setLoading(false);
+                return;
+            }
 
             const currentType = punchState; // 'in' or 'out'
 

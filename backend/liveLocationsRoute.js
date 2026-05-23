@@ -195,12 +195,12 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
                     latitude,
                     longitude,
                     updated_at,
-                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at) as first_point,
-                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at) ORDER BY updated_at DESC) as last_point,
-                    COUNT(*) OVER (PARTITION BY DATE(updated_at)) as total_points
+                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at AT TIME ZONE 'Asia/Kolkata') ORDER BY updated_at) as first_point,
+                    ROW_NUMBER() OVER (PARTITION BY DATE(updated_at AT TIME ZONE 'Asia/Kolkata') ORDER BY updated_at DESC) as last_point,
+                    COUNT(*) OVER (PARTITION BY DATE(updated_at AT TIME ZONE 'Asia/Kolkata')) as total_points
                 FROM live_locations
                 WHERE user_id = $1
-                AND DATE(updated_at) = $2::date
+                AND DATE(updated_at AT TIME ZONE 'Asia/Kolkata') = $2::date
             )
             SELECT 
                 user_id,
@@ -228,13 +228,32 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
             });
         }
 
+        // Check if there is a punch-out record for the user on this date in the attendance table
+        const attendanceQuery = `
+            SELECT id 
+            FROM attendance 
+            WHERE user_id = $1 
+            AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $2::date
+            AND (punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))
+            LIMIT 1
+        `;
+        const attendanceResult = await pool.query(attendanceQuery, [userId, date]);
+        const hasPunchedOut = attendanceResult.rows.length > 0;
+
         // Format the data
-        const timeline = result.rows.map(row => ({
-            latitude: Number(row.latitude),
-            longitude: Number(row.longitude),
-            updated_at: row.updated_at,
-            point_type: row.point_type
-        }));
+        const timeline = result.rows.map(row => {
+            let pointType = row.point_type;
+            // Only expose 'END' if the user has actually punched out
+            if (pointType === 'END' && !hasPunchedOut) {
+                pointType = 'MOVEMENT';
+            }
+            return {
+                latitude: Number(row.latitude),
+                longitude: Number(row.longitude),
+                updated_at: row.updated_at,
+                point_type: pointType
+            };
+        });
 
         console.log('Formatted timeline:', timeline);
 

@@ -91,9 +91,32 @@ export default function MapView() {
         fetchEngineers();
     }, []);
 
-    const handleViewLocation = async (engineer) => {
+    // Real-time Auto-Refresh (SWR-style): 
+    // Automatically refetch the live timeline every 30 seconds if tracking today's route
+    useEffect(() => {
+        if (!selectedEngineer) return;
+
+        // Fetch immediately
+        fetchTimeline(selectedEngineer.id, selectedDate);
+
+        // Only start the 30-second polling interval if the selected date is TODAY
+        const isToday = selectedDate.toDateString() === new Date().toDateString();
+        if (!isToday) return;
+
+        console.log(`⏱️ Live Tracking: 30s auto-refresh started for ${selectedEngineer.name}`);
+        const pollInterval = setInterval(() => {
+            console.log(`🔄 Fetching live updates for ${selectedEngineer.name}...`);
+            fetchTimeline(selectedEngineer.id, selectedDate);
+        }, 30000); // 30 seconds
+
+        return () => {
+            console.log(`⏱️ Live Tracking: Stopped auto-refresh`);
+            clearInterval(pollInterval);
+        };
+    }, [selectedEngineer, selectedDate]);
+
+    const handleViewLocation = (engineer) => {
         setSelectedEngineer(engineer);
-        await fetchTimeline(engineer.id, selectedDate);
         setMapKey((prev) => prev + 1);
     };
 

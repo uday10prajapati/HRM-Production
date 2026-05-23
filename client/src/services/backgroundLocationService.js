@@ -22,14 +22,21 @@ const DEBUG_TAG = '[LOCATION]';
  */
 async function requestLocationPermissions() {
     try {
-        console.log('🔐 Requesting location permissions...');
+        console.log('🔐 Checking location permissions...');
         
-        // First request foreground location permissions
+        // First check if already granted
+        const currentPerm = await Geolocation.checkPermissions();
+        if (currentPerm.location === 'granted') {
+            console.log('✅ Foreground location permission already granted');
+            return currentPerm;
+        }
+
+        console.log('🔐 Requesting foreground location permissions...');
         const result = await Geolocation.requestPermissions({
             permissions: ['coarseLocation', 'fineLocation']
         });
         
-        console.log('📍 Foreground location permission:', result);
+        console.log('📍 Foreground location permission result:', result);
         
         // For Android 12+, we may need to request background location separately
         try {
@@ -317,9 +324,35 @@ async function initializeAppLifecycleListeners() {
             const isTrackingActive = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE) === 'true';
             const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
             
-            if (isTrackingActive && userId && !locationTrackingInterval) {
-                console.log('📍 Resuming location tracking after background...');
-                await startLocationTracking(userId);
+            if (isTrackingActive && userId) {
+                try {
+                    // Force the common header
+                    axios.defaults.headers.common['x-user-id'] = userId;
+                    const res = await axios.get(`/api/attendance/latest?userId=${userId}`);
+                    if (res.data.success) {
+                        const { punch_in, punch_out } = res.data.data;
+                        if (punch_in && !punch_out) {
+                            if (!locationTrackingInterval) {
+                                console.log('📍 Resuming location tracking after background (still active)...');
+                                await startLocationTracking(userId);
+                            }
+                        } else {
+                            console.log('🛑 User is punched out. Clearing tracking state on resume.');
+                            localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE);
+                            localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
+                            if (locationTrackingInterval) {
+                                clearInterval(locationTrackingInterval);
+                                locationTrackingInterval = null;
+                            }
+                            await stopNativeLocationTracking();
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Failed to verify status on resume, falling back to resume:', err);
+                    if (!locationTrackingInterval) {
+                        await startLocationTracking(userId);
+                    }
+                }
             }
         });
 
@@ -371,8 +404,8 @@ export async function startLocationTracking(userId) {
             }
         }
 
-        // Set up AGGRESSIVE interval tracking (every 5 seconds)
-        // This ensures frequent location updates while app is running
+        // Set up interval tracking (every 30 seconds as requested)
+        // This ensures consistent location updates without draining the battery
         locationTrackingInterval = setInterval(async () => {
             try {
                 const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
@@ -381,18 +414,17 @@ export async function startLocationTracking(userId) {
                 const location = await getCurrentLocation();
 
                 if (location) {
-                    // More aggressive storage - store after just 5 seconds regardless
                     const timeSinceLastStore = Date.now() - (lastStoredTime || 0);
                     
-                    // Store if: moved 5+ meters OR 10 seconds passed
+                    // Store if: moved 10+ meters OR 30 seconds passed
                     const shouldStore = !lastStoredLocation || 
-                        (timeSinceLastStore >= 10000) ||
+                        (timeSinceLastStore >= 30000) ||
                         (calculateDistance(
                             lastStoredLocation.latitude,
                             lastStoredLocation.longitude,
                             location.latitude,
                             location.longitude
-                        ) >= 5);
+                        ) >= 10);
                     
                     if (shouldStore) {
                         console.log(`📍 Interval: Storing location (${timeSinceLastStore}ms elapsed)`);
@@ -406,9 +438,9 @@ export async function startLocationTracking(userId) {
             } catch (error) {
                 console.error('Error in location tracking interval:', error);
             }
-        }, 5000); // Check every 5 seconds for continuous tracking
+        }, 30000); // Check exactly every 30 seconds (2 times a minute)
 
-        console.log(DEBUG_TAG, '✅ Location tracking with 5-second interval established');
+        console.log(DEBUG_TAG, '✅ Location tracking with 30-second interval established');
         
         // Start heartbeat to monitor tracking health
         startTrackingHeartbeat(userId);
@@ -489,8 +521,25 @@ export async function resumeLocationTrackingIfNeeded() {
     const userId = localStorage.getItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
 
     if (trackingActive && userId) {
-        console.log('📍 Resuming location tracking after app restart');
-        await startLocationTracking(userId);
+        try {
+            axios.defaults.headers.common['x-user-id'] = userId;
+            const res = await axios.get(`/api/attendance/latest?userId=${userId}`);
+            if (res.data.success) {
+                const { punch_in, punch_out } = res.data.data;
+                if (punch_in && !punch_out) {
+                    console.log('📍 Resuming location tracking after app restart (still active)...');
+                    await startLocationTracking(userId);
+                } else {
+                    console.log('🛑 User is punched out. Clearing tracking state on app restart.');
+                    localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_ACTIVE);
+                    localStorage.removeItem(LOCATION_TRACKING_CONFIG.STORAGE_KEYS.TRACKING_USER_ID);
+                    await stopNativeLocationTracking();
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to verify status on restart, falling back to resume:', err);
+            await startLocationTracking(userId);
+        }
     }
 }
 

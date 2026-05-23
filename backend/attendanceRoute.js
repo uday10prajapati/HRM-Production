@@ -123,6 +123,72 @@ router.post('/punch', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/attendance/mark-half-day
+router.post('/mark-half-day', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'Missing userId' });
+
+    await client.query('BEGIN');
+
+    // Pre-check: if they are already punched out today, return immediately with success
+    const checkLatestQ = `
+      SELECT COALESCE(punch_type, type) AS latest_type
+      FROM attendance
+      WHERE user_id::text = $1
+        AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const checkRes = await client.query(checkLatestQ, [userId]);
+    const latestType = checkRes.rows[0]?.latest_type ?? null;
+    
+    if (latestType === 'out' || latestType === 'punch_out') {
+      await client.query('COMMIT');
+      return res.json({ success: true, message: 'User is already punched out today' });
+    }
+
+    // 1. Update the latest active punch-in record for this user to be marked as a half day
+    const updateQuery = `
+      UPDATE attendance 
+      SET is_half_day = true, notes = COALESCE(notes, '') || ' [System: GPS turned off for >2 minutes during shift]'
+      WHERE id = (
+        SELECT id FROM attendance 
+        WHERE user_id::text = $1
+          AND (punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in'))
+        ORDER BY created_at DESC 
+        LIMIT 1
+      )
+      RETURNING *
+    `;
+    const updateResult = await client.query(updateQuery, [userId]);
+    
+    // 2. Automatically insert a system punch-out record for this user today
+    const insertPunchOut = `
+      INSERT INTO attendance (user_id, type, punch_type, latitude, longitude, notes, created_at)
+      VALUES ($1, 'out', 'out', NULL, NULL, '[System Auto Punch-Out: GPS remained OFF for >2 minutes]', CURRENT_TIMESTAMP)
+      RETURNING *
+    `;
+    const insertResult = await client.query(insertPunchOut, [userId]);
+
+    await client.query('COMMIT');
+    
+    return res.json({ 
+      success: true, 
+      message: 'Marked as half-day and automatically punched out successfully', 
+      attendanceRecord: updateResult.rows[0] ?? null,
+      punchOutRecord: insertResult.rows[0]
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { });
+    console.error('Error marking half day:', err);
+    res.status(500).json({ success: false, message: 'Failed to mark half day', error: err?.message ?? String(err) });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/attendance/request - For Missed Punch Reporting
 router.post('/request', requireAuth, async (req, res) => {
   const client = await pool.connect();
@@ -264,9 +330,9 @@ router.get("/report", async (req, res) => {
     }
     // date params
     vals.push(start);
-    where.push(`created_at::date >= $${vals.length}`);
+    where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date >= $${vals.length}`);
     vals.push(end);
-    where.push(`created_at::date <= $${vals.length}`);
+    where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date <= $${vals.length}`);
 
     const whereClause = `WHERE ${where.join(" AND ")}`;
 
@@ -278,12 +344,12 @@ router.get("/report", async (req, res) => {
 
       FROM (
         SELECT user_id,
-               created_at::date AS day,
+               (created_at AT TIME ZONE 'Asia/Kolkata')::date AS day,
                MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS punch_in,
                MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out')) AS punch_out
   FROM attendance
         ${whereClause}
-        GROUP BY user_id, created_at::date
+        GROUP BY user_id, (created_at AT TIME ZONE 'Asia/Kolkata')::date
       ) per
   LEFT JOIN users u ON u.id::text = per.user_id::text
       ORDER BY u.name NULLS LAST, per.user_id, per.day;
@@ -318,9 +384,9 @@ router.get("/summary", async (req, res) => {
 
     // worked days: count distinct date with at least one 'in'
     const workedQ = `
-  SELECT COUNT(DISTINCT (created_at::date)) AS worked_days
-  FROM attendance
-  WHERE user_id::text=$1 AND (type IN ('in', 'punch_in') OR punch_type IN ('in', 'punch_in')) AND created_at::date BETWEEN $2 AND $3
+      SELECT COUNT(DISTINCT DATE(created_at AT TIME ZONE 'Asia/Kolkata')) AS worked_days
+      FROM attendance
+      WHERE user_id::text=$1 AND (type IN ('in', 'punch_in') OR punch_type IN ('in', 'punch_in')) AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN $2 AND $3
     `;
     const workedRes = await pool.query(workedQ, [userId, start, end]);
     const workedDays = Number(workedRes.rows[0]?.worked_days ?? 0);
@@ -383,9 +449,9 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         -- Count worked days (distinct dates with attendance records)
         SELECT 
           user_id::text AS user_id, 
-          COUNT(DISTINCT DATE(created_at)) AS worked_days
+          COUNT(DISTINCT DATE(created_at AT TIME ZONE 'Asia/Kolkata')) AS worked_days
         FROM attendance
-        WHERE DATE(created_at) BETWEEN $1::date AND $2::date
+        WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN $1::date AND $2::date
           AND user_id IS NOT NULL
         GROUP BY user_id
       ) att ON att.user_id = u.id::text
@@ -417,7 +483,7 @@ router.get('/summary/all', requireAuth, async (req, res) => {
           MAX(delay_time) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS delay_time,
           BOOL_OR(is_half_day) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS is_half_day
         FROM attendance
-        WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+        WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
           AND user_id IS NOT NULL
         GROUP BY user_id
       ) td ON td.user_id = u.id::text
@@ -558,7 +624,7 @@ router.get('/latest', requireAuth, async (req, res) => {
         created_at
       FROM attendance
       WHERE user_id = $1 
-      AND DATE(created_at) = CURRENT_DATE
+      AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
       ORDER BY created_at ASC
     `;
 
