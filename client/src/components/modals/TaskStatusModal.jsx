@@ -11,8 +11,7 @@ const TaskStatusModal = ({ selectedUser, onClose }) => {
       try {
         setLoading(true);
         if (selectedUser?.role?.toLowerCase() === "engineer") {
-          // Fetch assigned calls for engineer
-          const res = await axios.get("/api/service-calls/assigned-calls");
+          const res = await axios.get(`/api/service-calls/assigned-calls?t=${Date.now()}`);
           if (res.data.success) {
             // Filter explicitly for this engineer
             const userCalls = res.data.calls.filter(

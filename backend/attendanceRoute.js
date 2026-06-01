@@ -92,6 +92,21 @@ router.post('/punch', requireAuth, async (req, res) => {
     const hasCoords = latitude != null && longitude != null;
     const isPrivileged = requesterRole === 'hr' || requesterRole === 'admin';
 
+    let finalNotes = notes || '';
+    let finalIsHalfDay = is_half_day || false;
+
+    // Backend-side safeguard to ensure half-day flag and notes match for late punch in
+    if (finalType === 'in') {
+      const now = new Date();
+      const kolkataTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      if (kolkataTime.getHours() >= 12) {
+        finalIsHalfDay = true;
+        if (!finalNotes.includes('Late Punch-In')) {
+          finalNotes = (finalNotes ? finalNotes + ' ' : '') + '[System: Late Punch-In after 12:00 PM]';
+        }
+      }
+    }
+
     await client.query('BEGIN');
 
     // Insert attendance row (uses created_at)
@@ -100,7 +115,7 @@ router.post('/punch', requireAuth, async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
       RETURNING id, created_at, punch_type
     `;
-    const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, notes, delay_time || null, is_half_day || false]);
+    const { rows } = await client.query(insertAttendance, [userId, finalType, latitude, longitude, finalNotes, delay_time || null, finalIsHalfDay]);
     const attendance = rows[0];
 
     // Only insert live_locations if coords are present AND requester is NOT hr/admin
@@ -439,6 +454,7 @@ router.get('/summary/all', requireAuth, async (req, res) => {
         COALESCE(td.punch_out, '-') AS punch_out,
         td.delay_time,
         td.is_half_day,
+        td.notes,
         (td.punch_in IS NOT NULL) AS present_today,
         CASE 
           WHEN td.punch_in IS NOT NULL THEN 'Present'
@@ -481,7 +497,8 @@ router.get('/summary/all', requireAuth, async (req, res) => {
           to_char((MIN(created_at) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_in,
           to_char((MAX(created_at) FILTER (WHERE punch_type IN ('out', 'punch_out') OR type IN ('out', 'punch_out'))) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS punch_out,
           MAX(delay_time) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS delay_time,
-          BOOL_OR(is_half_day) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS is_half_day
+          BOOL_OR(is_half_day) FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS is_half_day,
+          string_agg(notes, '; ') FILTER (WHERE punch_type IN ('in', 'punch_in') OR type IN ('in', 'punch_in')) AS notes
         FROM attendance
         WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = DATE(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')
           AND user_id IS NOT NULL

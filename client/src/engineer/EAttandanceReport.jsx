@@ -6,6 +6,14 @@ const EAttandanceReport = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [history, setHistory] = useState([]);
+    const getHalfDayReason = (record) => {
+        if (!record || !record.is_half_day) return '';
+        const notes = (record.notes || '').toLowerCase();
+        if (notes.includes('gps') || notes.includes('location')) {
+            return 'Location Off';
+        }
+        return 'Late Punch In';
+    };
     const [fromDate, setFromDate] = useState(() => {
         const d = new Date();
         d.setDate(1);
@@ -102,7 +110,7 @@ const EAttandanceReport = () => {
                                             </span>
                                             {record.is_half_day && (
                                                 <span className="px-2 py-0.5 rounded-md text-[10px] bg-orange-100 text-orange-700 font-extrabold uppercase tracking-wide">
-                                                    Half Day
+                                                    Half Day ({getHalfDayReason(record)})
                                                 </span>
                                             )}
                                             <span className="text-xs text-gray-400 font-bold">{record.created_at.split(' ')[0]}</span>

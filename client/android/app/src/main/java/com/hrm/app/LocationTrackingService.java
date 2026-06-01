@@ -215,7 +215,7 @@ public class LocationTrackingService extends Service {
             .setContentText("Recording your work location (Do not close)")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentIntent(pendingIntent)
-            .setOngoing(true)
+            .setOngoing(false)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build();
@@ -568,7 +568,7 @@ public class LocationTrackingService extends Service {
                 .setContentText(warningText)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setContentIntent(pendingIntent)
-                .setAutoCancel(false)
+                .setAutoCancel(true)
                 .setOngoing(true)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(warningText))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

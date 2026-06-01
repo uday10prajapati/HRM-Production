@@ -427,6 +427,15 @@ function AttendancePage() {
     setEnd(endStr);
   };
 
+  const getHalfDayReason = (record) => {
+    if (!record || !record.is_half_day) return '';
+    const notes = (record.notes || '').toLowerCase();
+    if (notes.includes('gps') || notes.includes('location')) {
+      return 'Location Off';
+    }
+    return 'Late Punch In';
+  };
+
   const handleExportExcel = () => {
     exportDataToExcel(report, start, end);
   };
@@ -588,6 +597,82 @@ function AttendancePage() {
                   </div>
                   <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Aggregating Data...</span>
                 </div>
+              ) : showRaw ? (
+                !rawRecords || rawRecords.length === 0 ? (
+                  <div className="p-16 text-center flex flex-col items-center justify-center bg-slate-50/50 m-6 rounded-2xl border border-dashed border-slate-200">
+                    <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No deep logs found</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/50 border-b border-slate-100">
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Date &amp; Time</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">User Identity</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Designation</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Punch Type</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Delay Time</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Status / Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {Array.isArray(rawRecords) && rawRecords.map((r, i) => (
+                          <tr key={r.id || i} className="hover:bg-indigo-50/30 transition-colors group">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.created_at}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-600 transition-colors">
+                                  <span className="text-indigo-600 font-bold group-hover:text-white transition-colors">
+                                    {(r.user_name?.[0] || 'U').toUpperCase()}
+                                  </span>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-bold text-slate-900">{r.user_name}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                                {r.user_role || 'Personnel'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2.5 py-1 text-xs font-extrabold uppercase rounded-lg ${
+                                r.type === 'in' || r.type === 'punch_in' 
+                                  ? 'bg-emerald-100 text-emerald-700' 
+                                  : 'bg-rose-100 text-rose-700'
+                              }`}>
+                                {r.type === 'in' || r.type === 'punch_in' ? 'PUNCH IN' : 'PUNCH OUT'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.delay_time || '-'}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  {r.is_half_day ? (
+                                    <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200">
+                                      Half Day ({getHalfDayReason(r)})
+                                    </span>
+                                  ) : (
+                                    <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+                                      Full Day
+                                    </span>
+                                  )}
+                                </div>
+                                {r.notes && (
+                                  <span className="text-xs text-slate-500 italic max-w-xs truncate" title={r.notes}>
+                                    {r.notes}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
               ) : !report || report.length === 0 ? (
                 <div className="p-16 text-center flex flex-col items-center justify-center bg-slate-50/50 m-6 rounded-2xl border border-dashed border-slate-200">
                   <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
@@ -640,8 +725,8 @@ function AttendancePage() {
                                 {r.status ?? 'Absent'}
                               </span>
                               {r.is_half_day && (
-                                <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200">
-                                  Half Day
+                                <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200" title={r.notes || ''}>
+                                  Half Day ({getHalfDayReason(r)})
                                 </span>
                               )}
                               {r.delay_time && (

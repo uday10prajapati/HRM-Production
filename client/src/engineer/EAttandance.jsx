@@ -14,6 +14,15 @@ const EAttandance = () => {
     const [history, setHistory] = useState([]);
     const [delayMessage, setDelayMessage] = useState('');
 
+    const getHalfDayReason = (record) => {
+        if (!record || !record.is_half_day) return '';
+        const notes = (record.notes || '').toLowerCase();
+        if (notes.includes('gps') || notes.includes('location')) {
+            return 'Location Off';
+        }
+        return 'Late Punch In';
+    };
+
     // Missed punch modal state
     const [showMissedPunch, setShowMissedPunch] = useState(false);
     const [missedForm, setMissedForm] = useState({ date: '', time: '', type: 'in', reason: '' });
@@ -94,7 +103,7 @@ const EAttandance = () => {
 
     const fetchResolvedCalls = async (userId) => {
         try {
-            const res = await axios.get('/api/service-calls/assigned-calls');
+            const res = await axios.get(`/api/service-calls/assigned-calls?t=${Date.now()}`);
             if (res.data.success) {
                 // Calculate DDMMYY/sequence for ALL calls before filtering to ensure ID consistency with Dashboard
                 const sorted = [...res.data.calls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -498,7 +507,7 @@ const EAttandance = () => {
                 type: currentType, // backend uses both slightly interchangably
                 latitude: coordinates.coords.latitude,
                 longitude: coordinates.coords.longitude,
-                notes: 'Mobile App Punch',
+                notes: isHalfDay ? 'Mobile App Punch [System: Late Punch-In after 12:00 PM]' : 'Mobile App Punch',
                 delay_time: computedDelay,
                 is_half_day: isHalfDay
             };
@@ -699,7 +708,7 @@ const EAttandance = () => {
                                                     </span>
                                                     {record.is_half_day && (
                                                         <span className="px-2 py-0.5 rounded-md text-[10px] bg-orange-100 text-orange-700 font-extrabold uppercase tracking-wide">
-                                                            Half Day
+                                                            Half Day ({getHalfDayReason(record)})
                                                         </span>
                                                     )}
                                                     <span className="text-xs text-gray-400 font-bold">{record.created_at.split(' ')[0]}</span>

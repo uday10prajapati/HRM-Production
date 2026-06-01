@@ -68,6 +68,9 @@ const getNextSequenceNumber = async (baseId, callType, engineerId = null) => {
 
 // Add route for assigned calls
 router.get('/assigned-calls', requireAuth, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     const query = `
       SELECT ac.*, sdl."TALUKANAME" as taluka_name 

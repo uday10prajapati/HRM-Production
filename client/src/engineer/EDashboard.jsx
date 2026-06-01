@@ -30,7 +30,7 @@ const EDashboard = () => {
     const fetchCalls = async () => {
         if (!user.id) return;
         try {
-            const res = await axios.get('/api/service-calls/assigned-calls');
+            const res = await axios.get(`/api/service-calls/assigned-calls?t=${Date.now()}`);
             if (res.data.success) {
                 // Filter calls assigned to THIS engineer
                 const engineerCalls = res.data.calls.filter(call => {
