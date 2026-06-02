@@ -419,6 +419,28 @@ router.get('/notifications/count', async (req, res) => {
   }
 });
 
+// PUT /api/leave/notifications/clear-all - Mark all notifications as read for current user
+router.put('/notifications/clear-all', async (req, res) => {
+  try {
+    const userId = req.header('x-user-id') || null;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Missing X-User-Id' });
+    }
+
+    await pool.query(
+      `UPDATE notifications 
+       SET is_read = TRUE, read_at = NOW()
+       WHERE recipient_id::text = $1 AND is_read = FALSE`,
+      [String(userId)]
+    );
+
+    res.json({ success: true, message: 'All notifications marked as read' });
+  } catch (err) {
+    console.error('Error clearing all notifications:', err?.message || err);
+    res.status(500).json({ success: false, message: 'Error clearing notifications', error: err?.message || String(err) });
+  }
+});
+
 // PUT /api/leave/notifications/:id/read - Mark notification as read
 router.put('/notifications/:id/read', async (req, res) => {
   try {

@@ -103,6 +103,59 @@ const Navbar = () => {
     }
   };
 
+  // Clear all notifications
+  const clearAllNotifications = async (e) => {
+    if (e) e.stopPropagation();
+    try {
+      const userId = getCurrentUserId();
+      if (!userId) return;
+
+      await axios.put('/api/leave/notifications/clear-all', {}, {
+        headers: { 'x-user-id': userId }
+      });
+
+      // Refresh notifications
+      fetchNotifications();
+      fetchDetailedNotifications();
+    } catch (err) {
+      console.warn('Error clearing all notifications:', err?.message || err);
+    }
+  };
+
+  // Handle clicking on a notification
+  const handleNotificationClick = async (notif) => {
+    try {
+      await markAsRead(notif.id);
+      
+      const isLeave = 
+        notif.notification_type?.toLowerCase().includes('leave') ||
+        notif.title?.toLowerCase().includes('leave') ||
+        notif.message?.toLowerCase().includes('leave');
+        
+      if (isLeave) {
+        let userRole = null;
+        try {
+          const raw = localStorage.getItem('user');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            userRole = parsed?.role ? parsed.role.toString().toLowerCase() : null;
+          }
+        } catch (e) {
+          console.warn('Failed to parse role in notification click:', e);
+        }
+
+        if (userRole === 'engineer') {
+          navigate('/engineer-leave');
+        } else {
+          navigate('/leave-management');
+        }
+        setIsNotificationOpen(false);
+      }
+    } catch (err) {
+      console.warn('Error handling notification click:', err);
+    }
+  };
+
   // Fetch notifications on mount and set up polling
   useEffect(() => {
     fetchNotifications();
@@ -230,9 +283,19 @@ const Navbar = () => {
                 {/* Notifications Dropdown */}
                 {isNotificationOpen && (
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 max-h-96 overflow-y-auto">
-                    <div className="px-4 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-lg">
-                      <p className="text-sm font-semibold text-gray-900">Notifications</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{unreadCount} unread</p>
+                    <div className="px-4 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-lg flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{unreadCount} unread</p>
+                      </div>
+                      {unreadCount > 0 && (
+                        <button 
+                          onClick={clearAllNotifications}
+                          className="text-xs font-semibold text-orange-500 hover:text-orange-600 hover:underline transition-colors focus:outline-none"
+                        >
+                          Clear All
+                        </button>
+                      )}
                     </div>
                     
                     {notifications && notifications.length > 0 ? (
@@ -241,7 +304,7 @@ const Navbar = () => {
                           <div 
                             key={notif.id}
                             className="px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => markAsRead(notif.id)}
+                            onClick={() => handleNotificationClick(notif)}
                           >
                             <p className="text-sm font-medium text-gray-800">{notif.title}</p>
                             <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
