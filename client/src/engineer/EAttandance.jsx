@@ -479,15 +479,24 @@ const EAttandance = () => {
                 toast.info("Acquiring GPS Location...", { autoClose: 2000 });
                 coordinates = await Geolocation.getCurrentPosition({
                     enableHighAccuracy: true,
-                    timeout: 8000,
+                    timeout: 10000,
                     maximumAge: 10000
                 });
             } catch (gpsError) {
-                console.error("GPS Acquisition failed:", gpsError);
-                alert("📍 [GPS / LOCATION SERVICES REQUIRED]\n\nYour phone GPS or Location Services are turned OFF!\n\nPlease enable Location/GPS in your device settings to punch in/out.");
-                toast.error("Please turn on your phone GPS to continue!");
-                setLoading(false);
-                return;
+                console.warn("High accuracy GPS failed, trying fallback coarse location...", gpsError);
+                try {
+                    coordinates = await Geolocation.getCurrentPosition({
+                        enableHighAccuracy: false,
+                        timeout: 10000,
+                        maximumAge: 10000
+                    });
+                } catch (fallbackError) {
+                    console.error("GPS Acquisition completely failed:", fallbackError);
+                    alert("📍 [GPS / LOCATION SERVICES REQUIRED]\n\nYour phone GPS or Location Services are turned OFF!\n\nPlease enable Location/GPS in your device settings to punch in/out.");
+                    toast.error("Please turn on your phone GPS to continue!");
+                    setLoading(false);
+                    return;
+                }
             }
 
             const currentType = punchState; // 'in' or 'out'

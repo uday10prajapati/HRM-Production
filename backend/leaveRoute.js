@@ -289,87 +289,6 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// PUT /api/leave/:id/approve
-router.put('/:id/approve', async (req, res) => {
-  const { id } = req.params;
-  const client = await pool.connect();
-  try {
-    // check requester role
-    const requester = req.header('x-user-id') || null;
-    if (!requester) {
-      client.release();
-      return res.status(403).json({ success: false, message: 'Missing X-User-Id' });
-    }
-    const ru = await client.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
-    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
-    if (role !== 'admin' && role !== 'hr') {
-      client.release();
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    await client.query('BEGIN');
-    // Ensure we only approve a pending leave (prevent double deduction)
-    const result = await client.query(`UPDATE leaves SET status='approved', updated_at=NOW(), approved_by=$2, approved_at=NOW() WHERE id::text=$1 AND status != 'approved' RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id), String(requester)]);
-
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
-      client.release();
-      return res.status(404).json({ success: false, message: 'Leave not found or already approved' });
-    }
-    const leave = result.rows[0];
-
-    // Calculate duration to deduct
-    const s = new Date(leave.start_date);
-    const e = new Date(leave.end_date);
-    const diffTime = Math.abs(e - s);
-    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    if (diffDays === 1 && leave.day_type === 'half') {
-      diffDays = 0.5;
-    }
-
-    // Deduct from user balance
-    await client.query(`UPDATE users SET leave_balance = COALESCE(leave_balance, 20) - $1 WHERE id=$2`, [diffDays, leave.user_id]);
-
-    await client.query('COMMIT');
-
-    try {
-      const u = await pool.query(`SELECT id, name, email FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
-      leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
-    } catch (e) { }
-
-    client.release();
-    res.json({ success: true, leave });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    client.release();
-    console.error('Error approving leave:', err?.message || err, err?.stack || 'no stack');
-    res.status(500).json({ success: false, message: 'Error approving leave', error: err?.message || String(err) });
-  }
-});
-
-// PUT /api/leave/:id/reject
-router.put('/:id/reject', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const requester = req.header('x-user-id') || null;
-    if (!requester) return res.status(403).json({ success: false, message: 'Missing X-User-Id' });
-    const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
-    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
-    if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
-    const result = await pool.query(`UPDATE leaves SET status='rejected', updated_at=NOW() WHERE id::text=$1 RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id)]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
-    const leave = result.rows[0];
-    try {
-      const u = await pool.query(`SELECT id, name, email FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
-      leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
-    } catch (e) { }
-    res.json({ success: true, leave });
-  } catch (err) {
-    console.error('Error rejecting leave:', err?.message || err, err?.stack || 'no stack');
-    res.status(500).json({ success: false, message: 'Error rejecting leave', error: err?.message || String(err) });
-  }
-});
-
 // Notification endpoints
 
 // GET /api/leave/notifications/unread - Get unread notifications for current user
@@ -466,6 +385,87 @@ router.put('/notifications/:id/read', async (req, res) => {
   } catch (err) {
     console.error('Error marking notification as read:', err?.message || err);
     res.status(500).json({ success: false, message: 'Error updating notification', error: err?.message || String(err) });
+  }
+});
+
+// PUT /api/leave/:id/approve
+router.put('/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    // check requester role
+    const requester = req.header('x-user-id') || null;
+    if (!requester) {
+      client.release();
+      return res.status(403).json({ success: false, message: 'Missing X-User-Id' });
+    }
+    const ru = await client.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
+    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
+    if (role !== 'admin' && role !== 'hr') {
+      client.release();
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    await client.query('BEGIN');
+    // Ensure we only approve a pending leave (prevent double deduction)
+    const result = await client.query(`UPDATE leaves SET status='approved', updated_at=NOW(), approved_by=$2, approved_at=NOW() WHERE id::text=$1 AND status != 'approved' RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id), String(requester)]);
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(404).json({ success: false, message: 'Leave not found or already approved' });
+    }
+    const leave = result.rows[0];
+
+    // Calculate duration to deduct
+    const s = new Date(leave.start_date);
+    const e = new Date(leave.end_date);
+    const diffTime = Math.abs(e - s);
+    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays === 1 && leave.day_type === 'half') {
+      diffDays = 0.5;
+    }
+
+    // Deduct from user balance
+    await client.query(`UPDATE users SET leave_balance = COALESCE(leave_balance, 20) - $1 WHERE id=$2`, [diffDays, leave.user_id]);
+
+    await client.query('COMMIT');
+
+    try {
+      const u = await pool.query(`SELECT id, name, email FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
+      leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
+    } catch (e) { }
+
+    client.release();
+    res.json({ success: true, leave });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    client.release();
+    console.error('Error approving leave:', err?.message || err, err?.stack || 'no stack');
+    res.status(500).json({ success: false, message: 'Error approving leave', error: err?.message || String(err) });
+  }
+});
+
+// PUT /api/leave/:id/reject
+router.put('/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const requester = req.header('x-user-id') || null;
+    if (!requester) return res.status(403).json({ success: false, message: 'Missing X-User-Id' });
+    const ru = await pool.query('SELECT role FROM users WHERE id::text=$1 LIMIT 1', [String(requester)]);
+    const role = ru.rows && ru.rows[0] ? (ru.rows[0].role || '').toLowerCase() : null;
+    if (role !== 'admin' && role !== 'hr') return res.status(403).json({ success: false, message: 'Forbidden' });
+    const result = await pool.query(`UPDATE leaves SET status='rejected', updated_at=NOW() WHERE id::text=$1 RETURNING id, user_id, type, day_type, reason, status, start_date, end_date, applied_at, approved_by, approved_at`, [String(id)]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Leave not found' });
+    const leave = result.rows[0];
+    try {
+      const u = await pool.query(`SELECT id, name, email FROM users WHERE id=$1 LIMIT 1`, [leave.user_id]);
+      leave.user = u.rows && u.rows[0] ? u.rows[0] : null;
+    } catch (e) { }
+    res.json({ success: true, leave });
+  } catch (err) {
+    console.error('Error rejecting leave:', err?.message || err, err?.stack || 'no stack');
+    res.status(500).json({ success: false, message: 'Error rejecting leave', error: err?.message || String(err) });
   }
 });
 
