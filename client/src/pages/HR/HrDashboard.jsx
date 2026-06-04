@@ -460,23 +460,23 @@ const HrDashboard = () => {
                 </div>
               </div>
 
-              {/* User Management Module */}
+              {/* Attendance Module */}
               <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-all group">
                 <div className="flex items-center mb-4">
-                  <div className="p-3 bg-green-50 rounded-lg group-hover:scale-110 transition-transform">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  <div className="p-3 bg-emerald-50 rounded-lg group-hover:scale-110 transition-transform">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <h3 className="ml-4 text-lg font-semibold text-gray-900">User Management</h3>
+                  <h3 className="ml-4 text-lg font-semibold text-gray-900">Attendance</h3>
                 </div>
-                <p className="text-sm text-gray-600 mb-4">Create, edit, and manage employee profiles and access.</p>
+                <p className="text-sm text-gray-600 mb-4">Monitor daily presence, download reports, and resolve punch requests.</p>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => navigate('/all-users')}
-                    className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => navigate('/attendance')}
+                    className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium"
                   >
-                    Manage Employees
+                    Manage Attendance
                   </button>
                 </div>
               </div>
