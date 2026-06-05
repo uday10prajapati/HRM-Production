@@ -11,9 +11,16 @@ import * as XLSX from 'xlsx';
 function AttendancePage() {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const [report, setReport] = useState({});
+  const [report, setReport] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  // Redesign: Search, filter & view state
+  const [viewType, setViewType] = useState('table'); // 'card' or 'table'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [logRoleFilter, setLogRoleFilter] = useState('');
 
   const navigate = useNavigate();
 
@@ -436,8 +443,21 @@ function AttendancePage() {
     return 'Late Punch In';
   };
 
+  const filteredReport = (report || []).filter(r => {
+    const matchesSearch = (r.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesRole = roleFilter ? (r.role || 'Personnel') === roleFilter : true;
+    return matchesSearch && matchesRole;
+  });
+
+  const filteredRawRecords = (rawRecords || []).filter(r => {
+    const matchesSearch = (r.user_name || '').toLowerCase().includes(logSearchTerm.toLowerCase()) || 
+                          (r.created_at || '').toLowerCase().includes(logSearchTerm.toLowerCase());
+    const matchesRole = logRoleFilter ? (r.user_role || 'Personnel') === logRoleFilter : true;
+    return matchesSearch && matchesRole;
+  });
+
   const handleExportExcel = () => {
-    exportDataToExcel(report, start, end);
+    exportDataToExcel(filteredReport, start, end);
   };
 
   return (
@@ -576,16 +596,101 @@ function AttendancePage() {
               <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                   <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                  Attendance Summary
+                  {showRaw ? 'Attendance Deep Logs' : 'Attendance Summary'}
                 </h2>
-                <button
-                  onClick={() => { setShowRaw(v => !v); if (!showRaw) fetchRawRecords(); }}
-                  className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 rounded-lg text-slate-600 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                  {showRaw ? 'Hide Logs' : 'View Deep Logs'}
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  {!showRaw && (
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <button
+                        onClick={() => setViewType('card')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${viewType === 'card' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Cards View
+                      </button>
+                      <button
+                        onClick={() => setViewType('table')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${viewType === 'table' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Table View
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setShowRaw(v => !v); if (!showRaw) fetchRawRecords(); }}
+                    className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 rounded-lg text-slate-600 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    {showRaw ? 'Hide Logs' : 'View Deep Logs'}
+                  </button>
+                </div>
               </div>
+
+              {/* Dynamic Search & Filter Controls */}
+              {!loading && (
+                showRaw ? (
+                  rawRecords && rawRecords.length > 0 && (
+                    <div className="px-6 py-4 bg-slate-50/30 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center">
+                      <div className="relative flex-1 w-full">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Search logs by name or date..."
+                          value={logSearchTerm}
+                          onChange={(e) => setLogSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                        />
+                      </div>
+                      <div className="w-full sm:w-48">
+                        <select
+                          value={logRoleFilter}
+                          onChange={(e) => setLogRoleFilter(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                        >
+                          <option value="">All Roles</option>
+                          {Array.from(new Set((rawRecords || []).map(r => r.user_role || 'Personnel'))).map(role => (
+                            <option key={role} value={role}>{role}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  report && report.length > 0 && (
+                    <div className="px-6 py-4 bg-slate-50/30 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center">
+                      <div className="relative flex-1 w-full">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Search personnel by name..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                        />
+                      </div>
+                      <div className="w-full sm:w-48">
+                        <select
+                          value={roleFilter}
+                          onChange={(e) => setRoleFilter(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 text-sm font-medium text-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                        >
+                          <option value="">All Roles</option>
+                          {Array.from(new Set((report || []).map(r => r.role || 'Personnel'))).map(role => (
+                            <option key={role} value={role}>{role}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )
+                )
+              )}
 
               {loading ? (
                 <div className="p-16 text-center flex flex-col items-center justify-center">
@@ -603,6 +708,11 @@ function AttendancePage() {
                     <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No deep logs found</p>
                   </div>
+                ) : filteredRawRecords.length === 0 ? (
+                  <div className="p-16 text-center flex flex-col items-center justify-center bg-slate-50/50 m-6 rounded-2xl border border-dashed border-slate-200">
+                    <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No deep logs match your search filter</p>
+                  </div>
                 ) : (
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse">
@@ -617,7 +727,7 @@ function AttendancePage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {Array.isArray(rawRecords) && rawRecords.map((r, i) => (
+                        {filteredRawRecords.map((r, i) => (
                           <tr key={r.id || i} className="hover:bg-indigo-50/30 transition-colors group">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.created_at}</td>
                             <td className="px-6 py-4 whitespace-nowrap">
@@ -678,59 +788,175 @@ function AttendancePage() {
                   <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                   <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No attendance records found</p>
                 </div>
+              ) : filteredReport.length === 0 ? (
+                <div className="p-16 text-center flex flex-col items-center justify-center bg-slate-50/50 m-6 rounded-2xl border border-dashed border-slate-200">
+                  <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No attendance records match your search filter</p>
+                </div>
+              ) : viewType === 'card' ? (
+                /* REDESIGNED CARD GRID (SCROLL-FREE, RESPONSIVE WRAPPING) */
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-6 bg-slate-50/30">
+                  {filteredReport.map((r, i) => (
+                    <div key={r.user_id || i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-300 flex flex-col justify-between group relative overflow-hidden">
+                      {/* Top Section: User Avatar & Status */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-11 w-11 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-extrabold shadow-sm shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-300">
+                            {(r.name?.[0] || 'U').toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors duration-300 truncate" title={r.name}>{r.name}</h3>
+                            <p className="text-xs font-semibold text-slate-400 mt-0.5 truncate" title={r.role}>{r.role || 'Personnel'}</p>
+                          </div>
+                        </div>
+                        
+                        {/* Status Badge */}
+                        <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-lg border whitespace-nowrap ${
+                          r.status === 'Present'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm shadow-emerald-100/50'
+                            : 'bg-slate-50 text-slate-400 border-slate-200'
+                        }`}>
+                          {r.status ?? 'Absent'}
+                        </span>
+                      </div>
+
+                      {/* Stats Divider Line */}
+                      <div className="border-t border-slate-100 my-2" />
+
+                      {/* Metrics Row (Work & Leave Days) */}
+                      <div className="grid grid-cols-2 gap-3 my-2">
+                        <div className="bg-slate-50/50 p-2 rounded-xl border border-slate-100/60 text-center">
+                          <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Work Days</span>
+                          <span className="text-sm font-extrabold text-slate-700">{r.worked_days ?? 0}</span>
+                        </div>
+                        <div className="bg-slate-50/50 p-2 rounded-xl border border-slate-100/60 text-center">
+                          <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Leave Days</span>
+                          <span className="text-sm font-extrabold text-slate-700">{r.leave_days ?? 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Punch Info */}
+                      <div className="bg-slate-50/30 rounded-xl p-2.5 border border-slate-100/60 space-y-1.5 mt-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-400 flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Punch In
+                          </span>
+                          <span className="font-bold text-slate-700">{r.punch_in ?? '-'}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-400 flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                            Punch Out
+                          </span>
+                          <span className="font-bold text-slate-700">{r.punch_out ?? '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Alerts/Badges Footer (Delay, Half-day) */}
+                      {(r.is_half_day || r.delay_time) && (
+                        <div className="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-dashed border-slate-100">
+                          {r.is_half_day && (
+                            <span className="px-2 py-0.5 text-[9px] font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200 flex items-center gap-1 max-w-full truncate" title={`Half Day (${getHalfDayReason(r)})`}>
+                              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              Half Day ({getHalfDayReason(r)})
+                            </span>
+                          )}
+                          {r.delay_time && (
+                            <span className="px-2 py-0.5 text-[9px] font-bold rounded-lg border bg-rose-50 text-rose-600 border-rose-200 flex items-center gap-1 max-w-full truncate" title={r.delay_time}>
+                              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {r.delay_time}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <div className="overflow-x-auto custom-scrollbar">
-                  <table className="w-full text-left border-collapse">
+                /* REDESIGNED TABLE VIEW (SCROLL-FREE, COMPACT & CLEAN) */
+                <div className="w-full overflow-x-auto md:overflow-hidden custom-scrollbar">
+                  <table className="w-full text-left border-collapse table-auto">
                     <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-100">
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">User Identity</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Designation</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Work Days</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Leave Days</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Punch In</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Punch Out</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                      <tr className="bg-slate-50/70 border-b border-slate-100">
+                        <th className="px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-wider min-w-[200px]">Employee Details</th>
+                        <th className="px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">Worked / Leaves</th>
+                        <th className="px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Today's Punches</th>
+                        <th className="px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Status &amp; Exception</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {Array.isArray(report) && report.map((r, i) => (
-                        <tr key={r.user_id || i} className="hover:bg-indigo-50/30 transition-colors group">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-600 transition-colors">
-                                <span className="text-indigo-600 font-bold group-hover:text-white transition-colors">
-                                  {(r.name?.[0] || 'U').toUpperCase()}
-                                </span>
+                      {filteredReport.map((r, i) => (
+                        <tr key={r.user_id || i} className="hover:bg-indigo-50/20 transition-colors group">
+                          {/* Column 1: Employee Details */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-extrabold shadow-sm group-hover:scale-105 transition-transform duration-300">
+                                {(r.name?.[0] || 'U').toUpperCase()}
                               </div>
-                              <div>
-                                <div className="text-sm font-bold text-slate-900">{r.name}</div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors duration-300 truncate max-w-[150px]" title={r.name}>{r.name}</div>
+                                <div className="text-[10px] font-semibold text-slate-400 mt-0.5 uppercase tracking-wide truncate max-w-[150px]" title={r.role}>{r.role || 'Personnel'}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                              {r.role || 'Personnel'}
-                            </span>
+
+                          {/* Column 2: Worked / Leaves */}
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <div className="inline-flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100">
+                              <div className="text-xs font-extrabold text-slate-700">
+                                {r.worked_days ?? 0} <span className="text-[10px] text-slate-400 font-semibold">W</span>
+                              </div>
+                              <div className="h-3 w-[1px] bg-slate-200" />
+                              <div className="text-xs font-extrabold text-rose-600">
+                                {r.leave_days ?? 0} <span className="text-[10px] text-slate-400 font-semibold">L</span>
+                              </div>
+                            </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.worked_days ?? 0}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.leave_days ?? 0}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.punch_in ?? '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-700">{r.punch_out ?? '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border ${r.status === 'Present'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-50 text-slate-600 border-slate-200'
-                                }`}>
+
+                          {/* Column 3: Today's Punches */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="space-y-1">
+                              <div className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                                <span className="text-slate-400 font-medium">In:</span>
+                                <span className="font-bold text-slate-700">{r.punch_in ?? '-'}</span>
+                              </div>
+                              <div className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 flex-shrink-0" />
+                                <span className="text-slate-400 font-medium">Out:</span>
+                                <span className="font-bold text-slate-700">{r.punch_out ?? '-'}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Column 4: Status & Exception */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-lg border ${
+                                r.status === 'Present'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-50 text-slate-400 border-slate-200'
+                              }`}>
                                 {r.status ?? 'Absent'}
                               </span>
                               {r.is_half_day && (
-                                <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200" title={r.notes || ''}>
+                                <span className="px-2 py-0.5 text-[9px] font-bold rounded-lg border bg-orange-50 text-orange-700 border-orange-200 flex items-center gap-1 max-w-[130px] truncate" title={`Half Day (${getHalfDayReason(r)})`}>
+                                  <svg className="w-2.5 h-2.5 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
                                   Half Day ({getHalfDayReason(r)})
                                 </span>
                               )}
                               {r.delay_time && (
-                                <span className="px-3 py-1 inline-flex text-[10px] leading-5 font-bold rounded-lg border bg-red-50 text-red-600 border-red-200 truncate max-w-[120px]" title={r.delay_time}>
+                                <span className="px-2 py-0.5 text-[9px] font-bold rounded-lg border bg-rose-50 text-rose-600 border-rose-200 flex items-center gap-1 max-w-[130px] truncate" title={r.delay_time}>
+                                  <svg className="w-2.5 h-2.5 text-rose-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
                                   {r.delay_time}
                                 </span>
                               )}
