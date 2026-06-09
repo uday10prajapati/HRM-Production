@@ -21,25 +21,88 @@ const punchOutIcon = new L.Icon({
     popupAnchor: [1, -34],
 });
 
+const currentIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+});
+
 const LocationName = ({ lat, lon }) => {
     const [addr, setAddr] = useState(null);
     const [loading, setLoading] = useState(false);
+
+    const formatAddress = (data) => {
+        if (!data) return 'Unknown Area';
+        const addrObj = data.address || {};
+        const parts = [];
+        
+        // Pick specific fields first for detail
+        if (addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic) {
+            parts.push(addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic);
+        }
+        if (addrObj.house_number) {
+            parts.push(addrObj.house_number);
+        }
+        if (addrObj.road) {
+            parts.push(addrObj.road);
+        }
+        if (addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet) {
+            parts.push(addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet);
+        }
+        if (addrObj.village || addrObj.town || addrObj.city_district || addrObj.city) {
+            parts.push(addrObj.village || addrObj.town || addrObj.city_district || addrObj.city);
+        }
+        if (addrObj.county) {
+            parts.push(addrObj.county);
+        }
+        if (addrObj.state_district) {
+            parts.push(addrObj.state_district);
+        }
+        if (addrObj.state) {
+            parts.push(addrObj.state);
+        }
+        
+        if (parts.length < 2) {
+            // Fallback to display name if details aren't populated (filtering out Zip and India)
+            return data.display_name?.split(', ').filter(p => p !== 'India' && !/^\d{6}$/.test(p)).slice(0, 5).join(', ') || 'Unknown Area';
+        }
+        
+        // Deduplicate array elements
+        const uniqueParts = [...new Set(parts.map(p => p.trim()))];
+        return uniqueParts.join(', ');
+    };
 
     const fetchPlace = async () => {
         setLoading(true);
         try {
             const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-            setAddr(res.data?.display_name?.split(', ').slice(0, 3).join(', ') || 'Unknown Area');
+            setAddr(formatAddress(res.data));
         } catch (e) {
             setAddr('Address unavailable');
         }
         setLoading(false);
     };
 
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+
     if (addr) return (
-        <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-100 p-2.5 rounded-lg border border-slate-200 flex items-start gap-2 shadow-sm text-left animate-[fadeIn_0.3s_ease-out]">
-            <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            <span>{addr}</span>
+        <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-100 p-2.5 rounded-lg border border-slate-200 flex flex-col gap-2 shadow-sm text-left animate-[fadeIn_0.3s_ease-out]">
+            <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <span>{addr}</span>
+            </div>
+            <a 
+                href={googleMapsUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider mt-1 w-fit border-b border-dashed border-indigo-400 hover:border-indigo-600 pb-0.5"
+            >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                View on Google Maps
+            </a>
         </div>
     );
 
@@ -58,6 +121,7 @@ export default function MapView() {
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [timelineData, setTimelineData] = useState([]);
     const [mapKey, setMapKey] = useState(0);
+    const [mapStyle, setMapStyle] = useState('satellite'); // default to satellite
 
     const fetchEngineers = async () => {
         try {
@@ -122,11 +186,19 @@ export default function MapView() {
 
     const startPoint = timelineData.find((p) => p.point_type === 'START');
     const endPoint = timelineData.find((p) => p.point_type === 'END');
+    const currentPoint = timelineData.length > 0 ? timelineData[timelineData.length - 1] : null;
+    const isSelectedDateToday = selectedDate.toDateString() === new Date().toDateString();
+
+    const showCurrentPoint = currentPoint && 
+        (!startPoint || startPoint.updated_at !== currentPoint.updated_at) &&
+        (!endPoint || endPoint.updated_at !== currentPoint.updated_at);
 
     // Draw full route (all points, including movement)
     const path = timelineData.map((p) => [p.latitude, p.longitude]);
 
-    const mapCenter = startPoint
+    const mapCenter = currentPoint
+        ? [currentPoint.latitude, currentPoint.longitude]
+        : startPoint
         ? [startPoint.latitude, startPoint.longitude]
         : [21.1702, 72.8311]; // Default center (Surat)
 
@@ -263,7 +335,32 @@ export default function MapView() {
                                     </div>
                                 </div>
 
-                                <div className="h-[600px] relative bg-slate-100">
+                                <div className="h-[600px] relative bg-slate-100 rounded-3xl overflow-hidden">
+                                    {/* Map Style Toggle */}
+                                    <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMapStyle('satellite')}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                                                mapStyle === 'satellite'
+                                                    ? 'bg-indigo-600 text-white shadow-md'
+                                                    : 'text-slate-600 hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            Satellite
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMapStyle('streets')}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                                                mapStyle === 'streets'
+                                                    ? 'bg-indigo-600 text-white shadow-md'
+                                                    : 'text-slate-600 hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            Streets
+                                        </button>
+                                    </div>
                                     {timelineData.length === 0 && (
                                         <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-slate-900/10 backdrop-blur-sm">
                                             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 text-center max-w-sm animate-[fadeIn_0.2s_ease-out]">
@@ -278,14 +375,21 @@ export default function MapView() {
                                         </div>
                                     )}
                                     <MapContainer key={mapKey} center={mapCenter} zoom={14} style={{ height: '100%', width: '100%', zIndex: 10 }}>
-                                        <TileLayer
-                                            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                                        />
+                                        {mapStyle === 'satellite' ? (
+                                            <TileLayer
+                                                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                                attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+                                            />
+                                        ) : (
+                                            <TileLayer
+                                                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                            />
+                                        )}
 
                                         {/* Draw user's route */}
                                         {path.length > 1 && (
-                                            <Polyline positions={path} color="#4f46e5" weight={4} opacity={0.8} />
+                                            <Polyline positions={path} color={mapStyle === 'satellite' ? '#eab308' : '#4f46e5'} weight={4} opacity={0.8} />
                                         )}
 
                                         {/* Punch In (START) */}
@@ -313,7 +417,21 @@ export default function MapView() {
                                                 </Popup>
                                             </Marker>
                                         )}
-                                    </MapContainer>
+                                                                             {/* Current / Live Location */}
+                                         {showCurrentPoint && (
+                                             <Marker position={[currentPoint.latitude, currentPoint.longitude]} icon={currentIcon}>
+                                                 <Popup className="custom-popup">
+                                                     <div className="text-center font-sans min-w-[160px]">
+                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">
+                                                             {isSelectedDateToday ? "Current / Live Location" : "Last Known Location"}
+                                                         </p>
+                                                         <p className="text-xs font-semibold text-slate-700">{currentPoint.updated_at}</p>
+                                                         <LocationName lat={currentPoint.latitude} lon={currentPoint.longitude} />
+                                                     </div>
+                                                 </Popup>
+                                             </Marker>
+                                         )}
+                                     </MapContainer>
                                 </div>
                             </div>
                         )}
