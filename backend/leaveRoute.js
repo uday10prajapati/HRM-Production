@@ -233,7 +233,7 @@ router.get('/', async (req, res) => {
       to_char(l.approved_at, 'YYYY-MM-DD HH24:MI:SS') AS approved_at,
       u.name as user_name, u.email as user_email
     FROM leaves l
-    LEFT JOIN users u ON u.id::text = l.user_id::text
+    JOIN users u ON u.id::text = l.user_id::text AND u.is_active IS NOT FALSE
     ${where}
     ORDER BY COALESCE(l.created_at, now()) DESC`;
     console.log('leave list SQL (preview):', { sqlWhere: where, params });
@@ -278,7 +278,7 @@ router.get('/all', async (req, res) => {
       to_char(l.approved_at, 'YYYY-MM-DD HH24:MI:SS') AS approved_at,
       u.name as user_name, u.email as user_email
     FROM leaves l
-    LEFT JOIN users u ON u.id::text = l.user_id::text
+    JOIN users u ON u.id::text = l.user_id::text AND u.is_active IS NOT FALSE
     ORDER BY COALESCE(l.created_at, now()) DESC`;
 
     const result = await pool.query(query);

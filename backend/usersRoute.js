@@ -77,6 +77,8 @@ const router = express.Router();
 // GET all users
 router.get("/", async (req, res) => {
   try {
+    const includeInactive = req.query.includeInactive === "true";
+    const whereClause = includeInactive ? "" : "WHERE u.is_active IS NOT FALSE";
     const result = await pool.query(`
       SELECT 
         u.id AS id,
@@ -106,7 +108,8 @@ router.get("/", async (req, res) => {
           '[]'
         ) AS tasks
       FROM users u
-  LEFT JOIN tasks t ON u.id::text = t.user_id::text
+      LEFT JOIN tasks t ON u.id::text = t.user_id::text
+      ${whereClause}
       GROUP BY u.id
       ORDER BY u.id ASC
     `);
@@ -115,9 +118,13 @@ router.get("/", async (req, res) => {
     console.error('GET /api/users query error:', err?.message || err);
     // If tasks or other joined table is missing (e.g., migrations didn't run or extension unavailable),
     // fall back to a simpler users-only query so the frontend can still load a user list.
+    const includeInactive = req.query.includeInactive === "true";
     if (/relation \"tasks\" does not exist/i.test(String(err?.message || '')) || /does not exist/i.test(String(err?.message || ''))) {
       try {
-        const fallback = await pool.query('SELECT id, name, email, role, is_blocked, is_active, leave_balance FROM users ORDER BY id ASC');
+        const fallbackQuery = includeInactive
+          ? 'SELECT id, name, email, role, is_blocked, is_active, leave_balance FROM users ORDER BY id ASC'
+          : 'SELECT id, name, email, role, is_blocked, is_active, leave_balance FROM users WHERE is_active IS NOT FALSE ORDER BY id ASC';
+        const fallback = await pool.query(fallbackQuery);
         return res.json({ success: true, users: fallback.rows });
       } catch (err2) {
         console.error('Fallback users query failed:', err2?.message || err2);

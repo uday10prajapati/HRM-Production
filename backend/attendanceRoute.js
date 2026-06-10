@@ -366,7 +366,7 @@ router.get("/report", async (req, res) => {
         ${whereClause}
         GROUP BY user_id, (created_at AT TIME ZONE 'Asia/Kolkata')::date
       ) per
-  LEFT JOIN users u ON u.id::text = per.user_id::text
+  JOIN users u ON u.id::text = per.user_id::text AND u.is_active IS NOT FALSE
       ORDER BY u.name NULLS LAST, per.user_id, per.day;
     `;
 
@@ -504,6 +504,7 @@ router.get('/summary/all', requireAuth, async (req, res) => {
           AND user_id IS NOT NULL
         GROUP BY user_id
       ) td ON td.user_id = u.id::text
+      WHERE u.is_active IS NOT FALSE
       ORDER BY u.name ASC;
     `;
 
@@ -599,7 +600,7 @@ router.get('/records', requireAuth, async (req, res) => {
                a.delay_time, a.is_half_day,
                to_char(a.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH12:MI:SS AM') AS created_at
   FROM attendance a
-        LEFT JOIN users u ON u.id::text = a.user_id::text
+        JOIN users u ON u.id::text = a.user_id::text AND u.is_active IS NOT FALSE
         WHERE ${where}
         ORDER BY a.created_at DESC
         LIMIT 1000
@@ -728,6 +729,7 @@ router.get('/engineers', requireAuth, async (req, res) => {
         ) as locations
       FROM users u
       WHERE u.role IN ('engineer', 'employee', 'developer')
+        AND u.is_active IS NOT FALSE
       ORDER BY u.name;
     `);
 

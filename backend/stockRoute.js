@@ -510,7 +510,7 @@ router.get('/alerts', async (req, res) => {
 router.get('/overview', async (req, res) => {
   try {
     const items = await pool.query('SELECT * FROM stock_items ORDER BY name');
-    const allocations = await pool.query('SELECT * FROM engineer_stock');
+    const allocations = await pool.query('SELECT es.* FROM engineer_stock es JOIN users u ON u.id::text = es.engineer_id::text AND u.is_active IS NOT FALSE');
     res.json({ items: items.rows, allocations: allocations.rows });
   } catch (err) {
     console.error(err);
@@ -539,7 +539,7 @@ router.get('/deduction-summary', async (req, res) => {
           'assigned_at', es.assigned_at
         )) FILTER (WHERE es.id IS NOT NULL) as engineer_allocations
       FROM stock_items si
-      LEFT JOIN engineer_stock es ON si.id = es.stock_item_id
+      LEFT JOIN engineer_stock es ON si.id = es.stock_item_id AND EXISTS (SELECT 1 FROM users u WHERE u.id::text = es.engineer_id::text AND u.is_active IS NOT FALSE)
       GROUP BY si.name
       ORDER BY si.name
     `);
@@ -688,7 +688,7 @@ router.get('/history-report', async (req, res) => {
         u_a.name as processed_by,
         NULL as note
       FROM stock_assignments sa
-      JOIN users u_e ON u_e.id::text = sa.engineer_id::text
+      JOIN users u_e ON u_e.id::text = sa.engineer_id::text AND u_e.is_active IS NOT FALSE
       JOIN stock_items si ON si.id = sa.stock_item_id
       LEFT JOIN users u_a ON u_a.id::text = sa.assigned_by::text
       ${assignWhere.length > 0 ? 'WHERE ' + assignWhere.join(' AND ') : ''}
@@ -723,7 +723,7 @@ router.get('/history-report', async (req, res) => {
         NULL as processed_by,
         sc.note as note
       FROM stock_consumption sc
-      JOIN users u_e ON u_e.id::text = sc.engineer_id::text
+      JOIN users u_e ON u_e.id::text = sc.engineer_id::text AND u_e.is_active IS NOT FALSE
       JOIN stock_items si ON si.id = sc.stock_item_id
       ${consumeWhere.length > 0 ? 'WHERE ' + consumeWhere.join(' AND ') : ''}
     `;
@@ -895,7 +895,7 @@ router.get('/wastage', async (req, res) => {
     const q = await pool.query(`
       SELECT w.*, u.name as engineer_name, si.name as item_name, si.sku
       FROM wastage_stock w
-      JOIN users u ON u.id::text = w.engineer_id::text
+      JOIN users u ON u.id::text = w.engineer_id::text AND u.is_active IS NOT FALSE
       JOIN stock_items si ON si.id = w.stock_item_id
       ORDER BY w.reported_at DESC
     `);
@@ -1161,7 +1161,7 @@ router.get('/engineers-with-stock', async (req, res) => {
     const result = await pool.query(`
       SELECT DISTINCT u.id, u.name
       FROM users u
-      WHERE u.role = 'engineer'
+      WHERE u.role = 'engineer' AND u.is_active IS NOT FALSE
       ORDER BY u.name
     `);
     

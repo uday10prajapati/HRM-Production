@@ -65,7 +65,7 @@ const AllUsers = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await axios.get("/api/users/");
+      const res = await axios.get("/api/users?includeInactive=true");
       let allUsers = res.data.users || res.data;
 
       if (user && user.role?.toLowerCase() === "hr") {

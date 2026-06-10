@@ -109,7 +109,7 @@ router.get("/", async (req, res) => {
       vals.push(String(userId)); where += ` AND user_id::text = $${vals.length}`;
     }
 
-    const q = `SELECT o.*, u.name AS user_name FROM overtime_records o LEFT JOIN users u ON u.id::text = o.user_id::text ${where} ORDER BY o.date ASC`;
+    const q = `SELECT o.*, u.name AS user_name FROM overtime_records o JOIN users u ON u.id::text = o.user_id::text AND u.is_active IS NOT FALSE ${where} ORDER BY o.date ASC`;
     const result = await pool.query(q, vals);
     return res.json(result.rows);
   } catch (err) {

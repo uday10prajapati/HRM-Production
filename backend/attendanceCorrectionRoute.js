@@ -8,7 +8,7 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, user_id, name, report_text FROM attendance_reports ORDER BY id DESC"
+      "SELECT r.id, r.user_id, r.name, r.report_text FROM attendance_reports r JOIN users u ON u.id::text = r.user_id::text AND u.is_active IS NOT FALSE ORDER BY r.id DESC"
     );
     res.json(result.rows);
   } catch (err) {

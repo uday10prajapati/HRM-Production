@@ -964,7 +964,7 @@ router.get('/payslip-details', async (req, res) => {
             LEFT JOIN payroll_records pr ON u.id = pr.user_id 
                 AND pr.year = p.year 
                 AND pr.month = p.month
-            WHERE u.role != 'admin'
+            WHERE u.role != 'admin' AND u.is_active IS NOT FALSE
             ORDER BY u.name, p.year DESC, p.month DESC
         `);
 
@@ -1207,6 +1207,33 @@ async function generatePayslipForUser(identifier, year, month, opts = { savePdf:
         slip: slip
     };
 }
+
+export async function generatePayslipsForAll(year, month, opts = { savePdf: true }) {
+    const result = await pool.query("SELECT id, name FROM users WHERE role != 'admin' AND is_active IS NOT FALSE");
+    const users = result.rows;
+    let successCount = 0;
+    let failCount = 0;
+    const details = [];
+
+    for (const u of users) {
+        try {
+            await generatePayslipForUser(u.id, year, month, opts);
+            successCount++;
+            details.push({ id: u.id, name: u.name, status: 'success' });
+        } catch (err) {
+            console.error(`Failed to generate payslip for user ${u.name} (${u.id}):`, err);
+            failCount++;
+            details.push({ id: u.id, name: u.name, status: 'failed', error: err.message });
+        }
+    }
+
+    return {
+        success: successCount,
+        failed: failCount,
+        details
+    };
+}
+
 
 
 // Create payslips table if not exists

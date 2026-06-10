@@ -208,7 +208,7 @@ router.get("/assignments", async (req, res) => {
       SELECT sa.*, s.name AS shift_name, s.start_time, s.end_time, u.name AS user_name, u.email
       FROM shift_assignments sa
       JOIN shifts s ON sa.shift_id::text = s.id::text
-      LEFT JOIN users u ON sa.user_id::text = u.id::text
+      JOIN users u ON sa.user_id::text = u.id::text AND u.is_active IS NOT FALSE
       ${whereClause}
       ORDER BY sa.date, sa.user_id;
     `;

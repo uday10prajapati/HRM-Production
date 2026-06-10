@@ -950,7 +950,7 @@ router.post('/search', async (req, res) => {
                 mobile_number,
                 role
             FROM users 
-            WHERE LOWER(role) = 'engineer'
+            WHERE LOWER(role) = 'engineer' AND is_active IS NOT FALSE
             ORDER BY name ASC
         `;
 

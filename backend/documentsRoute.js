@@ -159,7 +159,7 @@ router.get('/counts', async (req, res) => {
   try {
     // make sure table exists (safety if migrations haven't run yet)
     await ensureDocumentsTable();
-    const q = await pool.query('SELECT user_id, COUNT(*) as count FROM documents GROUP BY user_id');
+    const q = await pool.query('SELECT d.user_id, COUNT(*) as count FROM documents d JOIN users u ON d.user_id::text = u.id::text AND u.is_active IS NOT FALSE GROUP BY d.user_id');
     res.json({ success: true, counts: q.rows });
   } catch (err) {
     console.error('Error fetching document counts', err?.message || err);
@@ -167,7 +167,7 @@ router.get('/counts', async (req, res) => {
     if (/relation "documents" does not exist/i.test(String(err?.message || ''))) {
       try {
         await ensureDocumentsTable();
-        const q2 = await pool.query('SELECT user_id, COUNT(*) as count FROM documents GROUP BY user_id');
+        const q2 = await pool.query('SELECT d.user_id, COUNT(*) as count FROM documents d JOIN users u ON d.user_id::text = u.id::text AND u.is_active IS NOT FALSE GROUP BY d.user_id');
         return res.json({ success: true, counts: q2.rows });
       } catch (err2) {
         console.error('Retry after creating documents table failed', err2?.message || err2);
@@ -349,6 +349,7 @@ router.get('/all-documents', async (req, res) => {
         d.path::text AS path,
         d.user_id::text AS user_id
       FROM documents d
+      JOIN users u ON d.user_id::text = u.id::text AND u.is_active IS NOT FALSE
       WHERE d.filename IS NOT NULL
       ORDER BY d.id DESC;
     `;
