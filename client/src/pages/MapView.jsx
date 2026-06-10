@@ -5,86 +5,166 @@ import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { toJpeg, toPng } from 'html-to-image';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
-// Custom icons
-const punchInIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
+// Global cache for resolved addresses to prevent duplicate Nominatim API requests
+const addressCache = {};
+
+const formatAddress = (data) => {
+    if (!data) return 'Unknown Area';
+    const addrObj = data.address || {};
+    const parts = [];
+
+    // Pick specific fields first for detail
+    if (addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic) {
+        parts.push(addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic);
+    }
+    if (addrObj.house_number) {
+        parts.push(addrObj.house_number);
+    }
+    if (addrObj.road) {
+        parts.push(addrObj.road);
+    }
+    if (addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet) {
+        parts.push(addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet);
+    }
+    if (addrObj.village || addrObj.town || addrObj.city_district || addrObj.city) {
+        parts.push(addrObj.village || addrObj.town || addrObj.city_district || addrObj.city);
+    }
+    if (addrObj.county) {
+        parts.push(addrObj.county);
+    }
+    if (addrObj.state_district) {
+        parts.push(addrObj.state_district);
+    }
+    if (addrObj.state) {
+        parts.push(addrObj.state);
+    }
+
+    if (parts.length < 2) {
+        // Fallback to display name if details aren't populated (filtering out Zip and India)
+        return data.display_name?.split(', ').filter(p => p !== 'India' && !/^\d{6}$/.test(p)).slice(0, 5).join(', ') || 'Unknown Area';
+    }
+
+    // Deduplicate array elements
+    const uniqueParts = [...new Set(parts.map(p => p.trim()))];
+    return uniqueParts.join(', ');
+};
+
+
+// Custom icons using inline SVG to avoid CORS issues
+const punchInIcon = L.divIcon({
+    html: `<div style="display: flex; flex-direction: column; align-items: center;">
+             <svg width="28" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#3B82F6" stroke="#FFFFFF" stroke-width="1.5"/>
+             </svg>
+           </div>`,
+    className: 'custom-leaflet-icon-blue',
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -36]
 });
 
-const punchOutIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
+const punchOutIcon = L.divIcon({
+    html: `<div style="display: flex; flex-direction: column; align-items: center;">
+             <svg width="28" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#EF4444" stroke="#FFFFFF" stroke-width="1.5"/>
+             </svg>
+           </div>`,
+    className: 'custom-leaflet-icon-red',
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -36]
 });
 
-const currentIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
+const currentIcon = L.divIcon({
+    html: `<div style="display: flex; flex-direction: column; align-items: center; position: relative;">
+             <svg width="28" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5"/>
+             </svg>
+           </div>`,
+    className: 'custom-leaflet-icon-green',
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -36]
 });
 
-const LocationName = ({ lat, lon }) => {
+// Global queue to fetch addresses sequentially (1 request at a time) to prevent rate limiting
+const geocodeQueue = [];
+let isProcessingQueue = false;
+
+const processGeocodeQueue = async () => {
+    if (isProcessingQueue || geocodeQueue.length === 0) return;
+    isProcessingQueue = true;
+
+    while (geocodeQueue.length > 0) {
+        const { lat, lon, callback } = geocodeQueue.shift();
+        const cacheKey = `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
+
+        if (addressCache[cacheKey]) {
+            callback(addressCache[cacheKey]);
+            continue;
+        }
+
+        try {
+            const res = await axios.get(`/api/live_locations/geocode?lat=${lat}&lon=${lon}`);
+            const formatted = formatAddress(res.data.data);
+            addressCache[cacheKey] = formatted;
+            callback(formatted);
+        } catch (e) {
+            callback('Address unavailable');
+        }
+
+        // Wait 1.2 seconds between geocoding requests to strictly respect Nominatim's rate limit
+        await new Promise(r => setTimeout(r, 1200));
+    }
+
+    isProcessingQueue = false;
+};
+
+const queueGeocode = (lat, lon, callback, priority = false) => {
+    const cacheKey = `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
+    if (addressCache[cacheKey]) {
+        callback(addressCache[cacheKey]);
+        return;
+    }
+    if (priority) {
+        geocodeQueue.unshift({ lat, lon, callback });
+    } else {
+        geocodeQueue.push({ lat, lon, callback });
+    }
+    processGeocodeQueue();
+};
+
+const LocationName = ({ lat, lon, priority = false }) => {
     const [addr, setAddr] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    const formatAddress = (data) => {
-        if (!data) return 'Unknown Area';
-        const addrObj = data.address || {};
-        const parts = [];
-        
-        // Pick specific fields first for detail
-        if (addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic) {
-            parts.push(addrObj.amenity || addrObj.shop || addrObj.building || addrObj.office || addrObj.tourism || addrObj.historic);
-        }
-        if (addrObj.house_number) {
-            parts.push(addrObj.house_number);
-        }
-        if (addrObj.road) {
-            parts.push(addrObj.road);
-        }
-        if (addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet) {
-            parts.push(addrObj.neighbourhood || addrObj.suburb || addrObj.hamlet);
-        }
-        if (addrObj.village || addrObj.town || addrObj.city_district || addrObj.city) {
-            parts.push(addrObj.village || addrObj.town || addrObj.city_district || addrObj.city);
-        }
-        if (addrObj.county) {
-            parts.push(addrObj.county);
-        }
-        if (addrObj.state_district) {
-            parts.push(addrObj.state_district);
-        }
-        if (addrObj.state) {
-            parts.push(addrObj.state);
-        }
-        
-        if (parts.length < 2) {
-            // Fallback to display name if details aren't populated (filtering out Zip and India)
-            return data.display_name?.split(', ').filter(p => p !== 'India' && !/^\d{6}$/.test(p)).slice(0, 5).join(', ') || 'Unknown Area';
-        }
-        
-        // Deduplicate array elements
-        const uniqueParts = [...new Set(parts.map(p => p.trim()))];
-        return uniqueParts.join(', ');
-    };
-
-    const fetchPlace = async () => {
+    useEffect(() => {
         setLoading(true);
-        try {
-            const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-            setAddr(formatAddress(res.data));
-        } catch (e) {
-            setAddr('Address unavailable');
-        }
-        setLoading(false);
-    };
+        queueGeocode(lat, lon, (resolved) => {
+            setAddr(resolved);
+            setLoading(false);
+        }, priority);
+    }, [lat, lon, priority]);
 
     const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+
+    if (loading) {
+        return (
+            <div className="mt-2 text-xs text-slate-400 animate-pulse flex items-center gap-1.5">
+                <svg className="animate-spin h-3 w-3 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Fetching address...</span>
+            </div>
+        );
+    }
 
     if (addr) return (
         <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-100 p-2.5 rounded-lg border border-slate-200 flex flex-col gap-2 shadow-sm text-left animate-[fadeIn_0.3s_ease-out]">
@@ -92,10 +172,10 @@ const LocationName = ({ lat, lon }) => {
                 <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                 <span>{addr}</span>
             </div>
-            <a 
-                href={googleMapsUrl} 
-                target="_blank" 
-                rel="noopener noreferrer" 
+            <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider mt-1 w-fit border-b border-dashed border-indigo-400 hover:border-indigo-600 pb-0.5"
             >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -106,12 +186,7 @@ const LocationName = ({ lat, lon }) => {
         </div>
     );
 
-    return (
-        <button onClick={fetchPlace} disabled={loading} className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider bg-indigo-50/80 hover:bg-indigo-100 px-2.5 py-1.5 rounded-md w-fit border border-indigo-100 disabled:opacity-50">
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-            {loading ? 'Finding place...' : 'Reveal Physical Address'}
-        </button>
-    );
+    return null;
 };
 
 export default function MapView() {
@@ -122,6 +197,333 @@ export default function MapView() {
     const [timelineData, setTimelineData] = useState([]);
     const [mapKey, setMapKey] = useState(0);
     const [mapStyle, setMapStyle] = useState('satellite'); // default to satellite
+    const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+    const [isDownloadingImage, setIsDownloadingImage] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState('');
+
+    const handleDownloadPdf = async () => {
+        if (!selectedEngineer) {
+            toast.warning("Please select an engineer first.");
+            return;
+        }
+        if (timelineData.length === 0) {
+            toast.info("No travel history found for this date.");
+            return;
+        }
+
+        setIsDownloadingPdf(true);
+        setDownloadProgress("Starting...");
+
+        try {
+            // Find start and end points
+            const startPt = timelineData.find((p) => p.point_type === 'START') || timelineData[0];
+            const endPt = timelineData.find((p) => p.point_type === 'END') || (timelineData.length > 1 ? timelineData[timelineData.length - 1] : null);
+
+            // Fetch address for start point if not cached
+            let startAddr = 'Unknown Area';
+            if (startPt) {
+                const cacheKey = `${Number(startPt.latitude).toFixed(4)},${Number(startPt.longitude).toFixed(4)}`;
+                if (addressCache[cacheKey]) {
+                    startAddr = addressCache[cacheKey];
+                } else {
+                    setDownloadProgress("Start Address...");
+                    try {
+                        const response = await axios.get(`/api/live_locations/geocode?lat=${startPt.latitude}&lon=${startPt.longitude}`);
+                        startAddr = formatAddress(response.data.data);
+                        addressCache[cacheKey] = startAddr;
+                    } catch (e) {
+                        startAddr = 'Address unavailable';
+                    }
+                    // small delay to respect OSM guidelines
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+
+            // Fetch address for end point if not cached
+            let endAddr = 'Unknown Area';
+            if (endPt) {
+                const cacheKey = `${Number(endPt.latitude).toFixed(4)},${Number(endPt.longitude).toFixed(4)}`;
+                if (addressCache[cacheKey]) {
+                    endAddr = addressCache[cacheKey];
+                } else {
+                    setDownloadProgress("End Address...");
+                    try {
+                        const response = await axios.get(`/api/live_locations/geocode?lat=${endPt.latitude}&lon=${endPt.longitude}`);
+                        endAddr = formatAddress(response.data.data);
+                        addressCache[cacheKey] = endAddr;
+                    } catch (e) {
+                        endAddr = 'Address unavailable';
+                    }
+                }
+            }
+
+            // Capture the travel map image using html-to-image
+            let mapImgBase64 = null;
+            const mapEl = document.getElementById('travel-map-container');
+            if (mapEl) {
+                setDownloadProgress("Capturing Map...");
+                // Temporarily hide control buttons overlay for clean capture
+                const controls = mapEl.querySelectorAll('.leaflet-control-container, .absolute.top-4.right-4');
+                controls.forEach(el => el.style.display = 'none');
+
+                try {
+                    // Small delay to make sure Leaflet map tiles are fully redrawn
+                    await new Promise(r => setTimeout(r, 150));
+                    mapImgBase64 = await toJpeg(mapEl, {
+                        quality: 0.85,
+                        pixelRatio: 1.5,
+                        backgroundColor: '#ffffff'
+                    });
+                } catch (err) {
+                    console.error("Failed to capture map image:", err);
+                } finally {
+                    // Restore control elements display
+                    controls.forEach(el => el.style.display = '');
+                }
+            }
+
+            setDownloadProgress("Structuring PDF...");
+
+            // Create PDF doc
+            const doc = new jsPDF();
+
+            // 1. Header
+            doc.setFillColor(79, 70, 229); // Indigo-600
+            doc.rect(0, 0, 210, 35, 'F');
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(20);
+            doc.setFont(undefined, 'bold');
+            doc.text("ENGINEER TRAVEL HISTORY", 14, 18);
+
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+            doc.text(`System: HRM Admin Portal`, 155, 28);
+
+            let currentY = 45;
+
+            // 2. Employee Details
+            doc.setTextColor(15, 23, 42); // slate-900
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text("Employee Information", 14, currentY);
+            currentY += 6;
+
+            // Draw a light background rectangle for employee details
+            doc.setFillColor(248, 250, 252); // slate-50
+            doc.rect(14, currentY, 182, 25, 'F');
+            doc.setDrawColor(226, 232, 240); // slate-200
+            doc.rect(14, currentY, 182, 25, 'D');
+
+            doc.setTextColor(71, 85, 105); // slate-600
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Name:`, 18, currentY + 9);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${selectedEngineer.name}`, 38, currentY + 9);
+
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Role:`, 18, currentY + 17);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${selectedEngineer.role || 'ENGINEER'}`, 38, currentY + 17);
+
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Date:`, 110, currentY + 9);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${selectedDate.toLocaleDateString()}`, 135, currentY + 9);
+
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Total Distance:`, 110, currentY + 17);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(16, 185, 129); // emerald-500
+            doc.text(`${totalDistance.toFixed(2)} km`, 135, currentY + 17);
+
+            currentY += 35;
+
+            // 3. Start & End points Summary
+            doc.setTextColor(15, 23, 42); // slate-900
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text("Key Milestones", 14, currentY);
+            currentY += 6;
+
+            const milestoneData = [
+                [
+                    { content: 'START MOVEMENT (Punch In)', styles: { fontStyle: 'bold', textColor: [16, 185, 129] } },
+                    startPt ? new Date(startPt.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+                    startPt ? `${startPt.latitude.toFixed(4)}, ${startPt.longitude.toFixed(4)}` : 'N/A',
+                    startAddr
+                ]
+            ];
+
+            if (endPt) {
+                milestoneData.push([
+                    { content: 'END MOVEMENT (Punch Out)', styles: { fontStyle: 'bold', textColor: [239, 68, 68] } },
+                    new Date(endPt.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    `${endPt.latitude.toFixed(4)}, ${endPt.longitude.toFixed(4)}`,
+                    endAddr
+                ]);
+            }
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Milestone', 'Time', 'Coordinates', 'Physical Address']],
+                body: milestoneData,
+                theme: 'grid',
+                headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 50 },
+                    1: { cellWidth: 20 },
+                    2: { cellWidth: 32 },
+                    3: { cellWidth: 80 }
+                },
+                styles: { fontSize: 9 }
+            });
+
+            currentY = doc.lastAutoTable.finalY + 12;
+
+            if (mapImgBase64) {
+                // If map doesn't fit on page 1, push to page 2
+                if (currentY + 105 > doc.internal.pageSize.height) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+
+                doc.setTextColor(15, 23, 42); // slate-900
+                doc.setFontSize(14);
+                doc.setFont(undefined, 'bold');
+                doc.text("Visual Route Map", 14, currentY);
+                currentY += 6;
+
+                doc.addImage(mapImgBase64, 'JPEG', 14, currentY, 182, 90);
+                currentY += 98; // 90 height + 8 margin
+            }
+
+            // 4. Detailed Timeline Log
+            doc.setTextColor(15, 23, 42);
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text("Detailed Path & Movement History", 14, currentY);
+            currentY += 6;
+
+            const tableBody = timelineData.map((point) => {
+                const timeStr = new Date(point.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const typeStr = point.point_type || 'POSITION UPDATE';
+                const coordStr = `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
+
+                // Show physical address only for START and END points, or if already cached
+                let address = '';
+                if (point === startPt) {
+                    address = startAddr;
+                } else if (point === endPt) {
+                    address = endAddr;
+                } else {
+                    const cacheKey = `${Number(point.latitude).toFixed(4)},${Number(point.longitude).toFixed(4)}`;
+                    address = addressCache[cacheKey] || '';
+                }
+
+                return [timeStr, typeStr, coordStr, address];
+            });
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Time', 'Point Type', 'Coordinates', 'Address']],
+                body: tableBody,
+                theme: 'striped',
+                headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 20 },
+                    1: { cellWidth: 35 },
+                    2: { cellWidth: 35 },
+                    3: { cellWidth: 92 }
+                },
+                styles: { fontSize: 8.5 }
+            });
+
+            // 5. Footer page number
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(148, 163, 184); // slate-400
+                doc.text(
+                    `Page ${i} of ${pageCount}`,
+                    doc.internal.pageSize.width / 2,
+                    doc.internal.pageSize.height - 10,
+                    { align: 'center' }
+                );
+            }
+
+            // Save
+            const dateStr = selectedDate.toISOString().split('T')[0];
+            doc.save(`travel_history_${selectedEngineer.name.replace(/\s+/g, '_')}_${dateStr}.pdf`);
+            toast.success("PDF Downloaded successfully!");
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            toast.error("An error occurred while generating the PDF.");
+        } finally {
+            setIsDownloadingPdf(false);
+            setDownloadProgress('');
+        }
+    };
+
+    const handleDownloadMapImage = async () => {
+        if (!selectedEngineer) {
+            toast.warning("Please select an engineer first.");
+            return;
+        }
+        if (timelineData.length === 0) {
+            toast.info("No travel history found for this date.");
+            return;
+        }
+
+        setIsDownloadingImage(true);
+        setDownloadProgress("Capturing Map...");
+
+        const mapEl = document.getElementById('travel-map-container');
+        if (!mapEl) {
+            toast.error("Map container not found.");
+            setIsDownloadingImage(false);
+            return;
+        }
+
+        // Temporarily hide control buttons overlay for clean capture
+        const controls = mapEl.querySelectorAll('.leaflet-control-container, .absolute.top-4.right-4');
+        controls.forEach(el => el.style.display = 'none');
+
+        try {
+            await new Promise(r => setTimeout(r, 150));
+            const dataUrl = await toPng(mapEl, {
+                pixelRatio: 2.0,
+                backgroundColor: '#ffffff'
+            });
+
+            // Convert to blob and download
+            const link = document.createElement('a');
+            const dateStr = selectedDate.toISOString().split('T')[0];
+            link.download = `travel_map_${selectedEngineer.name.replace(/\s+/g, '_')}_${dateStr}.png`;
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast.success("Map image downloaded successfully!");
+        } catch (err) {
+            console.error("Failed to capture map image:", err);
+            toast.error("An error occurred while capturing the map image.");
+        } finally {
+            // Restore control elements display
+            controls.forEach(el => el.style.display = '');
+            setIsDownloadingImage(false);
+            setDownloadProgress('');
+        }
+    };
 
     const fetchEngineers = async () => {
         try {
@@ -189,7 +591,7 @@ export default function MapView() {
     const currentPoint = timelineData.length > 0 ? timelineData[timelineData.length - 1] : null;
     const isSelectedDateToday = selectedDate.toDateString() === new Date().toDateString();
 
-    const showCurrentPoint = currentPoint && 
+    const showCurrentPoint = currentPoint &&
         (!startPoint || startPoint.updated_at !== currentPoint.updated_at) &&
         (!endPoint || endPoint.updated_at !== currentPoint.updated_at);
 
@@ -199,8 +601,8 @@ export default function MapView() {
     const mapCenter = currentPoint
         ? [currentPoint.latitude, currentPoint.longitude]
         : startPoint
-        ? [startPoint.latitude, startPoint.longitude]
-        : [21.1702, 72.8311]; // Default center (Surat)
+            ? [startPoint.latitude, startPoint.longitude]
+            : [21.1702, 72.8311]; // Default center (Surat)
 
     // Helper function to calculate distance using Haversine formula
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -321,42 +723,88 @@ export default function MapView() {
                                         </div>
                                     </div>
 
-                                    <div className="relative shrink-0">
-                                        <input
-                                            type="date"
-                                            value={selectedDate.toISOString().split('T')[0]}
-                                            onChange={(e) => {
-                                                const newDate = new Date(e.target.value);
-                                                setSelectedDate(newDate);
-                                                fetchTimeline(selectedEngineer.id, newDate);
-                                            }}
-                                            className="px-4 py-2.5 bg-white border border-slate-200 text-sm font-bold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer shadow-sm w-full sm:w-auto"
-                                        />
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 w-full sm:w-auto">
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                value={selectedDate.toISOString().split('T')[0]}
+                                                onChange={(e) => {
+                                                    const newDate = new Date(e.target.value);
+                                                    setSelectedDate(newDate);
+                                                    fetchTimeline(selectedEngineer.id, newDate);
+                                                }}
+                                                className="px-4 py-2.5 bg-white border border-slate-200 text-sm font-bold text-slate-700 rounded-xl focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer shadow-sm w-full"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleDownloadMapImage}
+                                            disabled={isDownloadingPdf || isDownloadingImage || timelineData.length === 0}
+                                            className="inline-flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-all shadow-md shadow-indigo-500/10 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 cursor-pointer"
+                                        >
+                                            {isDownloadingImage ? (
+                                                <>
+                                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    <span className="truncate max-w-[150px]">{downloadProgress}</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-4.5 h-4.5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                    Download Map Image
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleDownloadPdf}
+                                            disabled={isDownloadingPdf || isDownloadingImage || timelineData.length === 0}
+                                            className="inline-flex items-center justify-center px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-all shadow-md shadow-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20 active:scale-95 cursor-pointer"
+                                        >
+                                            {isDownloadingPdf ? (
+                                                <>
+                                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                    <span className="truncate max-w-[150px]">{downloadProgress}</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg className="w-4.5 h-4.5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                    </svg>
+                                                    Download PDF
+                                                </>
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div className="h-[600px] relative bg-slate-100 rounded-3xl overflow-hidden">
+                                <div id="travel-map-container" className="h-[600px] relative bg-slate-100 rounded-3xl overflow-hidden">
                                     {/* Map Style Toggle */}
                                     <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1">
                                         <button
                                             type="button"
                                             onClick={() => setMapStyle('satellite')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                                mapStyle === 'satellite'
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${mapStyle === 'satellite'
                                                     ? 'bg-indigo-600 text-white shadow-md'
                                                     : 'text-slate-600 hover:bg-slate-100'
-                                            }`}
+                                                }`}
                                         >
                                             Satellite
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setMapStyle('streets')}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                                mapStyle === 'streets'
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${mapStyle === 'streets'
                                                     ? 'bg-indigo-600 text-white shadow-md'
                                                     : 'text-slate-600 hover:bg-slate-100'
-                                            }`}
+                                                }`}
                                         >
                                             Streets
                                         </button>
@@ -379,11 +827,13 @@ export default function MapView() {
                                             <TileLayer
                                                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                                                 attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+                                                crossOrigin="anonymous"
                                             />
                                         ) : (
                                             <TileLayer
                                                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                                crossOrigin="anonymous"
                                             />
                                         )}
 
@@ -399,7 +849,7 @@ export default function MapView() {
                                                     <div className="text-center font-sans min-w-[160px]">
                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 mb-1">Punch In Location</p>
                                                         <p className="text-xs font-semibold text-slate-700">{startPoint.updated_at}</p>
-                                                        <LocationName lat={startPoint.latitude} lon={startPoint.longitude} />
+                                                        <LocationName lat={startPoint.latitude} lon={startPoint.longitude} priority={true} />
                                                     </div>
                                                 </Popup>
                                             </Marker>
@@ -412,26 +862,27 @@ export default function MapView() {
                                                     <div className="text-center font-sans min-w-[160px]">
                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-red-500 mb-1">Punch Out Location</p>
                                                         <p className="text-xs font-semibold text-slate-700">{endPoint.updated_at}</p>
-                                                        <LocationName lat={endPoint.latitude} lon={endPoint.longitude} />
+                                                        <LocationName lat={endPoint.latitude} lon={endPoint.longitude} priority={true} />
                                                     </div>
                                                 </Popup>
                                             </Marker>
                                         )}
-                                                                             {/* Current / Live Location */}
-                                         {showCurrentPoint && (
-                                             <Marker position={[currentPoint.latitude, currentPoint.longitude]} icon={currentIcon}>
-                                                 <Popup className="custom-popup">
-                                                     <div className="text-center font-sans min-w-[160px]">
-                                                         <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">
-                                                             {isSelectedDateToday ? "Current / Live Location" : "Last Known Location"}
-                                                         </p>
-                                                         <p className="text-xs font-semibold text-slate-700">{currentPoint.updated_at}</p>
-                                                         <LocationName lat={currentPoint.latitude} lon={currentPoint.longitude} />
-                                                     </div>
-                                                 </Popup>
-                                             </Marker>
-                                         )}
-                                     </MapContainer>
+
+                                        {/* Current / Live Location */}
+                                        {showCurrentPoint && (
+                                            <Marker position={[currentPoint.latitude, currentPoint.longitude]} icon={currentIcon}>
+                                                <Popup className="custom-popup">
+                                                    <div className="text-center font-sans min-w-[160px]">
+                                                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">
+                                                            {isSelectedDateToday ? "Current / Live Location" : "Last Known Location"}
+                                                        </p>
+                                                        <p className="text-xs font-semibold text-slate-700">{currentPoint.updated_at}</p>
+                                                        <LocationName lat={currentPoint.latitude} lon={currentPoint.longitude} priority={true} />
+                                                    </div>
+                                                </Popup>
+                                            </Marker>
+                                        )}
+                                    </MapContainer>
                                 </div>
                             </div>
                         )}
@@ -494,7 +945,7 @@ export default function MapView() {
                                                         {!['START', 'END'].includes(point.point_type) && "Location recorded by device"}
                                                     </p>
 
-                                                    <LocationName lat={point.latitude} lon={point.longitude} />
+                                                    <LocationName lat={point.latitude} lon={point.longitude} priority={point.point_type === 'START' || point.point_type === 'END'} />
 
                                                     {durationText && (
                                                         <div className={`mt-3 pt-3 border-t flex items-start gap-2 ${highlight ? 'border-amber-100' : 'border-slate-100'}`}>
@@ -514,6 +965,40 @@ export default function MapView() {
                                 </div>
                             </div>
                         )}
+                        {(isDownloadingPdf || isDownloadingImage) && (
+                            <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-md flex items-center justify-center animate-[fadeIn_0.3s_ease-out]">
+                                <div className="bg-white/90 backdrop-blur-lg p-8 rounded-3xl border border-slate-100 shadow-2xl max-w-sm w-full text-center mx-4 flex flex-col items-center">
+                                    <div className="relative w-20 h-20 mb-6">
+                                        {/* Outer pulsing ring */}
+                                        <div className="absolute inset-0 rounded-full border-4 border-indigo-500/10 animate-ping"></div>
+                                        {/* Inner spinning gradient ring */}
+                                        <div className="absolute inset-0 rounded-full border-4 border-t-indigo-600 border-r-indigo-600 border-b-transparent border-l-transparent animate-spin"></div>
+                                        {/* Center icon */}
+                                        <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
+                                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                {isDownloadingImage ? (
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                ) : (
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                )}
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <h3 className="text-lg font-extrabold text-slate-800 uppercase tracking-wider">
+                                        {isDownloadingImage ? "Capturing Map Image" : "Generating PDF Report"}
+                                    </h3>
+                                    <p className="text-sm font-semibold text-slate-500 mt-2">
+                                        {isDownloadingImage ? "Please wait while we capture and download the map view." : "Please wait while we structure your travel history data."}
+                                    </p>
+ 
+                                    {/* Progress Badge */}
+                                    <div className="mt-5 px-4 py-2 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-100 uppercase tracking-widest animate-pulse">
+                                        {downloadProgress}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <ToastContainer position="bottom-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover />
                     </div>
                 </main>
             </div>

@@ -272,6 +272,36 @@ router.get('/timeline/:userId', requireAuth, async (req, res) => {
     }
 });
 
+// GET /api/live_locations/geocode?lat=...&lon=...
+// Proxies geocoding requests to Nominatim with a valid User-Agent to avoid blocks/429
+router.get('/geocode', requireAuth, async (req, res) => {
+    try {
+        const { lat, lon } = req.query;
+        if (!lat || !lon) {
+            return res.status(400).json({ success: false, message: 'Missing lat or lon parameter' });
+        }
+
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'HRM-Production-AdminPortal/1.0 (contact@sjhrm.com)'
+            }
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error(`Nominatim API returned error status ${response.status}:`, errText);
+            return res.status(response.status).json({ success: false, message: 'Nominatim geocoding error', details: errText });
+        }
+
+        const data = await response.json();
+        return res.json({ success: true, data });
+    } catch (err) {
+        console.error('Error in /api/live_locations/geocode:', err);
+        return res.status(500).json({ success: false, message: 'Geocoding failed', error: err.message });
+    }
+});
+
 // Helper function to calculate distance between two points
 function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // Earth's radius in kilometers
