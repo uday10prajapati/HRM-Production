@@ -28,6 +28,21 @@ try {
   // ignore JSON parse errors
 }
 
+// Response interceptor to catch auto-logout if blocked
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 403 && error.response.data && error.response.data.isBlocked) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      delete axios.defaults.headers.common['x-user-id'];
+      delete axios.defaults.headers.common['Authorization'];
+      window.location.href = '/';
+    }
+    return Promise.reject(error);
+  }
+);
+
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <App />

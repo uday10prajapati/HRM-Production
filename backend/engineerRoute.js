@@ -34,6 +34,12 @@ router.post("/login", async (req, res) => {
 
         const user = result.rows[0];
 
+        // Check if the engineer is blocked
+        if (user.is_blocked) {
+            console.warn('Blocked engineer login attempt:', email || mobile_number);
+            return res.status(403).json({ success: false, message: "Your account is blocked. Please contact HR or Admin." });
+        }
+
         // Ensure password from request is a string
         if (typeof password !== "string") {
             return res.status(400).json({ success: false, message: "Invalid password input" });

@@ -225,6 +225,23 @@ const AllUsers = () => {
     }
   };
 
+  const handleToggleBlock = async (targetUser) => {
+    const action = targetUser.is_blocked ? "unblock" : "block";
+    if (!window.confirm(`Are you sure you want to ${action} ${targetUser.name}?`)) {
+      return;
+    }
+    try {
+      await axios.put(`/api/users/block/${targetUser.id}`, {
+        is_blocked: !targetUser.is_blocked,
+      });
+      alert(`User ${targetUser.name} has been ${action}ed successfully.`);
+      fetchUsers();
+    } catch (err) {
+      console.error(`Failed to ${action} user:`, err);
+      alert(`Failed to ${action} user: ` + (err.response?.data?.message || err.message));
+    }
+  };
+
   const openTaskStatusModal = (user) => {
     setSelectedUser(user);
     setTaskStatusModalOpen(true);
@@ -413,6 +430,11 @@ const AllUsers = () => {
                                 }`}>
                                 {u.role}
                               </span>
+                              {u.is_blocked && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-rose-100 text-rose-700 border border-rose-200">
+                                  Blocked
+                                </span>
+                              )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium tracking-tight">
                               {u.leave_balance ?? "N/A"}
@@ -431,6 +453,27 @@ const AllUsers = () => {
                                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
+                                  </button>
+                                )}
+                                {user?.id !== u.id && (
+                                  <button
+                                    onClick={() => handleToggleBlock(u)}
+                                    title={u.is_blocked ? "Unblock User" : "Block User"}
+                                    className={`p-1.5 rounded-lg transition-all ${
+                                      u.is_blocked
+                                        ? "text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50"
+                                        : "text-gray-400 hover:text-rose-600 hover:bg-rose-50"
+                                    }`}
+                                  >
+                                    {u.is_blocked ? (
+                                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                      </svg>
+                                    )}
                                   </button>
                                 )}
                                 <button
