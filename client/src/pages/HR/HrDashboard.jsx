@@ -346,12 +346,12 @@ const HrDashboard = () => {
                   </svg>
                 </div>
                 <h3 className="text-sm font-medium text-gray-500 mb-1">Total Employees</h3>
-                <div className="text-xl font-bold text-gray-900 mb-3">{users.length}</div>
+                <div className="text-xl font-bold text-gray-900 mb-3">{users.filter(u => u.is_active !== false).length}</div>
                 <div className="mt-auto pt-3 border-t border-gray-100 w-full">
                   <a href="/all-users" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View Details</a>
                 </div>
               </div>
-
+ 
               {/* Active Engineers */}
               <div className="bg-white rounded border border-gray-200 p-5 flex flex-col hover:shadow-sm transition-all group">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-900 mb-3 group-hover:bg-blue-800 transition-colors">
@@ -360,8 +360,8 @@ const HrDashboard = () => {
                   </svg>
                 </div>
                 <h3 className="text-sm font-medium text-gray-500 mb-1">Active Engineers</h3>
-                <div className="text-xl font-bold text-gray-900 mb-3">{engineers.length}</div>
-                <div className="mt-auto pt-3 border-t border-gray-100 w-full">
+                <div className="text-xl font-bold text-gray-900 mb-3">{engineers.filter(u => u.is_active !== false).length}</div>
+                <div className="mt-auto pt-3 border-t border-gray-100 w-full font-medium text-xs">
                   <a href="/all-users" className="text-xs text-gray-500 hover:text-orange-500 font-medium tracking-wide">View All</a>
                 </div>
               </div>

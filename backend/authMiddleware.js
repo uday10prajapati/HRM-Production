@@ -15,12 +15,12 @@ export default async function requireAuth(req, res, next) {
       return res.status(401).json({ success: false, message: 'Missing X-User-Id header or userId query param' });
     }
     // Try to resolve header as id first (works for UUID or legacy ints)
-    let r = await pool.query('SELECT id, role, is_blocked FROM users WHERE id::text = $1 LIMIT 1', [String(headerId)]);
+    let r = await pool.query('SELECT id, role, is_blocked, is_active FROM users WHERE id::text = $1 LIMIT 1', [String(headerId)]);
     if (!r.rows || r.rows.length === 0) {
       // If header looks like an email, try resolving by email
       if (String(headerId).includes('@')) {
         try {
-          r = await pool.query('SELECT id, role, is_blocked FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1', [String(headerId)]);
+          r = await pool.query('SELECT id, role, is_blocked, is_active FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1', [String(headerId)]);
         } catch (emailErr) {
           console.warn('authMiddleware email lookup failed', emailErr?.message ?? emailErr);
         }
@@ -32,10 +32,10 @@ export default async function requireAuth(req, res, next) {
       return res.status(401).json({ success: false, message: 'Invalid user id or email' });
     }
 
-    // Check if user is blocked
-    if (r.rows[0].is_blocked) {
-      console.warn('authMiddleware: blocked user attempted access:', headerId);
-      return res.status(403).json({ success: false, message: 'User is blocked', isBlocked: true });
+    // Check if user is blocked or inactive
+    if (r.rows[0].is_blocked || r.rows[0].is_active === false) {
+      console.warn('authMiddleware: blocked or inactive user attempted access:', headerId);
+      return res.status(403).json({ success: false, message: 'User is blocked or inactive', isBlocked: true });
     }
 
     req.user = { id: r.rows[0].id, role: (r.rows[0].role || '').toString().toLowerCase() };

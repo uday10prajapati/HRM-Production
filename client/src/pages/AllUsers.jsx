@@ -242,6 +242,23 @@ const AllUsers = () => {
     }
   };
 
+  const handleToggleActive = async (targetUser) => {
+    const action = targetUser.is_active !== false ? "deactivate" : "activate";
+    if (!window.confirm(`Are you sure you want to ${action} ${targetUser.name}?`)) {
+      return;
+    }
+    try {
+      await axios.put(`/api/users/active/${targetUser.id}`, {
+        is_active: targetUser.is_active === false,
+      });
+      alert(`User ${targetUser.name} has been ${action}d successfully.`);
+      fetchUsers();
+    } catch (err) {
+      console.error(`Failed to ${action} user:`, err);
+      alert(`Failed to ${action} user: ` + (err.response?.data?.message || err.message));
+    }
+  };
+
   const openTaskStatusModal = (user) => {
     setSelectedUser(user);
     setTaskStatusModalOpen(true);
@@ -357,7 +374,7 @@ const AllUsers = () => {
                 />
               </div>
               <div className="text-sm text-gray-500 bg-white px-4 py-2 border border-gray-200 rounded-lg shadow-sm">
-                Total Users: <span className="font-semibold text-gray-700">{users.length}</span>
+                Total Users: <span className="font-semibold text-gray-700">{users.filter(u => u.is_active !== false).length}</span>
               </div>
             </div>
 
@@ -430,6 +447,15 @@ const AllUsers = () => {
                                 }`}>
                                 {u.role}
                               </span>
+                              {u.is_active !== false ? (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                  Active
+                                </span>
+                              ) : (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-gray-100 text-gray-700 border border-gray-200">
+                                  Inactive
+                                </span>
+                              )}
                               {u.is_blocked && (
                                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-rose-100 text-rose-700 border border-rose-200">
                                   Blocked
@@ -474,6 +500,21 @@ const AllUsers = () => {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                       </svg>
                                     )}
+                                  </button>
+                                )}
+                                {user?.id !== u.id && (
+                                  <button
+                                    onClick={() => handleToggleActive(u)}
+                                    title={u.is_active !== false ? "Deactivate User" : "Activate User"}
+                                    className={`p-1.5 rounded-lg transition-all ${
+                                      u.is_active !== false
+                                        ? "text-emerald-600 hover:bg-emerald-50"
+                                        : "text-gray-400 hover:text-rose-600 hover:bg-rose-50"
+                                    }`}
+                                  >
+                                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828A5 5 0 1115.9 8.272M12 2v10" />
+                                    </svg>
                                   </button>
                                 )}
                                 <button

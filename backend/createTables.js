@@ -25,6 +25,7 @@ async function createAll() {
         mobile_number VARCHAR(32),
         fcm_token TEXT,
         is_blocked BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -178,6 +179,8 @@ async function createAll() {
       ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS shift_id UUID;
       -- Ensure is_blocked column exists on users table
       ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE;
+      -- Ensure is_active column exists on users table
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
       -- employee salary config stores per-employee breakdown and mode (monthly/hourly)
       CREATE TABLE IF NOT EXISTS employee_salary_config (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

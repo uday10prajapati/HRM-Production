@@ -38,6 +38,12 @@ const createUsersTable = async () => {
     } catch (colErr) {
       console.warn('Could not ensure users.is_blocked column:', colErr?.message || colErr);
     }
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`);
+      console.log('Ensured users.is_active column exists');
+    } catch (colErr) {
+      console.warn('Could not ensure users.is_active column:', colErr?.message || colErr);
+    }
     console.log("✅ Users table is ready.");
   } catch (err) {
     console.error("Error creating users table:", err);
@@ -69,6 +75,12 @@ router.post("/login", async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    // Check if the user is inactive
+    if (user.is_active === false) {
+      console.warn('Inactive user login attempt:', email);
+      return res.status(403).json({ success: false, message: "Your account is inactive. Please contact HR or Admin." });
+    }
 
     // Check if the user is blocked
     if (user.is_blocked) {

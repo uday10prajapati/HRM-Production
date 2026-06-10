@@ -170,8 +170,8 @@ const Admin = () => {
     fetchAttendanceToday();
   }, []);
 
-  const totalUsers = users.length;
-  const totalEngineers = users.filter(u => (u.role || '').toLowerCase() === 'engineer').length;
+  const totalUsers = users.filter(u => u.is_active !== false).length;
+  const totalEngineers = users.filter(u => (u.role || '').toLowerCase() === 'engineer' && u.is_active !== false).length;
   const totalPendingTasks = users.reduce((acc, u) => acc + ((u.tasks || []).filter(t => (t.status || '').toLowerCase() !== 'completed').length), 0);
 
   return (

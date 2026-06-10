@@ -34,6 +34,12 @@ router.post("/login", async (req, res) => {
 
         const user = result.rows[0];
 
+        // Check if the engineer is inactive
+        if (user.is_active === false) {
+            console.warn('Inactive engineer login attempt:', email || mobile_number);
+            return res.status(403).json({ success: false, message: "Your account is inactive. Please contact HR or Admin." });
+        }
+
         // Check if the engineer is blocked
         if (user.is_blocked) {
             console.warn('Blocked engineer login attempt:', email || mobile_number);

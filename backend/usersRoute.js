@@ -85,6 +85,7 @@ router.get("/", async (req, res) => {
         u.email,
         u.role,
         u.is_blocked,
+        u.is_active,
         COALESCE(u.leave_balance, 20) as leave_balance,
         
         COALESCE(
@@ -116,7 +117,7 @@ router.get("/", async (req, res) => {
     // fall back to a simpler users-only query so the frontend can still load a user list.
     if (/relation \"tasks\" does not exist/i.test(String(err?.message || '')) || /does not exist/i.test(String(err?.message || ''))) {
       try {
-        const fallback = await pool.query('SELECT id, name, email, role, is_blocked, leave_balance FROM users ORDER BY id ASC');
+        const fallback = await pool.query('SELECT id, name, email, role, is_blocked, is_active, leave_balance FROM users ORDER BY id ASC');
         return res.json({ success: true, users: fallback.rows });
       } catch (err2) {
         console.error('Fallback users query failed:', err2?.message || err2);
@@ -153,6 +154,7 @@ router.get("/me", async (req, res) => {
         u.email,
         u.role,
         u.is_blocked,
+        u.is_active,
         u.leave_balance,
         
         COALESCE(
@@ -207,6 +209,7 @@ router.get("/:id", async (req, res) => {
         u.email,
         u.role,
         u.is_blocked,
+        u.is_active,
         u.leave_balance,
         
         COALESCE(
@@ -455,6 +458,29 @@ router.put("/block/:id", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Block User Error:", err);
     res.status(500).json({ success: false, message: "Error updating block status", error: err.message });
+  }
+});
+
+// PUT /api/users/active/:id - active/inactive a user by ID
+router.put("/active/:id", requireAuth, async (req, res) => {
+  const roleRequester = (req.user?.role || '').toLowerCase();
+  if (roleRequester !== 'admin' && roleRequester !== 'hr') {
+    return res.status(403).json({ success: false, message: 'Forbidden: only admin/hr may change user active status' });
+  }
+  const { id } = req.params;
+  const { is_active } = req.body;
+  try {
+    const result = await pool.query(
+      "UPDATE users SET is_active = $1 WHERE id = $2 RETURNING *",
+      [is_active !== false, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    res.json({ success: true, user: result.rows[0] });
+  } catch (err) {
+    console.error("Toggle Active Status Error:", err);
+    res.status(500).json({ success: false, message: "Error updating active status", error: err.message });
   }
 });
 
